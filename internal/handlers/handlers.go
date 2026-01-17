@@ -2,57 +2,70 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	"github.com/fiatjaf/khatru"
-	"gitlab.com/coldforge/coldforge-relay/internal/relay"
+	"github.com/nbd-wtf/go-nostr"
 )
 
 // RegisterHandlers registers all event handlers with the relay
-func RegisterHandlers(r *relay.Relay) {
-	// NIP-01: Accept Events
-	// This handler is called when a client sends a new event
-	r.OnEvent([]func(*khatru.Event, *khatru.Client) error{
-		func(evt *khatru.Event, client *khatru.Client) error {
-			log.Printf("Received event: kind=%d from %s", evt.Kind, evt.PubKey)
-			// Validate and store the event
-			// The actual storage is handled by khatru's backend
-			return nil
-		},
+func RegisterHandlers(relay *khatru.Relay) {
+	// Reject events based on custom policies
+	relay.RejectEvent = append(relay.RejectEvent, rejectInvalidEvents)
+
+	// Reject filters based on custom policies
+	relay.RejectFilter = append(relay.RejectFilter, rejectComplexFilters)
+
+	// Log connections
+	relay.OnConnect = append(relay.OnConnect, func(ctx context.Context) {
+		log.Printf("Client connected")
 	})
 
-	// NIP-01: Handle Subscriptions
-	// This handler is called when a client creates a subscription
-	r.OnSubscribe([]func(*khatru.Subscription, *khatru.Client) error{
-		func(sub *khatru.Subscription, client *khatru.Client) error {
-			log.Printf("New subscription: %s with %d filters", sub.Id, len(sub.Filters))
-			// Query events matching the subscription filters
-			// Results are handled by khatru's subscription system
-			return nil
-		},
-	})
-
-	// Handle disconnections
-	r.OnDisconnect([]func(*khatru.Client){
-		func(client *khatru.Client) {
-			log.Printf("Client disconnected: %v", client.RemoteAddr)
-		},
+	// Log disconnections
+	relay.OnDisconnect = append(relay.OnDisconnect, func(ctx context.Context) {
+		log.Printf("Client disconnected")
 	})
 
 	log.Println("Event handlers registered")
 }
 
-// LogEvent logs event details for debugging
-func LogEvent(evt *khatru.Event) {
-	data, _ := json.MarshalIndent(evt, "", "  ")
-	log.Printf("Event details: %s", string(data))
+// rejectInvalidEvents validates events and rejects invalid ones
+func rejectInvalidEvents(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+	// Verify event signature
+	ok, err := event.CheckSignature()
+	if err != nil || !ok {
+		return true, "invalid: signature verification failed"
+	}
+
+	// Verify event ID matches content hash
+	if event.GetID() != event.ID {
+		return true, "invalid: event id mismatch"
+	}
+
+	// Reject events too far in the future (5 minutes tolerance)
+	if event.CreatedAt.Time().Unix() > nostr.Now().Time().Unix()+300 {
+		return true, "invalid: event created_at too far in the future"
+	}
+
+	return false, ""
 }
 
-// ValidateEvent performs custom validation on events
-// Returns true if the event is valid, false otherwise
-func ValidateEvent(ctx context.Context, evt *khatru.Event) bool {
-	// Add custom validation logic here
-	// For now, accept all valid Nostr events
-	return evt.Sig != "" && evt.PubKey != "" && evt.ID != ""
+// rejectComplexFilters prevents resource-intensive queries
+func rejectComplexFilters(ctx context.Context, filter nostr.Filter) (reject bool, msg string) {
+	// Limit the number of authors in a single filter
+	if len(filter.Authors) > 100 {
+		return true, "error: too many authors in filter"
+	}
+
+	// Limit the number of IDs in a single filter
+	if len(filter.IDs) > 500 {
+		return true, "error: too many ids in filter"
+	}
+
+	// Limit the number of kinds in a single filter
+	if len(filter.Kinds) > 20 {
+		return true, "error: too many kinds in filter"
+	}
+
+	return false, ""
 }

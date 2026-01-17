@@ -8,14 +8,16 @@ import (
 
 // Config holds all relay configuration
 type Config struct {
-	Port       int
-	RelayName  string
-	RelayURL   string
-	DBHost     string
-	DBPort     int
-	DBName     string
-	DBUser     string
-	DBPassword string
+	Port         int
+	RelayName    string
+	RelayURL     string
+	RelayPubkey  string
+	RelayContact string
+	DBHost       string
+	DBPort       int
+	DBName       string
+	DBUser       string
+	DBPassword   string
 }
 
 // Load reads configuration from environment variables
@@ -45,6 +47,14 @@ func Load() (*Config, error) {
 
 	if url := os.Getenv("RELAY_URL"); url != "" {
 		cfg.RelayURL = url
+	}
+
+	if pubkey := os.Getenv("RELAY_PUBKEY"); pubkey != "" {
+		cfg.RelayPubkey = pubkey
+	}
+
+	if contact := os.Getenv("RELAY_CONTACT"); contact != "" {
+		cfg.RelayContact = contact
 	}
 
 	if host := os.Getenv("DB_HOST"); host != "" {
