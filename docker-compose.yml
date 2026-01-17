@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: coldforge-relay-db
+    environment:
+      POSTGRES_DB: nostr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coldforge-relay
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      RELAY_PORT: 3334
+      RELAY_NAME: "coldforge-relay"
+      RELAY_URL: "ws://localhost:3334"
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: nostr
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "3334:3334"
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "3334"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  postgres_data:
+    driver: local

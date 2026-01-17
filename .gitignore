@@ -1,0 +1,37 @@
+.claude
+
+# Go binary and build artifacts
+relay
+*.o
+*.a
+*.so
+dist/
+bin/
+
+# Dependencies
+vendor/
+go.sum
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+*.out
+*.cover
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+*.log
