@@ -23,18 +23,27 @@ type Config struct {
 	// Authentication settings
 	AuthPolicy     string   // "open", "auth-read", "auth-write", "auth-all"
 	AllowedPubkeys []string // Whitelist of pubkeys allowed to write (if set)
+
+	// NIP-22 Timestamp limits (in seconds)
+	MaxCreatedAtFuture int64 // Max seconds into future for created_at (default: 300 = 5 min)
+	MaxCreatedAtPast   int64 // Max seconds into past for created_at (0 = unlimited, default)
+
+	// NIP-13 Proof of Work
+	MinPoWDifficulty int // Minimum PoW difficulty required (0 = disabled, default)
 }
 
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:      3334,
-		RelayName: "coldforge-relay",
-		RelayURL:  "ws://localhost:3334",
-		DBHost:    "localhost",
-		DBPort:    5432,
-		DBName:    "nostr",
-		DBUser:    "postgres",
+		Port:               3334,
+		RelayName:          "coldforge-relay",
+		RelayURL:           "ws://localhost:3334",
+		DBHost:             "localhost",
+		DBPort:             5432,
+		DBName:             "nostr",
+		DBUser:             "postgres",
+		MaxCreatedAtFuture: 300,  // 5 minutes (NIP-22)
+		MaxCreatedAtPast:   0,    // Unlimited by default
 	}
 
 	// Override from environment variables
@@ -94,6 +103,26 @@ func Load() (*Config, error) {
 	if allowedPubkeys := os.Getenv("ALLOWED_PUBKEYS"); allowedPubkeys != "" {
 		// Parse comma-separated list of pubkeys
 		cfg.AllowedPubkeys = parseCommaSeparated(allowedPubkeys)
+	}
+
+	// NIP-22 timestamp limits
+	if maxFuture := os.Getenv("MAX_CREATED_AT_FUTURE"); maxFuture != "" {
+		if v, err := strconv.ParseInt(maxFuture, 10, 64); err == nil {
+			cfg.MaxCreatedAtFuture = v
+		}
+	}
+
+	if maxPast := os.Getenv("MAX_CREATED_AT_PAST"); maxPast != "" {
+		if v, err := strconv.ParseInt(maxPast, 10, 64); err == nil {
+			cfg.MaxCreatedAtPast = v
+		}
+	}
+
+	// NIP-13 Proof of Work
+	if minPow := os.Getenv("MIN_POW_DIFFICULTY"); minPow != "" {
+		if v, err := strconv.Atoi(minPow); err == nil {
+			cfg.MinPoWDifficulty = v
+		}
 	}
 
 	return cfg, nil

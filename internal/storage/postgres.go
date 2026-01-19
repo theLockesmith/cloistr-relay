@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 
 	"github.com/fiatjaf/eventstore/postgresql"
+	_ "github.com/lib/pq"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
 )
 
@@ -38,4 +40,33 @@ func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error)
 	log.Printf("Connected to PostgreSQL at %s:%d/%s", cfg.DBHost, cfg.DBPort, cfg.DBName)
 
 	return backend, nil
+}
+
+// GetDatabaseURL returns the database connection URL for a given config
+func GetDatabaseURL(cfg *config.Config) string {
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBName,
+	)
+}
+
+// NewRawConnection creates a raw database/sql connection for advanced queries
+func NewRawConnection(cfg *config.Config) (*sql.DB, error) {
+	dbURL := GetDatabaseURL(cfg)
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Test the connection
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return db, nil
 }

@@ -34,6 +34,7 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       AUTH_POLICY: "auth-write"  # Require authentication for writing events
+      # MIN_POW_DIFFICULTY: "0"  # NIP-13: optional PoW requirement (0 = disabled)
     ports:
       - "3334:3334"
     healthcheck:

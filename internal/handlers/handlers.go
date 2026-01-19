@@ -2,16 +2,32 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strconv"
+	"time"
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
+	"gitlab.com/coldforge/coldforge-relay/internal/config"
 )
 
 // RegisterHandlers registers all event handlers with the relay
-func RegisterHandlers(relay *khatru.Relay) {
+func RegisterHandlers(relay *khatru.Relay, cfg *config.Config) {
 	// Reject events based on custom policies
 	relay.RejectEvent = append(relay.RejectEvent, rejectInvalidEvents)
+
+	// NIP-22: Reject events with timestamps outside limits
+	relay.RejectEvent = append(relay.RejectEvent, rejectTimestampOutOfRange(cfg))
+
+	// NIP-40: Reject expired events on publish
+	relay.RejectEvent = append(relay.RejectEvent, rejectExpiredEvents)
+
+	// NIP-13: Reject events that don't meet minimum PoW difficulty
+	if cfg.MinPoWDifficulty > 0 {
+		relay.RejectEvent = append(relay.RejectEvent, requirePoW(cfg))
+		log.Printf("NIP-13 PoW requirement: %d leading zero bits", cfg.MinPoWDifficulty)
+	}
 
 	// Reject filters based on custom policies
 	relay.RejectFilter = append(relay.RejectFilter, rejectComplexFilters)
@@ -42,12 +58,33 @@ func rejectInvalidEvents(ctx context.Context, event *nostr.Event) (reject bool, 
 		return true, "invalid: event id mismatch"
 	}
 
-	// Reject events too far in the future (5 minutes tolerance)
-	if event.CreatedAt.Time().Unix() > nostr.Now().Time().Unix()+300 {
-		return true, "invalid: event created_at too far in the future"
-	}
-
 	return false, ""
+}
+
+// NIP-22: rejectTimestampOutOfRange returns a handler that rejects events with timestamps outside configured limits
+func rejectTimestampOutOfRange(cfg *config.Config) func(context.Context, *nostr.Event) (bool, string) {
+	return func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		now := time.Now().Unix()
+		eventTime := event.CreatedAt.Time().Unix()
+
+		// Check future limit
+		if cfg.MaxCreatedAtFuture > 0 {
+			maxAllowed := now + cfg.MaxCreatedAtFuture
+			if eventTime > maxAllowed {
+				return true, fmt.Sprintf("invalid: created_at is too far in the future (max %d seconds)", cfg.MaxCreatedAtFuture)
+			}
+		}
+
+		// Check past limit (0 = unlimited)
+		if cfg.MaxCreatedAtPast > 0 {
+			minAllowed := now - cfg.MaxCreatedAtPast
+			if eventTime < minAllowed {
+				return true, fmt.Sprintf("invalid: created_at is too far in the past (max %d seconds)", cfg.MaxCreatedAtPast)
+			}
+		}
+
+		return false, ""
+	}
 }
 
 // rejectComplexFilters prevents resource-intensive queries
@@ -68,4 +105,74 @@ func rejectComplexFilters(ctx context.Context, filter nostr.Filter) (reject bool
 	}
 
 	return false, ""
+}
+
+// NIP-40: rejectExpiredEvents rejects events that are already expired on publish
+func rejectExpiredEvents(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+	if IsExpired(event) {
+		return true, "invalid: event has expired"
+	}
+	return false, ""
+}
+
+// IsExpired checks if an event has expired based on NIP-40 expiration tag
+func IsExpired(event *nostr.Event) bool {
+	expiration := GetExpiration(event)
+	return expiration > 0 && expiration < time.Now().Unix()
+}
+
+// GetExpiration extracts the expiration timestamp from an event's tags (NIP-40)
+func GetExpiration(event *nostr.Event) int64 {
+	for _, tag := range event.Tags {
+		if len(tag) >= 2 && tag[0] == "expiration" {
+			if ts, err := strconv.ParseInt(tag[1], 10, 64); err == nil {
+				return ts
+			}
+		}
+	}
+	return 0 // No expiration
+}
+
+// NIP-13: requirePoW returns a handler that rejects events not meeting minimum PoW difficulty
+func requirePoW(cfg *config.Config) func(context.Context, *nostr.Event) (bool, string) {
+	return func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		difficulty := countLeadingZeroBits(event.ID)
+		if difficulty < cfg.MinPoWDifficulty {
+			return true, fmt.Sprintf("pow: insufficient proof of work (got %d, need %d)", difficulty, cfg.MinPoWDifficulty)
+		}
+		return false, ""
+	}
+}
+
+// countLeadingZeroBits counts the number of leading zero bits in a hex string (event ID)
+func countLeadingZeroBits(hexID string) int {
+	zeroBits := 0
+	for _, c := range hexID {
+		// Each hex character represents 4 bits
+		var nibble int
+		if c >= '0' && c <= '9' {
+			nibble = int(c - '0')
+		} else if c >= 'a' && c <= 'f' {
+			nibble = int(c-'a') + 10
+		} else if c >= 'A' && c <= 'F' {
+			nibble = int(c-'A') + 10
+		} else {
+			break // Invalid character
+		}
+
+		if nibble == 0 {
+			zeroBits += 4
+		} else {
+			// Count leading zeros in this nibble
+			if nibble < 2 {
+				zeroBits += 3
+			} else if nibble < 4 {
+				zeroBits += 2
+			} else if nibble < 8 {
+				zeroBits += 1
+			}
+			break // Found a 1 bit
+		}
+	}
+	return zeroBits
 }

@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - NIP-01, NIP-11, NIP-42 implemented
+**Status:** Working - 10 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 50)
 
 ## Documentation
 
@@ -72,8 +72,9 @@ docker compose logs -f relay
 ├── internal/
 │   ├── auth/           # NIP-42 authentication
 │   ├── config/         # Configuration loading
-│   ├── handlers/       # Event validation, filters
+│   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── relay/          # Khatru relay setup
+│   ├── search/         # NIP-50 PostgreSQL full-text search
 │   └── storage/        # PostgreSQL backend
 ├── tests/              # Test documentation
 ├── Dockerfile          # Multi-stage build
@@ -88,6 +89,9 @@ Set via environment variables:
 - `AUTH_POLICY` - "open", "auth-read", "auth-write", "auth-all"
 - `ALLOWED_PUBKEYS` - Comma-separated whitelist
 - `DB_HOST/PORT/NAME/USER/PASSWORD` - PostgreSQL connection
+- `MAX_CREATED_AT_FUTURE` - NIP-22: max seconds into future (default: 300)
+- `MAX_CREATED_AT_PAST` - NIP-22: max seconds into past (0 = unlimited)
+- `MIN_POW_DIFFICULTY` - NIP-13: required PoW difficulty (0 = disabled)
 
 ## Next Steps
 
