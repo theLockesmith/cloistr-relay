@@ -17,6 +17,25 @@ RUN go mod tidy
 # Build the binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o relay ./cmd/relay
 
+# Test stage
+FROM golang:1.24-alpine AS test
+
+# Install test dependencies
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /build
+
+# Copy all source files
+COPY go.mod ./
+COPY cmd/ cmd/
+COPY internal/ internal/
+
+# Download dependencies
+RUN go mod tidy
+
+# Default command runs tests
+CMD ["go", "test", "-v", "./internal/..."]
+
 # Runtime stage
 FROM alpine:latest
 

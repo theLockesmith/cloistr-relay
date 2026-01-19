@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all relay configuration
@@ -18,6 +19,10 @@ type Config struct {
 	DBName       string
 	DBUser       string
 	DBPassword   string
+
+	// Authentication settings
+	AuthPolicy     string   // "open", "auth-read", "auth-write", "auth-all"
+	AllowedPubkeys []string // Whitelist of pubkeys allowed to write (if set)
 }
 
 // Load reads configuration from environment variables
@@ -81,5 +86,31 @@ func Load() (*Config, error) {
 		cfg.DBPassword = password
 	}
 
+	// Authentication settings
+	if authPolicy := os.Getenv("AUTH_POLICY"); authPolicy != "" {
+		cfg.AuthPolicy = authPolicy
+	}
+
+	if allowedPubkeys := os.Getenv("ALLOWED_PUBKEYS"); allowedPubkeys != "" {
+		// Parse comma-separated list of pubkeys
+		cfg.AllowedPubkeys = parseCommaSeparated(allowedPubkeys)
+	}
+
 	return cfg, nil
+}
+
+// parseCommaSeparated splits a comma-separated string into a slice
+func parseCommaSeparated(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	var result []string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

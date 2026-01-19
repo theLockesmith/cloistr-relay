@@ -1,0 +1,66 @@
+# Quick Test Command Reference
+# Source: coldforge-relay test suite
+
+# === MAKEFILE TARGETS (RECOMMENDED) ===
+make test                    # Run all unit tests
+make test-coverage          # Run tests with coverage report
+make test-coverage-html     # Generate HTML coverage report (coverage.html)
+make test-verbose           # Run tests with verbose output
+make test-config            # Test config package only
+make test-handlers          # Test handlers package only
+make test-auth              # Test auth package only
+make docker-test            # Run tests in Docker (no local Go needed)
+make docker-test-coverage   # Docker tests with coverage
+make clean                  # Remove coverage artifacts
+
+# === DIRECT GO COMMANDS ===
+go test ./internal/...                              # All unit tests
+go test -v ./internal/...                           # Verbose output
+go test -cover ./internal/...                       # With coverage %
+go test -coverprofile=coverage.out ./internal/...   # Generate coverage file
+go tool cover -html=coverage.out                    # View coverage in browser
+go test ./internal/config                           # Test single package
+go test -run TestLoad ./internal/config             # Test specific function
+go test -count=1 ./internal/...                     # Disable test cache
+
+# === DOCKER COMMANDS ===
+docker build -t coldforge-relay-test --target test .
+docker run --rm coldforge-relay-test
+docker run --rm coldforge-relay-test go test -v ./internal/...
+docker run --rm coldforge-relay-test go test -cover ./internal/...
+
+# === INTEGRATION TESTS (requires DB) ===
+go test ./tests/...         # Run integration tests (most skipped)
+make test-integration       # Run integration tests via Makefile
+
+# === COVERAGE ANALYSIS ===
+go test -coverprofile=coverage.out ./internal/...
+go tool cover -func=coverage.out                    # Text coverage summary
+go tool cover -html=coverage.out -o coverage.html   # HTML report
+
+# === USEFUL FLAGS ===
+-v                          # Verbose (show all test names)
+-cover                      # Show coverage percentage
+-coverprofile=<file>        # Save coverage data
+-run <pattern>              # Run specific tests matching pattern
+-count=1                    # Disable test caching
+-timeout 30s                # Set test timeout
+-parallel 4                 # Run tests in parallel
+
+# === EXAMPLES ===
+# Test config with coverage
+go test -v -cover ./internal/config
+
+# Test handlers with detailed coverage
+go test -coverprofile=coverage.out ./internal/handlers
+go tool cover -html=coverage.out
+
+# Run only auth whitelist tests
+go test -v -run Whitelist ./internal/auth
+
+# Quick smoke test (all packages, no output unless failure)
+go test ./internal/...
+
+# === WATCH MODE (with external tool) ===
+# Install: go install github.com/cespare/reflex@latest
+reflex -r '\.go$' -s -- go test ./internal/...

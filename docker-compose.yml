@@ -33,6 +33,7 @@ services:
       DB_NAME: nostr
       DB_USER: postgres
       DB_PASSWORD: postgres
+      AUTH_POLICY: "auth-write"  # Require authentication for writing events
     ports:
       - "3334:3334"
     healthcheck:
