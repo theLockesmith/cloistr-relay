@@ -8,6 +8,7 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
+	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
 	"gitlab.com/coldforge/coldforge-relay/internal/relay"
 	"gitlab.com/coldforge/coldforge-relay/internal/search"
 	"gitlab.com/coldforge/coldforge-relay/internal/storage"
@@ -53,12 +54,27 @@ func main() {
 	authCfg := parseAuthConfig(cfg)
 	auth.RegisterAuthHandlers(r, authCfg)
 
+	// Register Prometheus metrics
+	metrics.RegisterRelayMetrics(r)
+	log.Println("Prometheus metrics enabled at /metrics")
+
+	// Create HTTP mux to serve both relay and metrics
+	mux := http.NewServeMux()
+	mux.Handle("/", r)
+	mux.Handle("/metrics", metrics.Handler())
+
+	// Health check endpoint (simple, for Kubernetes probes)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	// Start the relay server
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("Starting Coldforge relay on %s", addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
 
-	if err := http.ListenAndServe(addr, r); err != nil {
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("Failed to start relay: %v", err)
 	}
 }

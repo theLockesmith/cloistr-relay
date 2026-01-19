@@ -96,6 +96,12 @@ Set via environment variables:
 - `RATE_LIMIT_FILTERS_PER_SEC` - Queries per second per IP (default: 20)
 - `RATE_LIMIT_CONNECTIONS_PER_SEC` - Connections per second per IP (default: 5)
 
+## Monitoring Endpoints
+
+- `/metrics` - Prometheus metrics
+- `/health` - Health check (returns "OK")
+- `/` - NIP-11 relay info (with Accept: application/nostr+json header)
+
 ## Next Steps
 
 See `~/claude/coldforge/services/relay/CLAUDE.md` for full roadmap.
