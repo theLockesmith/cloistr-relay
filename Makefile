@@ -7,9 +7,13 @@ test: test-unit
 test-unit:
 	go test ./internal/...
 
-# Run integration tests (requires database)
+# Run integration tests (requires relay running via docker-compose)
 test-integration:
-	go test ./tests/...
+	INTEGRATION_TEST=1 go test -v ./tests/... -timeout 120s
+
+# Run integration tests with full setup/teardown
+test-integration-full:
+	./scripts/run-integration-tests.sh --cleanup
 
 # Run all tests with verbose output
 test-verbose:
@@ -57,7 +61,8 @@ help:
 	@echo "Available targets:"
 	@echo "  test                 - Run all unit tests"
 	@echo "  test-unit            - Run unit tests only"
-	@echo "  test-integration     - Run integration tests (requires DB)"
+	@echo "  test-integration     - Run integration tests (requires relay running)"
+	@echo "  test-integration-full - Run integration tests with setup/teardown"
 	@echo "  test-verbose         - Run all tests with verbose output"
 	@echo "  test-coverage        - Run tests with coverage report"
 	@echo "  test-coverage-html   - Generate HTML coverage report"

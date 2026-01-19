@@ -17,7 +17,7 @@ RUN go mod tidy
 # Build the binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o relay ./cmd/relay
 
-# Test stage
+# Test stage (unit tests only - integration tests run externally)
 FROM golang:1.24-alpine AS test
 
 # Install test dependencies
@@ -25,7 +25,7 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
-# Copy all source files
+# Copy source files (tests/ excluded via .dockerignore - run externally)
 COPY go.mod ./
 COPY cmd/ cmd/
 COPY internal/ internal/
@@ -33,7 +33,7 @@ COPY internal/ internal/
 # Download dependencies
 RUN go mod tidy
 
-# Default command runs tests
+# Run unit tests
 CMD ["go", "test", "-v", "./internal/..."]
 
 # Runtime stage
