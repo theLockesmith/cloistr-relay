@@ -30,20 +30,28 @@ type Config struct {
 
 	// NIP-13 Proof of Work
 	MinPoWDifficulty int // Minimum PoW difficulty required (0 = disabled, default)
+
+	// Rate Limiting
+	RateLimitEventsPerSec   int // Events per second per IP (0 = disabled)
+	RateLimitFiltersPerSec  int // Filter queries per second per IP (0 = disabled)
+	RateLimitConnectionsPerSec int // New connections per second per IP (0 = disabled)
 }
 
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:               3334,
-		RelayName:          "coldforge-relay",
-		RelayURL:           "ws://localhost:3334",
-		DBHost:             "localhost",
-		DBPort:             5432,
-		DBName:             "nostr",
-		DBUser:             "postgres",
-		MaxCreatedAtFuture: 300,  // 5 minutes (NIP-22)
-		MaxCreatedAtPast:   0,    // Unlimited by default
+		Port:                      3334,
+		RelayName:                 "coldforge-relay",
+		RelayURL:                  "ws://localhost:3334",
+		DBHost:                    "localhost",
+		DBPort:                    5432,
+		DBName:                    "nostr",
+		DBUser:                    "postgres",
+		MaxCreatedAtFuture:        300, // 5 minutes (NIP-22)
+		MaxCreatedAtPast:          0,   // Unlimited by default
+		RateLimitEventsPerSec:     10,  // 10 events/sec per IP
+		RateLimitFiltersPerSec:    20,  // 20 queries/sec per IP
+		RateLimitConnectionsPerSec: 5,  // 5 connections/sec per IP
 	}
 
 	// Override from environment variables
@@ -122,6 +130,25 @@ func Load() (*Config, error) {
 	if minPow := os.Getenv("MIN_POW_DIFFICULTY"); minPow != "" {
 		if v, err := strconv.Atoi(minPow); err == nil {
 			cfg.MinPoWDifficulty = v
+		}
+	}
+
+	// Rate Limiting
+	if eventsPerSec := os.Getenv("RATE_LIMIT_EVENTS_PER_SEC"); eventsPerSec != "" {
+		if v, err := strconv.Atoi(eventsPerSec); err == nil {
+			cfg.RateLimitEventsPerSec = v
+		}
+	}
+
+	if filtersPerSec := os.Getenv("RATE_LIMIT_FILTERS_PER_SEC"); filtersPerSec != "" {
+		if v, err := strconv.Atoi(filtersPerSec); err == nil {
+			cfg.RateLimitFiltersPerSec = v
+		}
+	}
+
+	if connsPerSec := os.Getenv("RATE_LIMIT_CONNECTIONS_PER_SEC"); connsPerSec != "" {
+		if v, err := strconv.Atoi(connsPerSec); err == nil {
+			cfg.RateLimitConnectionsPerSec = v
 		}
 	}
 

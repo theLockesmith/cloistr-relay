@@ -92,6 +92,9 @@ Set via environment variables:
 - `MAX_CREATED_AT_FUTURE` - NIP-22: max seconds into future (default: 300)
 - `MAX_CREATED_AT_PAST` - NIP-22: max seconds into past (0 = unlimited)
 - `MIN_POW_DIFFICULTY` - NIP-13: required PoW difficulty (0 = disabled)
+- `RATE_LIMIT_EVENTS_PER_SEC` - Events per second per IP (default: 10)
+- `RATE_LIMIT_FILTERS_PER_SEC` - Queries per second per IP (default: 20)
+- `RATE_LIMIT_CONNECTIONS_PER_SEC` - Connections per second per IP (default: 5)
 
 ## Next Steps
 
