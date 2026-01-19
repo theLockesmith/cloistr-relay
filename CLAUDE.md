@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 10 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 50)
+**Status:** Working - 11 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50)
 
 ## Documentation
 
