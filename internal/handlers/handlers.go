@@ -11,6 +11,7 @@ import (
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
+	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
 )
 
 // RegisterHandlers registers all event handlers with the relay
@@ -70,7 +71,29 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config) {
 		log.Printf("Client disconnected")
 	})
 
+	// NIP-46: Handle ephemeral events (kinds 20000-30000) for Nostr Connect
+	relay.OnEphemeralEvent = append(relay.OnEphemeralEvent, func(ctx context.Context, event *nostr.Event) {
+		// Kind 24133 is used for NIP-46 Nostr Connect messages
+		if event.Kind == 24133 {
+			log.Printf("NIP-46 message relayed: %s -> %s", event.PubKey[:8], getRecipient(event))
+			metrics.RecordNIP46Message()
+		}
+	})
+
 	log.Println("Event handlers registered")
+}
+
+// getRecipient extracts the recipient pubkey from event tags
+func getRecipient(event *nostr.Event) string {
+	for _, tag := range event.Tags {
+		if len(tag) >= 2 && tag[0] == "p" {
+			if len(tag[1]) >= 8 {
+				return tag[1][:8] + "..."
+			}
+			return tag[1]
+		}
+	}
+	return "unknown"
 }
 
 // rejectInvalidEvents validates events and rejects invalid ones

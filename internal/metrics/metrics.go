@@ -62,6 +62,12 @@ var (
 		Help: "Total number of successful authentications",
 	})
 
+	// NIP-46 metrics
+	nip46MessagesRelayed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_nip46_messages_relayed_total",
+		Help: "Total number of NIP-46 (Nostr Connect) messages relayed",
+	})
+
 	// Latency metrics
 	eventProcessingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "nostr_relay_event_processing_seconds",
@@ -193,6 +199,11 @@ func kindToString(kind int) string {
 		}
 		return "other"
 	}
+}
+
+// RecordNIP46Message increments the NIP-46 message counter
+func RecordNIP46Message() {
+	nip46MessagesRelayed.Inc()
 }
 
 // categorizeRejection extracts a category from rejection message

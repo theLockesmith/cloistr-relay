@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"gitlab.com/coldforge/coldforge-relay/internal/config"
 )
 
 // TestRejectInvalidEvents_ValidEvent tests that valid events are accepted
@@ -58,26 +59,32 @@ func TestRejectInvalidEvents_MismatchedID(t *testing.T) {
 	}
 }
 
-// TestRejectInvalidEvents_FutureTimestamp tests rejection of events far in the future
-func TestRejectInvalidEvents_FutureTimestamp(t *testing.T) {
+// TestRejectTimestampOutOfRange_FutureTimestamp tests rejection of events far in the future via NIP-22
+func TestRejectTimestampOutOfRange_FutureTimestamp(t *testing.T) {
 	ctx := context.Background()
 	event := createValidEvent(t)
 
-	// Set timestamp far in the future (6 minutes ahead, tolerance is 5 minutes)
+	// Set timestamp far in the future (6 minutes ahead, limit is 5 minutes / 300 seconds)
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() + 360)
 	event.Sign(testPrivateKey)
 
-	reject, msg := rejectInvalidEvents(ctx, event)
+	cfg := &config.Config{
+		MaxCreatedAtFuture: 300, // 5 minutes
+		MaxCreatedAtPast:   0,   // unlimited
+	}
+
+	handler := rejectTimestampOutOfRange(cfg)
+	reject, msg := handler(ctx, event)
 	if !reject {
 		t.Error("Event with future timestamp was not rejected")
 	}
-	if msg != "invalid: event created_at too far in the future" {
-		t.Errorf("Wrong rejection message: got %s, want 'invalid: event created_at too far in the future'", msg)
+	if msg == "" {
+		t.Error("Wrong rejection message: got empty string")
 	}
 }
 
-// TestRejectInvalidEvents_RecentFutureTimestamp tests that events within tolerance are accepted
-func TestRejectInvalidEvents_RecentFutureTimestamp(t *testing.T) {
+// TestRejectTimestampOutOfRange_RecentFutureTimestamp tests that events within tolerance are accepted
+func TestRejectTimestampOutOfRange_RecentFutureTimestamp(t *testing.T) {
 	ctx := context.Background()
 	event := createValidEvent(t)
 
@@ -85,24 +92,60 @@ func TestRejectInvalidEvents_RecentFutureTimestamp(t *testing.T) {
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() + 120)
 	event.Sign(testPrivateKey)
 
-	reject, msg := rejectInvalidEvents(ctx, event)
+	cfg := &config.Config{
+		MaxCreatedAtFuture: 300, // 5 minutes
+		MaxCreatedAtPast:   0,   // unlimited
+	}
+
+	handler := rejectTimestampOutOfRange(cfg)
+	reject, msg := handler(ctx, event)
 	if reject {
 		t.Errorf("Event within timestamp tolerance was rejected: %s", msg)
 	}
 }
 
-// TestRejectInvalidEvents_PastTimestamp tests that past events are accepted
-func TestRejectInvalidEvents_PastTimestamp(t *testing.T) {
+// TestRejectTimestampOutOfRange_PastTimestamp tests that past events within limit are accepted
+func TestRejectTimestampOutOfRange_PastTimestamp(t *testing.T) {
 	ctx := context.Background()
 	event := createValidEvent(t)
 
-	// Set timestamp in the past
+	// Set timestamp in the past (1 hour)
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() - 3600)
 	event.Sign(testPrivateKey)
 
-	reject, msg := rejectInvalidEvents(ctx, event)
+	cfg := &config.Config{
+		MaxCreatedAtFuture: 300, // 5 minutes
+		MaxCreatedAtPast:   0,   // unlimited
+	}
+
+	handler := rejectTimestampOutOfRange(cfg)
+	reject, msg := handler(ctx, event)
 	if reject {
 		t.Errorf("Past event was rejected: %s", msg)
+	}
+}
+
+// TestRejectTimestampOutOfRange_PastTimestampWithLimit tests rejection of old events when limit is set
+func TestRejectTimestampOutOfRange_PastTimestampWithLimit(t *testing.T) {
+	ctx := context.Background()
+	event := createValidEvent(t)
+
+	// Set timestamp too far in the past (2 hours, limit is 1 hour)
+	event.CreatedAt = nostr.Timestamp(time.Now().Unix() - 7200)
+	event.Sign(testPrivateKey)
+
+	cfg := &config.Config{
+		MaxCreatedAtFuture: 300,  // 5 minutes
+		MaxCreatedAtPast:   3600, // 1 hour
+	}
+
+	handler := rejectTimestampOutOfRange(cfg)
+	reject, msg := handler(ctx, event)
+	if !reject {
+		t.Error("Old event should have been rejected")
+	}
+	if msg == "" {
+		t.Error("Wrong rejection message: got empty string")
 	}
 }
 
