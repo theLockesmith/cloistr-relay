@@ -35,7 +35,7 @@ test:unit:
     - apk add --no-cache git ca-certificates build-base
     - mkdir -p .go
   script:
-    - go mod download
+    - go mod tidy
     - go test -v -race -cover ./internal/...
   coverage: '/coverage: \d+\.\d+% of statements/'
 
