@@ -30,8 +30,9 @@ test:unit:
   <<: *go-cache
   variables:
     GOPATH: ${CI_PROJECT_DIR}/.go
+    CGO_ENABLED: "1"
   before_script:
-    - apk add --no-cache git ca-certificates
+    - apk add --no-cache git ca-certificates build-base
     - mkdir -p .go
   script:
     - go mod download
