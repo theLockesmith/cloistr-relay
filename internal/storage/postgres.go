@@ -24,12 +24,12 @@ func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error)
 
 	// Create backend with configuration
 	backend := &postgresql.PostgresBackend{
-		DatabaseURL:      dbURL,
-		QueryLimit:       1000,      // Max events per query
-		QueryIDsLimit:    500,       // Max IDs in a filter
-		QueryAuthorsLimit: 100,      // Max authors in a filter
-		QueryKindsLimit:  20,        // Max kinds in a filter
-		QueryTagsLimit:   10,        // Max tag filters
+		DatabaseURL:       dbURL,
+		QueryLimit:        1000, // Max events per query
+		QueryIDsLimit:     500,  // Max IDs in a filter
+		QueryAuthorsLimit: 500,  // Max authors in a filter
+		QueryKindsLimit:   50,   // Max kinds in a filter
+		QueryTagsLimit:    1000, // Max tag values in filters (for Amethyst compatibility)
 	}
 
 	// Initialize the database connection and schema
