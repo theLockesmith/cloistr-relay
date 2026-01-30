@@ -4,6 +4,8 @@
 
 **Status:** Working - 11 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50)
 
+**Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
+
 ## Documentation
 
 Full documentation: `~/claude/coldforge/services/relay/CLAUDE.md`
