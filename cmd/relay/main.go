@@ -5,13 +5,17 @@ import (
 	"log"
 	"net/http"
 
+	"time"
+
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
+	"gitlab.com/coldforge/coldforge-relay/internal/management"
 	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
 	"gitlab.com/coldforge/coldforge-relay/internal/relay"
 	"gitlab.com/coldforge/coldforge-relay/internal/search"
 	"gitlab.com/coldforge/coldforge-relay/internal/storage"
+	"gitlab.com/coldforge/coldforge-relay/internal/wot"
 )
 
 func main() {
@@ -50,6 +54,49 @@ func main() {
 	// Register custom handlers (validation, filtering)
 	handlers.RegisterHandlers(r, cfg)
 
+	// Initialize NIP-86 management API
+	var mgmtStore *management.Store
+	if len(cfg.AdminPubkeys) > 0 {
+		mgmtStore = management.NewStore(rawDB)
+		if err := mgmtStore.Init(); err != nil {
+			log.Fatalf("Failed to initialize management store: %v", err)
+		}
+		// Register ban checking handlers
+		management.RegisterBanHandlers(r, mgmtStore)
+		log.Printf("NIP-86 management API enabled for %d admin pubkeys", len(cfg.AdminPubkeys))
+	}
+
+	// Initialize WoT filtering (if enabled)
+	if cfg.WoTEnabled && cfg.WoTOwnerPubkey != "" {
+		wotStore := wot.NewStore(rawDB, 5*time.Minute)
+		if err := wotStore.Init(); err != nil {
+			log.Fatalf("Failed to initialize WoT store: %v", err)
+		}
+
+		// Build WoT config
+		wotCfg := &wot.Config{
+			Enabled:        true,
+			OwnerPubkey:    cfg.WoTOwnerPubkey,
+			Policies:       wot.DefaultPolicies(),
+			CacheTTL:       5 * time.Minute,
+			MaxFollowDepth: 2,
+		}
+
+		// Apply custom policy overrides if configured
+		if cfg.WoTUnknownPoWBits > 0 {
+			policy := wotCfg.Policies[wot.TrustLevelUnknown]
+			policy.MinPoWDifficulty = cfg.WoTUnknownPoWBits
+			wotCfg.Policies[wot.TrustLevelUnknown] = policy
+		}
+		if cfg.WoTUnknownRateLimit > 0 {
+			policy := wotCfg.Policies[wot.TrustLevelUnknown]
+			policy.EventsPerSecond = cfg.WoTUnknownRateLimit
+			wotCfg.Policies[wot.TrustLevelUnknown] = policy
+		}
+
+		wot.RegisterHandlers(r, wotStore, wotCfg)
+	}
+
 	// Register NIP-42 authentication handlers
 	authCfg := parseAuthConfig(cfg)
 	auth.RegisterAuthHandlers(r, authCfg)
@@ -68,6 +115,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	// NIP-86 management API endpoint
+	if mgmtStore != nil {
+		mgmtHandler := management.NewHandler(mgmtStore, cfg.AdminPubkeys)
+		mux.Handle("/management", mgmtHandler)
+		log.Println("NIP-86 management API enabled at /management")
+	}
 
 	// Start the relay server
 	addr := fmt.Sprintf(":%d", cfg.Port)

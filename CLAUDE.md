@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 11 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50)
+**Status:** Working - 13 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 77, 86) + WoT Filtering
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 
@@ -75,9 +75,11 @@ docker compose logs -f relay
 │   ├── auth/           # NIP-42 authentication
 │   ├── config/         # Configuration loading
 │   ├── handlers/       # Event validation, NIP-40/22/13
+│   ├── management/     # NIP-86 relay management API
 │   ├── relay/          # Khatru relay setup
 │   ├── search/         # NIP-50 PostgreSQL full-text search
-│   └── storage/        # PostgreSQL backend
+│   ├── storage/        # PostgreSQL backend
+│   └── wot/            # Web of Trust filtering
 ├── tests/              # Test documentation
 ├── Dockerfile          # Multi-stage build
 └── docker-compose.yml  # Local development
@@ -97,12 +99,18 @@ Set via environment variables:
 - `RATE_LIMIT_EVENTS_PER_SEC` - Events per second per IP (default: 10)
 - `RATE_LIMIT_FILTERS_PER_SEC` - Queries per second per IP (default: 20)
 - `RATE_LIMIT_CONNECTIONS_PER_SEC` - Connections per second per IP (default: 5)
+- `ADMIN_PUBKEYS` - NIP-86: Comma-separated pubkeys for management API access
+- `WOT_ENABLED` - Enable Web of Trust filtering (true/1)
+- `WOT_OWNER_PUBKEY` - Relay owner pubkey (trust level 0)
+- `WOT_UNKNOWN_POW_BITS` - PoW bits required for unknown pubkeys (default: 8)
+- `WOT_UNKNOWN_RATE_LIMIT` - Events/sec for unknown pubkeys (default: 5)
 
 ## Monitoring Endpoints
 
 - `/metrics` - Prometheus metrics
 - `/health` - Health check (returns "OK")
 - `/` - NIP-11 relay info (with Accept: application/nostr+json header)
+- `/management` - NIP-86 relay management API (requires NIP-98 auth)
 
 ## Next Steps
 

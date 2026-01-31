@@ -21,7 +21,10 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	relay.Info.Description = "Coldforge Nostr relay - built with khatru"
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
-	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50}
+	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 77, 86}
+
+	// Enable NIP-77 Negentropy sync
+	relay.Negentropy = true
 
 	// Wire up the PostgreSQL backend for event storage
 	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent)
@@ -68,6 +71,7 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	})
 
 	log.Printf("Relay '%s' initialized with PostgreSQL storage", cfg.RelayName)
+	log.Println("NIP-77 negentropy sync enabled")
 	if searchBackend != nil {
 		log.Println("NIP-50 search enabled")
 	}

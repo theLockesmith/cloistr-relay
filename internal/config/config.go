@@ -32,9 +32,18 @@ type Config struct {
 	MinPoWDifficulty int // Minimum PoW difficulty required (0 = disabled, default)
 
 	// Rate Limiting
-	RateLimitEventsPerSec   int // Events per second per IP (0 = disabled)
-	RateLimitFiltersPerSec  int // Filter queries per second per IP (0 = disabled)
+	RateLimitEventsPerSec      int // Events per second per IP (0 = disabled)
+	RateLimitFiltersPerSec     int // Filter queries per second per IP (0 = disabled)
 	RateLimitConnectionsPerSec int // New connections per second per IP (0 = disabled)
+
+	// NIP-86 Management API
+	AdminPubkeys []string // Pubkeys authorized to use management API
+
+	// Web of Trust (WoT) Filtering
+	WoTEnabled           bool   // Enable WoT filtering
+	WoTOwnerPubkey       string // Owner pubkey (trust level 0)
+	WoTUnknownPoWBits    int    // PoW bits required for unknown pubkeys (default 8)
+	WoTUnknownRateLimit  int    // Events/sec for unknown pubkeys (default 5)
 }
 
 // Load reads configuration from environment variables
@@ -149,6 +158,29 @@ func Load() (*Config, error) {
 	if connsPerSec := os.Getenv("RATE_LIMIT_CONNECTIONS_PER_SEC"); connsPerSec != "" {
 		if v, err := strconv.Atoi(connsPerSec); err == nil {
 			cfg.RateLimitConnectionsPerSec = v
+		}
+	}
+
+	// NIP-86 Management API
+	if adminPubkeys := os.Getenv("ADMIN_PUBKEYS"); adminPubkeys != "" {
+		cfg.AdminPubkeys = parseCommaSeparated(adminPubkeys)
+	}
+
+	// Web of Trust (WoT) Filtering
+	if wotEnabled := os.Getenv("WOT_ENABLED"); wotEnabled == "true" || wotEnabled == "1" {
+		cfg.WoTEnabled = true
+	}
+	if wotOwner := os.Getenv("WOT_OWNER_PUBKEY"); wotOwner != "" {
+		cfg.WoTOwnerPubkey = wotOwner
+	}
+	if wotPoW := os.Getenv("WOT_UNKNOWN_POW_BITS"); wotPoW != "" {
+		if v, err := strconv.Atoi(wotPoW); err == nil {
+			cfg.WoTUnknownPoWBits = v
+		}
+	}
+	if wotRate := os.Getenv("WOT_UNKNOWN_RATE_LIMIT"); wotRate != "" {
+		if v, err := strconv.Atoi(wotRate); err == nil {
+			cfg.WoTUnknownRateLimit = v
 		}
 	}
 
