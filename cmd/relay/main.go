@@ -10,6 +10,7 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
 	"gitlab.com/coldforge/coldforge-relay/internal/cache"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
+	"gitlab.com/coldforge/coldforge-relay/internal/giftwrap"
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
 	"gitlab.com/coldforge/coldforge-relay/internal/management"
 	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
@@ -129,6 +130,15 @@ func main() {
 		}
 
 		wot.RegisterHandlers(r, wotStore, wotCfg)
+	}
+
+	// Initialize NIP-59 Gift Wrap (if enabled)
+	if cfg.GiftWrapEnabled {
+		gwCfg := &giftwrap.Config{
+			Enabled:                true,
+			RequireAuthForGiftWrap: cfg.GiftWrapRequireAuth,
+		}
+		giftwrap.RegisterHandlers(r, gwCfg)
 	}
 
 	// Register NIP-42 authentication handlers

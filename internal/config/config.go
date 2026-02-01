@@ -49,6 +49,10 @@ type Config struct {
 
 	// Cache (Redis/Dragonfly)
 	CacheURL string // Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
+
+	// NIP-59 Gift Wrap
+	GiftWrapEnabled     bool // Enable NIP-59 gift wrap support
+	GiftWrapRequireAuth bool // Require auth to query gift wrap events (default true)
 }
 
 // Load reads configuration from environment variables
@@ -200,6 +204,16 @@ func Load() (*Config, error) {
 	// Cache (Redis/Dragonfly)
 	if cacheURL := os.Getenv("CACHE_URL"); cacheURL != "" {
 		cfg.CacheURL = cacheURL
+	}
+
+	// NIP-59 Gift Wrap (enabled by default)
+	cfg.GiftWrapEnabled = true
+	cfg.GiftWrapRequireAuth = true
+	if gwEnabled := os.Getenv("GIFTWRAP_ENABLED"); gwEnabled == "false" || gwEnabled == "0" {
+		cfg.GiftWrapEnabled = false
+	}
+	if gwAuth := os.Getenv("GIFTWRAP_REQUIRE_AUTH"); gwAuth == "false" || gwAuth == "0" {
+		cfg.GiftWrapRequireAuth = false
 	}
 
 	return cfg, nil

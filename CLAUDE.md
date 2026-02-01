@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 13 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 77, 86) + WoT Filtering
+**Status:** Working - 14 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 59, 77, 86) + WoT Filtering
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 
@@ -75,6 +75,7 @@ docker compose logs -f relay
 │   ├── auth/           # NIP-42 authentication
 │   ├── cache/          # Redis/Dragonfly caching
 │   ├── config/         # Configuration loading
+│   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── management/     # NIP-86 relay management API
 │   ├── relay/          # Khatru relay setup
@@ -108,6 +109,8 @@ Set via environment variables:
 - `WOT_USE_PAGERANK` - Use PageRank-based trust (Tier 2, requires cache)
 - `WOT_PAGERANK_INTERVAL` - PageRank recompute interval in minutes (default: 60)
 - `CACHE_URL` - Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
+- `GIFTWRAP_ENABLED` - NIP-59: Enable gift wrap support (default: true)
+- `GIFTWRAP_REQUIRE_AUTH` - NIP-59: Require auth to query gift wraps (default: true)
 
 ## Monitoring Endpoints
 
