@@ -10,14 +10,18 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
 	"gitlab.com/coldforge/coldforge-relay/internal/cache"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
+	"gitlab.com/coldforge/coldforge-relay/internal/eventcache"
 	"gitlab.com/coldforge/coldforge-relay/internal/giftwrap"
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
 	"gitlab.com/coldforge/coldforge-relay/internal/management"
 	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
+	"gitlab.com/coldforge/coldforge-relay/internal/ratelimit"
 	"gitlab.com/coldforge/coldforge-relay/internal/relay"
 	"gitlab.com/coldforge/coldforge-relay/internal/search"
+	"gitlab.com/coldforge/coldforge-relay/internal/session"
 	"gitlab.com/coldforge/coldforge-relay/internal/storage"
 	"gitlab.com/coldforge/coldforge-relay/internal/wot"
+	"gitlab.com/coldforge/coldforge-relay/internal/writeahead"
 	"gitlab.com/coldforge/coldforge-relay/internal/zaps"
 )
 
@@ -70,11 +74,52 @@ func main() {
 		}
 	}
 
-	// Create the relay
-	r := relay.NewRelay(cfg, db, searchBackend)
+	// Initialize event cache (if enabled and cache available)
+	var evtCache *eventcache.Cache
+	if cacheClient != nil && cfg.EventCacheEnabled {
+		evtCache = eventcache.New(cacheClient.RedisClient(), eventcache.DefaultConfig())
+		log.Println("Hot event cache enabled (Dragonfly/Redis)")
+	}
+
+	// Initialize session store (if enabled and cache available)
+	// Session store is available for use by handlers that need cross-replica state
+	var sessionStore *session.Store
+	if cacheClient != nil && cfg.SessionStoreEnabled {
+		sessionStore = session.New(cacheClient.RedisClient(), session.DefaultConfig())
+		log.Println("Distributed session store enabled (Dragonfly/Redis)")
+	}
+	_ = sessionStore // Available for future handler integration
+
+	// Initialize write-ahead log (if enabled and cache available)
+	var wal *writeahead.WAL
+	if cacheClient != nil && cfg.WriteAheadEnabled {
+		wal = writeahead.New(cacheClient.RedisClient(), db, writeahead.DefaultConfig())
+		wal.Start()
+		defer wal.Stop()
+		log.Println("Write-ahead logging enabled (Dragonfly/Redis)")
+	}
+
+	// Create the relay (with optional event cache and write-ahead log)
+	r := relay.NewRelayWithOptions(cfg, db, searchBackend, evtCache, wal)
 
 	// Register custom handlers (validation, filtering)
-	handlers.RegisterHandlers(r, cfg)
+	// Pass whether distributed rate limiting is active so in-memory rate limiting can be skipped
+	useDistributedRateLimit := cacheClient != nil && cfg.RateLimitDistributed
+	handlers.RegisterHandlers(r, cfg, useDistributedRateLimit)
+
+	// Register distributed rate limiting (if enabled)
+	if useDistributedRateLimit {
+		rateLimitCfg := &ratelimit.Config{
+			Enabled:              true,
+			EventsPerSecond:      cfg.RateLimitEventsPerSec,
+			FiltersPerSecond:     cfg.RateLimitFiltersPerSec,
+			ConnectionsPerSecond: cfg.RateLimitConnectionsPerSec,
+			BurstMultiplier:      5,
+			WindowSize:           time.Second,
+		}
+		ratelimit.RegisterHandlers(r, cacheClient.RedisClient(), rateLimitCfg)
+		log.Println("Distributed rate limiting enabled (Dragonfly/Redis)")
+	}
 
 	// Initialize NIP-86 management API
 	var mgmtStore *management.Store

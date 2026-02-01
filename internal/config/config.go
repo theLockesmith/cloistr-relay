@@ -32,9 +32,10 @@ type Config struct {
 	MinPoWDifficulty int // Minimum PoW difficulty required (0 = disabled, default)
 
 	// Rate Limiting
-	RateLimitEventsPerSec      int // Events per second per IP (0 = disabled)
-	RateLimitFiltersPerSec     int // Filter queries per second per IP (0 = disabled)
-	RateLimitConnectionsPerSec int // New connections per second per IP (0 = disabled)
+	RateLimitEventsPerSec      int  // Events per second per IP (0 = disabled)
+	RateLimitFiltersPerSec     int  // Filter queries per second per IP (0 = disabled)
+	RateLimitConnectionsPerSec int  // New connections per second per IP (0 = disabled)
+	RateLimitDistributed       bool // Use distributed rate limiting via Redis/Dragonfly
 
 	// NIP-86 Management API
 	AdminPubkeys []string // Pubkeys authorized to use management API
@@ -57,6 +58,11 @@ type Config struct {
 	// NIP-57 Zaps
 	ZapsEnabled         bool // Enable NIP-57 zap support
 	ZapsValidateReceipt bool // Validate zap receipt structure (default true)
+
+	// Dragonfly-powered features
+	WriteAheadEnabled   bool // Enable write-ahead logging (events to Dragonfly first)
+	EventCacheEnabled   bool // Enable hot event caching in Dragonfly
+	SessionStoreEnabled bool // Enable distributed session state in Dragonfly
 }
 
 // Load reads configuration from environment variables
@@ -174,6 +180,10 @@ func Load() (*Config, error) {
 		}
 	}
 
+	if distributed := os.Getenv("RATE_LIMIT_DISTRIBUTED"); distributed == "true" || distributed == "1" {
+		cfg.RateLimitDistributed = true
+	}
+
 	// NIP-86 Management API
 	if adminPubkeys := os.Getenv("ADMIN_PUBKEYS"); adminPubkeys != "" {
 		cfg.AdminPubkeys = parseCommaSeparated(adminPubkeys)
@@ -228,6 +238,17 @@ func Load() (*Config, error) {
 	}
 	if zapsValidate := os.Getenv("ZAPS_VALIDATE_RECEIPT"); zapsValidate == "false" || zapsValidate == "0" {
 		cfg.ZapsValidateReceipt = false
+	}
+
+	// Dragonfly-powered features (disabled by default, require CACHE_URL)
+	if walEnabled := os.Getenv("WRITE_AHEAD_ENABLED"); walEnabled == "true" || walEnabled == "1" {
+		cfg.WriteAheadEnabled = true
+	}
+	if cacheEnabled := os.Getenv("EVENT_CACHE_ENABLED"); cacheEnabled == "true" || cacheEnabled == "1" {
+		cfg.EventCacheEnabled = true
+	}
+	if sessionEnabled := os.Getenv("SESSION_STORE_ENABLED"); sessionEnabled == "true" || sessionEnabled == "1" {
+		cfg.SessionStoreEnabled = true
 	}
 
 	return cfg, nil

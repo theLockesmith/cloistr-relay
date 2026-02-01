@@ -206,3 +206,12 @@ func (c *Client) IncrBy(ctx context.Context, key string, value int64) (int64, er
 func IsNil(err error) bool {
 	return err == redis.Nil
 }
+
+// RedisClient returns the underlying Redis client for direct access
+// Used by packages that need raw Redis operations (e.g., rate limiting)
+func (c *Client) RedisClient() *redis.Client {
+	if c == nil {
+		return nil
+	}
+	return c.rdb
+}

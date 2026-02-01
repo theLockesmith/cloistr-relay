@@ -15,7 +15,8 @@ import (
 )
 
 // RegisterHandlers registers all event handlers with the relay
-func RegisterHandlers(relay *khatru.Relay, cfg *config.Config) {
+// Set useDistributedRateLimit to true to skip in-memory rate limiting (when using distributed rate limiter)
+func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRateLimit bool) {
 	// Reject events based on custom policies
 	relay.RejectEvent = append(relay.RejectEvent, rejectInvalidEvents)
 
@@ -34,11 +35,11 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config) {
 	// Spam protection: Reject events with embedded base64 media
 	relay.RejectEvent = append(relay.RejectEvent, policies.RejectEventsWithBase64Media)
 
-	// Rate limiting for events (per IP)
-	if cfg.RateLimitEventsPerSec > 0 {
+	// Rate limiting for events (per IP) - skip if using distributed rate limiter
+	if !useDistributedRateLimit && cfg.RateLimitEventsPerSec > 0 {
 		relay.RejectEvent = append(relay.RejectEvent,
 			policies.EventIPRateLimiter(cfg.RateLimitEventsPerSec, time.Second, cfg.RateLimitEventsPerSec*5))
-		log.Printf("Rate limit: %d events/sec per IP", cfg.RateLimitEventsPerSec)
+		log.Printf("Rate limit (in-memory): %d events/sec per IP", cfg.RateLimitEventsPerSec)
 	}
 
 	// Reject filters based on custom policies
@@ -47,18 +48,18 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config) {
 	// Additional filter protection from khatru policies
 	relay.RejectFilter = append(relay.RejectFilter, policies.NoComplexFilters)
 
-	// Rate limiting for filters/queries (per IP)
-	if cfg.RateLimitFiltersPerSec > 0 {
+	// Rate limiting for filters/queries (per IP) - skip if using distributed rate limiter
+	if !useDistributedRateLimit && cfg.RateLimitFiltersPerSec > 0 {
 		relay.RejectFilter = append(relay.RejectFilter,
 			policies.FilterIPRateLimiter(cfg.RateLimitFiltersPerSec, time.Second, cfg.RateLimitFiltersPerSec*5))
-		log.Printf("Rate limit: %d filters/sec per IP", cfg.RateLimitFiltersPerSec)
+		log.Printf("Rate limit (in-memory): %d filters/sec per IP", cfg.RateLimitFiltersPerSec)
 	}
 
-	// Rate limiting for new connections (per IP)
-	if cfg.RateLimitConnectionsPerSec > 0 {
+	// Rate limiting for new connections (per IP) - skip if using distributed rate limiter
+	if !useDistributedRateLimit && cfg.RateLimitConnectionsPerSec > 0 {
 		relay.RejectConnection = append(relay.RejectConnection,
 			policies.ConnectionRateLimiter(cfg.RateLimitConnectionsPerSec, time.Second, cfg.RateLimitConnectionsPerSec*5))
-		log.Printf("Rate limit: %d connections/sec per IP", cfg.RateLimitConnectionsPerSec)
+		log.Printf("Rate limit (in-memory): %d connections/sec per IP", cfg.RateLimitConnectionsPerSec)
 	}
 
 	// Log connections

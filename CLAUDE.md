@@ -73,15 +73,19 @@ docker compose logs -f relay
 ├── cmd/relay/          # Main entry point
 ├── internal/
 │   ├── auth/           # NIP-42 authentication
-│   ├── cache/          # Redis/Dragonfly caching
+│   ├── cache/          # Redis/Dragonfly client wrapper
 │   ├── config/         # Configuration loading
+│   ├── eventcache/     # Hot event caching (Dragonfly)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── management/     # NIP-86 relay management API
+│   ├── ratelimit/      # Distributed rate limiting (Dragonfly)
 │   ├── relay/          # Khatru relay setup
 │   ├── search/         # NIP-50 PostgreSQL full-text search
+│   ├── session/        # Distributed session state (Dragonfly)
 │   ├── storage/        # PostgreSQL backend
 │   ├── wot/            # Web of Trust filtering
+│   ├── writeahead/     # Write-ahead log (Dragonfly)
 │   └── zaps/           # NIP-57 Lightning zaps
 ├── tests/              # Test documentation
 ├── Dockerfile          # Multi-stage build
@@ -110,6 +114,10 @@ Set via environment variables:
 - `WOT_USE_PAGERANK` - Use PageRank-based trust (Tier 2, requires cache)
 - `WOT_PAGERANK_INTERVAL` - PageRank recompute interval in minutes (default: 60)
 - `CACHE_URL` - Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
+- `RATE_LIMIT_DISTRIBUTED` - Use Dragonfly for distributed rate limiting (true/1)
+- `WRITE_AHEAD_ENABLED` - Enable write-ahead log via Dragonfly (true/1)
+- `EVENT_CACHE_ENABLED` - Enable hot event caching via Dragonfly (true/1)
+- `SESSION_STORE_ENABLED` - Enable distributed session state via Dragonfly (true/1)
 - `GIFTWRAP_ENABLED` - NIP-59: Enable gift wrap support (default: true)
 - `GIFTWRAP_REQUIRE_AUTH` - NIP-59: Require auth to query gift wraps (default: true)
 - `ZAPS_ENABLED` - NIP-57: Enable zap receipt support (default: true)
