@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 14 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 59, 77, 86) + WoT Filtering
+**Status:** Working - 15 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 77, 86) + WoT Filtering
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 
@@ -81,7 +81,8 @@ docker compose logs -f relay
 │   ├── relay/          # Khatru relay setup
 │   ├── search/         # NIP-50 PostgreSQL full-text search
 │   ├── storage/        # PostgreSQL backend
-│   └── wot/            # Web of Trust filtering
+│   ├── wot/            # Web of Trust filtering
+│   └── zaps/           # NIP-57 Lightning zaps
 ├── tests/              # Test documentation
 ├── Dockerfile          # Multi-stage build
 └── docker-compose.yml  # Local development
@@ -111,6 +112,8 @@ Set via environment variables:
 - `CACHE_URL` - Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
 - `GIFTWRAP_ENABLED` - NIP-59: Enable gift wrap support (default: true)
 - `GIFTWRAP_REQUIRE_AUTH` - NIP-59: Require auth to query gift wraps (default: true)
+- `ZAPS_ENABLED` - NIP-57: Enable zap receipt support (default: true)
+- `ZAPS_VALIDATE_RECEIPT` - NIP-57: Validate zap receipt structure (default: true)
 
 ## Monitoring Endpoints
 

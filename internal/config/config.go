@@ -53,6 +53,10 @@ type Config struct {
 	// NIP-59 Gift Wrap
 	GiftWrapEnabled     bool // Enable NIP-59 gift wrap support
 	GiftWrapRequireAuth bool // Require auth to query gift wrap events (default true)
+
+	// NIP-57 Zaps
+	ZapsEnabled         bool // Enable NIP-57 zap support
+	ZapsValidateReceipt bool // Validate zap receipt structure (default true)
 }
 
 // Load reads configuration from environment variables
@@ -214,6 +218,16 @@ func Load() (*Config, error) {
 	}
 	if gwAuth := os.Getenv("GIFTWRAP_REQUIRE_AUTH"); gwAuth == "false" || gwAuth == "0" {
 		cfg.GiftWrapRequireAuth = false
+	}
+
+	// NIP-57 Zaps (enabled by default)
+	cfg.ZapsEnabled = true
+	cfg.ZapsValidateReceipt = true
+	if zapsEnabled := os.Getenv("ZAPS_ENABLED"); zapsEnabled == "false" || zapsEnabled == "0" {
+		cfg.ZapsEnabled = false
+	}
+	if zapsValidate := os.Getenv("ZAPS_VALIDATE_RECEIPT"); zapsValidate == "false" || zapsValidate == "0" {
+		cfg.ZapsValidateReceipt = false
 	}
 
 	return cfg, nil

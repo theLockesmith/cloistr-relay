@@ -18,6 +18,7 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/search"
 	"gitlab.com/coldforge/coldforge-relay/internal/storage"
 	"gitlab.com/coldforge/coldforge-relay/internal/wot"
+	"gitlab.com/coldforge/coldforge-relay/internal/zaps"
 )
 
 func main() {
@@ -139,6 +140,16 @@ func main() {
 			RequireAuthForGiftWrap: cfg.GiftWrapRequireAuth,
 		}
 		giftwrap.RegisterHandlers(r, gwCfg)
+	}
+
+	// Initialize NIP-57 Zaps (if enabled)
+	if cfg.ZapsEnabled {
+		zapsCfg := &zaps.Config{
+			Enabled:          true,
+			ValidateReceipts: cfg.ZapsValidateReceipt,
+			RequireBolt11:    false,
+		}
+		zaps.RegisterHandlers(r, zapsCfg)
 	}
 
 	// Register NIP-42 authentication handlers
