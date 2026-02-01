@@ -105,6 +105,8 @@ Set via environment variables:
 - `WOT_OWNER_PUBKEY` - Relay owner pubkey (trust level 0)
 - `WOT_UNKNOWN_POW_BITS` - PoW bits required for unknown pubkeys (default: 8)
 - `WOT_UNKNOWN_RATE_LIMIT` - Events/sec for unknown pubkeys (default: 5)
+- `WOT_USE_PAGERANK` - Use PageRank-based trust (Tier 2, requires cache)
+- `WOT_PAGERANK_INTERVAL` - PageRank recompute interval in minutes (default: 60)
 - `CACHE_URL` - Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
 
 ## Monitoring Endpoints

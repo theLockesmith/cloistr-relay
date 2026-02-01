@@ -106,6 +106,14 @@ func main() {
 			Policies:       wot.DefaultPolicies(),
 			CacheTTL:       5 * time.Minute,
 			MaxFollowDepth: 2,
+			UsePageRank:    cfg.WoTUsePageRank,
+		}
+
+		// Set PageRank interval (default 60 minutes)
+		if cfg.WoTPageRankInterval > 0 {
+			wotCfg.PageRankInterval = time.Duration(cfg.WoTPageRankInterval) * time.Minute
+		} else {
+			wotCfg.PageRankInterval = 60 * time.Minute
 		}
 
 		// Apply custom policy overrides if configured

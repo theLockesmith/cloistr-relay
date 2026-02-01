@@ -3,6 +3,7 @@ package wot
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
@@ -86,9 +87,11 @@ func (tc *TrustCalculator) calculateTrustLevel(pubkey string) TrustLevel {
 
 // Handler holds the WoT configuration and provides relay handlers
 type Handler struct {
-	store      *Store
-	calculator *TrustCalculator
-	policies   map[TrustLevel]TrustPolicy
+	store       *Store
+	calculator  *TrustCalculator
+	pagerank    *PageRankCalculator
+	usePageRank bool
+	policies    map[TrustLevel]TrustPolicy
 }
 
 // NewHandler creates a new WoT handler
@@ -98,17 +101,31 @@ func NewHandler(store *Store, ownerPubkey string, cfg *Config) *Handler {
 		policies = DefaultPolicies()
 	}
 
-	return &Handler{
-		store:      store,
-		calculator: NewTrustCalculator(store, ownerPubkey, cfg.MaxFollowDepth),
-		policies:   policies,
+	h := &Handler{
+		store:       store,
+		calculator:  NewTrustCalculator(store, ownerPubkey, cfg.MaxFollowDepth),
+		usePageRank: cfg.UsePageRank,
+		policies:    policies,
 	}
+
+	// Initialize PageRank if enabled
+	if cfg.UsePageRank {
+		prInterval := cfg.PageRankInterval
+		if prInterval == 0 {
+			prInterval = 1 * time.Hour
+		}
+		prCfg := DefaultPageRankConfig()
+		prCfg.ComputeInterval = prInterval
+		h.pagerank = NewPageRankCalculator(store, ownerPubkey, prCfg)
+	}
+
+	return h
 }
 
 // RejectEventByTrust returns a handler that rejects events based on WoT trust level
 func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool, string) {
 	return func(ctx context.Context, event *nostr.Event) (bool, string) {
-		level := h.calculator.GetTrustLevel(event.PubKey)
+		level := h.getTrustLevel(event.PubKey)
 		policy := h.policies[level]
 
 		// Check PoW requirement
@@ -152,6 +169,14 @@ func (h *Handler) OnEventSaved() func(context.Context, *nostr.Event) {
 
 // GetTrustContext returns the trust level for a pubkey (useful for logging/metrics)
 func (h *Handler) GetTrustContext(pubkey string) TrustLevel {
+	return h.getTrustLevel(pubkey)
+}
+
+// getTrustLevel returns the trust level using either PageRank or simple follow distance
+func (h *Handler) getTrustLevel(pubkey string) TrustLevel {
+	if h.usePageRank && h.pagerank != nil {
+		return h.pagerank.GetTrustLevelFromPageRank(pubkey)
+	}
 	return h.calculator.GetTrustLevel(pubkey)
 }
 
@@ -165,7 +190,13 @@ func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
 	// Add handler to extract follow relationships from kind 3 events
 	relay.OnEventSaved = append(relay.OnEventSaved, handler.OnEventSaved())
 
-	log.Printf("WoT filtering enabled for owner %s", cfg.OwnerPubkey[:8])
+	// Start PageRank background computation if enabled
+	if handler.pagerank != nil {
+		handler.pagerank.Start(context.Background())
+		log.Printf("WoT PageRank enabled (recompute every %v)", cfg.PageRankInterval)
+	}
+
+	log.Printf("WoT filtering enabled for owner %s (mode: %s)", cfg.OwnerPubkey[:8], handler.getMode())
 	log.Printf("WoT policies: owner=%d/s, follow=%d/s, follow2=%d/s, unknown=%d/s (PoW: %d bits)",
 		handler.policies[TrustLevelOwner].EventsPerSecond,
 		handler.policies[TrustLevelFollow].EventsPerSecond,
@@ -175,6 +206,21 @@ func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
 	)
 
 	return handler
+}
+
+// getMode returns a string describing the current WoT mode
+func (h *Handler) getMode() string {
+	if h.usePageRank {
+		return "pagerank"
+	}
+	return "follow-distance"
+}
+
+// Stop stops the PageRank background computation
+func (h *Handler) Stop() {
+	if h.pagerank != nil {
+		h.pagerank.Stop()
+	}
 }
 
 // countLeadingZeroBits counts the number of leading zero bits in a hex string (event ID)

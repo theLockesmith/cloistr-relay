@@ -241,3 +241,30 @@ func (s *Store) GetFollowerCount(pubkey string) (int, error) {
 	).Scan(&count)
 	return count, err
 }
+
+// GetAllFollows returns all follow relationships in the database
+// This is used for PageRank computation
+func (s *Store) GetAllFollows() ([]FollowRelation, error) {
+	rows, err := s.db.Query(`SELECT follower, followee, updated_at FROM wot_follows`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var follows []FollowRelation
+	for rows.Next() {
+		var rel FollowRelation
+		if err := rows.Scan(&rel.Follower, &rel.Followee, &rel.UpdatedAt); err != nil {
+			return nil, err
+		}
+		follows = append(follows, rel)
+	}
+	return follows, rows.Err()
+}
+
+// GetTotalFollowCount returns the total number of follow relationships
+func (s *Store) GetTotalFollowCount() (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM wot_follows`).Scan(&count)
+	return count, err
+}

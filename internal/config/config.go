@@ -44,6 +44,8 @@ type Config struct {
 	WoTOwnerPubkey      string // Owner pubkey (trust level 0)
 	WoTUnknownPoWBits   int    // PoW bits required for unknown pubkeys (default 8)
 	WoTUnknownRateLimit int    // Events/sec for unknown pubkeys (default 5)
+	WoTUsePageRank      bool   // Use PageRank-based trust scoring (Tier 2)
+	WoTPageRankInterval int    // PageRank recompute interval in minutes (default 60)
 
 	// Cache (Redis/Dragonfly)
 	CacheURL string // Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
@@ -184,6 +186,14 @@ func Load() (*Config, error) {
 	if wotRate := os.Getenv("WOT_UNKNOWN_RATE_LIMIT"); wotRate != "" {
 		if v, err := strconv.Atoi(wotRate); err == nil {
 			cfg.WoTUnknownRateLimit = v
+		}
+	}
+	if wotPageRank := os.Getenv("WOT_USE_PAGERANK"); wotPageRank == "true" || wotPageRank == "1" {
+		cfg.WoTUsePageRank = true
+	}
+	if wotPRInterval := os.Getenv("WOT_PAGERANK_INTERVAL"); wotPRInterval != "" {
+		if v, err := strconv.Atoi(wotPRInterval); err == nil {
+			cfg.WoTPageRankInterval = v
 		}
 	}
 
