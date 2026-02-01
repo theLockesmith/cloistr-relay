@@ -40,10 +40,13 @@ type Config struct {
 	AdminPubkeys []string // Pubkeys authorized to use management API
 
 	// Web of Trust (WoT) Filtering
-	WoTEnabled           bool   // Enable WoT filtering
-	WoTOwnerPubkey       string // Owner pubkey (trust level 0)
-	WoTUnknownPoWBits    int    // PoW bits required for unknown pubkeys (default 8)
-	WoTUnknownRateLimit  int    // Events/sec for unknown pubkeys (default 5)
+	WoTEnabled          bool   // Enable WoT filtering
+	WoTOwnerPubkey      string // Owner pubkey (trust level 0)
+	WoTUnknownPoWBits   int    // PoW bits required for unknown pubkeys (default 8)
+	WoTUnknownRateLimit int    // Events/sec for unknown pubkeys (default 5)
+
+	// Cache (Redis/Dragonfly)
+	CacheURL string // Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
 }
 
 // Load reads configuration from environment variables
@@ -182,6 +185,11 @@ func Load() (*Config, error) {
 		if v, err := strconv.Atoi(wotRate); err == nil {
 			cfg.WoTUnknownRateLimit = v
 		}
+	}
+
+	// Cache (Redis/Dragonfly)
+	if cacheURL := os.Getenv("CACHE_URL"); cacheURL != "" {
+		cfg.CacheURL = cacheURL
 	}
 
 	return cfg, nil

@@ -1,25 +1,36 @@
 package wot
 
 import (
+	"context"
 	"database/sql"
 	"sync"
 	"time"
+
+	"gitlab.com/coldforge/coldforge-relay/internal/cache"
 )
 
 // Store handles database operations for WoT follow relationships
 type Store struct {
-	db    *sql.DB
-	cache map[string]CachedTrust
-	mu    sync.RWMutex
-	ttl   time.Duration
+	db       *sql.DB
+	memCache map[string]CachedTrust // In-memory fallback cache
+	extCache *cache.WoTCache        // External cache (Dragonfly/Redis)
+	mu       sync.RWMutex
+	ttl      time.Duration
 }
 
 // NewStore creates a new WoT store
 func NewStore(db *sql.DB, cacheTTL time.Duration) *Store {
 	return &Store{
-		db:    db,
-		cache: make(map[string]CachedTrust),
-		ttl:   cacheTTL,
+		db:       db,
+		memCache: make(map[string]CachedTrust),
+		ttl:      cacheTTL,
+	}
+}
+
+// SetExternalCache sets an external cache (Dragonfly/Redis) for WoT data
+func (s *Store) SetExternalCache(c *cache.Client) {
+	if c != nil {
+		s.extCache = cache.NewWoTCache(c, s.ttl)
 	}
 }
 
@@ -138,10 +149,22 @@ func (s *Store) GetFollowersOf(pubkey string) ([]string, error) {
 
 // GetCachedTrust returns the cached trust level for a pubkey
 func (s *Store) GetCachedTrust(pubkey string) (CachedTrust, bool) {
+	// Try external cache first (Dragonfly/Redis)
+	if s.extCache != nil && s.extCache.IsEnabled() {
+		if level, ok := s.extCache.GetTrustLevel(context.Background(), pubkey); ok {
+			return CachedTrust{
+				Pubkey:     pubkey,
+				TrustLevel: TrustLevel(level),
+				CachedAt:   time.Now(), // Approximate
+			}, true
+		}
+	}
+
+	// Fall back to in-memory cache
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	cached, ok := s.cache[pubkey]
+	cached, ok := s.memCache[pubkey]
 	if !ok {
 		return CachedTrust{}, false
 	}
@@ -156,10 +179,16 @@ func (s *Store) GetCachedTrust(pubkey string) (CachedTrust, bool) {
 
 // SetCachedTrust sets the cached trust level for a pubkey
 func (s *Store) SetCachedTrust(pubkey string, level TrustLevel) {
+	// Store in external cache if available
+	if s.extCache != nil && s.extCache.IsEnabled() {
+		s.extCache.SetTrustLevel(context.Background(), pubkey, int(level))
+	}
+
+	// Also store in memory cache
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.cache[pubkey] = CachedTrust{
+	s.memCache[pubkey] = CachedTrust{
 		Pubkey:     pubkey,
 		TrustLevel: level,
 		CachedAt:   time.Now(),
@@ -168,16 +197,29 @@ func (s *Store) SetCachedTrust(pubkey string, level TrustLevel) {
 
 // invalidateCache removes a pubkey from the cache
 func (s *Store) invalidateCache(pubkey string) {
+	// Invalidate external cache
+	if s.extCache != nil && s.extCache.IsEnabled() {
+		s.extCache.InvalidateTrustLevel(context.Background(), pubkey)
+		s.extCache.InvalidateFollows(context.Background(), pubkey)
+	}
+
+	// Invalidate in-memory cache
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.cache, pubkey)
+	delete(s.memCache, pubkey)
 }
 
 // ClearCache clears the entire trust cache
 func (s *Store) ClearCache() {
+	// Clear external cache
+	if s.extCache != nil && s.extCache.IsEnabled() {
+		s.extCache.ClearWoTCache(context.Background())
+	}
+
+	// Clear in-memory cache
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cache = make(map[string]CachedTrust)
+	s.memCache = make(map[string]CachedTrust)
 }
 
 // GetFollowCount returns the number of follows for a pubkey

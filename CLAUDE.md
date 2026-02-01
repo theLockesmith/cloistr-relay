@@ -73,6 +73,7 @@ docker compose logs -f relay
 ├── cmd/relay/          # Main entry point
 ├── internal/
 │   ├── auth/           # NIP-42 authentication
+│   ├── cache/          # Redis/Dragonfly caching
 │   ├── config/         # Configuration loading
 │   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── management/     # NIP-86 relay management API
@@ -104,6 +105,7 @@ Set via environment variables:
 - `WOT_OWNER_PUBKEY` - Relay owner pubkey (trust level 0)
 - `WOT_UNKNOWN_POW_BITS` - PoW bits required for unknown pubkeys (default: 8)
 - `WOT_UNKNOWN_RATE_LIMIT` - Events/sec for unknown pubkeys (default: 5)
+- `CACHE_URL` - Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
 
 ## Monitoring Endpoints
 

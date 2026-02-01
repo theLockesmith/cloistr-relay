@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
+	"gitlab.com/coldforge/coldforge-relay/internal/cache"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
 	"gitlab.com/coldforge/coldforge-relay/internal/management"
@@ -48,6 +49,25 @@ func main() {
 		searchBackend = nil
 	}
 
+	// Initialize cache (Dragonfly/Redis)
+	var cacheClient *cache.Client
+	if cfg.CacheURL != "" {
+		cacheCfg := &cache.Config{
+			URL:     cfg.CacheURL,
+			Enabled: true,
+			TTL:     5 * time.Minute,
+		}
+		var err error
+		cacheClient, err = cache.New(cacheCfg)
+		if err != nil {
+			log.Printf("Warning: Failed to connect to cache: %v", err)
+			// Continue without cache
+		} else {
+			defer cacheClient.Close()
+			log.Println("Cache connected (Dragonfly/Redis)")
+		}
+	}
+
 	// Create the relay
 	r := relay.NewRelay(cfg, db, searchBackend)
 
@@ -71,6 +91,12 @@ func main() {
 		wotStore := wot.NewStore(rawDB, 5*time.Minute)
 		if err := wotStore.Init(); err != nil {
 			log.Fatalf("Failed to initialize WoT store: %v", err)
+		}
+
+		// Connect external cache to WoT store
+		if cacheClient != nil {
+			wotStore.SetExternalCache(cacheClient)
+			log.Println("WoT using external cache (Dragonfly/Redis)")
 		}
 
 		// Build WoT config
