@@ -7,6 +7,7 @@ import (
 
 	"time"
 
+	"gitlab.com/coldforge/coldforge-relay/internal/admin"
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
 	"gitlab.com/coldforge/coldforge-relay/internal/cache"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
@@ -221,6 +222,10 @@ func main() {
 		mgmtHandler := management.NewHandler(mgmtStore, cfg.AdminPubkeys)
 		mux.Handle("/management", mgmtHandler)
 		log.Println("NIP-86 management API enabled at /management")
+
+		// Admin UI (uses same store and admin pubkeys)
+		adminHandler := admin.NewHandler(mgmtStore, cfg.AdminPubkeys)
+		adminHandler.RegisterRoutes(mux)
 	}
 
 	// Start the relay server

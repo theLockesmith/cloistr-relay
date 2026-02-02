@@ -1,0 +1,132 @@
+{{template "layout.html" .}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">Pubkey Management</h1>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Banned Pubkeys Section -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-lg font-medium text-white flex items-center">
+                    <svg class="h-5 w-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                    </svg>
+                    Banned Pubkeys
+                </h2>
+            </div>
+
+            <!-- Ban Form -->
+            <div class="p-4 border-b border-gray-700 bg-gray-750">
+                <form id="ban-pubkey-form" class="space-y-3">
+                    <div>
+                        <label for="ban-pubkey" class="block text-sm font-medium text-gray-300">Pubkey (hex)</label>
+                        <input type="text" id="ban-pubkey" name="pubkey" required
+                               placeholder="64 character hex pubkey"
+                               class="mt-1 block w-full rounded-md border-gray-600 bg-gray-700 text-white shadow-sm focus:border-nostr-purple focus:ring-nostr-purple sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="ban-reason" class="block text-sm font-medium text-gray-300">Reason (optional)</label>
+                        <input type="text" id="ban-reason" name="reason"
+                               placeholder="Reason for ban"
+                               class="mt-1 block w-full rounded-md border-gray-600 bg-gray-700 text-white shadow-sm focus:border-nostr-purple focus:ring-nostr-purple sm:text-sm p-2">
+                    </div>
+                    <button type="submit"
+                            class="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                        <span class="loading-spinner mr-2">
+                            <svg class="animate-spin h-4 w-4 inline" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </span>
+                        Ban Pubkey
+                    </button>
+                </form>
+            </div>
+
+            <!-- Banned Pubkeys List -->
+            <div id="banned-pubkeys-list"
+                 hx-get="/admin/pubkeys/banned"
+                 hx-trigger="load, refreshBannedPubkeys from:body"
+                 class="divide-y divide-gray-700 max-h-96 overflow-y-auto">
+                <div class="p-4 text-center text-gray-500">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Allowed Pubkeys Section -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-lg font-medium text-white flex items-center">
+                    <svg class="h-5 w-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Allowed Pubkeys (Whitelist)
+                </h2>
+                <p class="mt-1 text-sm text-gray-400">When set, only these pubkeys can publish to the relay.</p>
+            </div>
+
+            <!-- Allow Form -->
+            <div class="p-4 border-b border-gray-700 bg-gray-750">
+                <form id="allow-pubkey-form" class="space-y-3">
+                    <div>
+                        <label for="allow-pubkey" class="block text-sm font-medium text-gray-300">Pubkey (hex)</label>
+                        <input type="text" id="allow-pubkey" name="pubkey" required
+                               placeholder="64 character hex pubkey"
+                               class="mt-1 block w-full rounded-md border-gray-600 bg-gray-700 text-white shadow-sm focus:border-nostr-purple focus:ring-nostr-purple sm:text-sm p-2">
+                    </div>
+                    <button type="submit"
+                            class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                        <span class="loading-spinner mr-2">
+                            <svg class="animate-spin h-4 w-4 inline" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </span>
+                        Allow Pubkey
+                    </button>
+                </form>
+            </div>
+
+            <!-- Allowed Pubkeys List -->
+            <div id="allowed-pubkeys-list"
+                 hx-get="/admin/pubkeys/allowed"
+                 hx-trigger="load, refreshAllowedPubkeys from:body"
+                 class="divide-y divide-gray-700 max-h-96 overflow-y-auto">
+                <div class="p-4 text-center text-gray-500">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Ban pubkey form
+    document.getElementById('ban-pubkey-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            await signedRequest('POST', '/admin/pubkeys/ban', formData);
+            form.reset();
+        } catch (err) {
+            showToast('error', err.message);
+        }
+    });
+
+    // Allow pubkey form
+    document.getElementById('allow-pubkey-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            await signedRequest('POST', '/admin/pubkeys/allow', formData);
+            form.reset();
+        } catch (err) {
+            showToast('error', err.message);
+        }
+    });
+</script>
+{{end}}

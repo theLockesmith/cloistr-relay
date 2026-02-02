@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - Coldforge Relay Admin</title>
+
+    <!-- htmx -->
+    <script src="https://unpkg.com/htmx.org@2.0.0"></script>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        nostr: {
+                            purple: '#8B5CF6',
+                            dark: '#1E1E2E',
+                            darker: '#181825',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- NIP-07 auth helper -->
+    <script src="/admin/static/js/nostr-auth.js"></script>
+
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1E1E2E; }
+        ::-webkit-scrollbar-thumb { background: #4B5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6B7280; }
+
+        /* Toast animations */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        .toast-enter { animation: slideIn 0.3s ease-out; }
+        .toast-exit { animation: slideOut 0.3s ease-in forwards; }
+
+        /* htmx loading indicator */
+        .htmx-request .loading-spinner { display: inline-block; }
+        .loading-spinner { display: none; }
+    </style>
+</head>
+<body class="h-full bg-gray-900 text-gray-100">
+    <div class="min-h-full">
+        <!-- Navigation -->
+        <nav class="bg-gray-800 border-b border-gray-700">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div class="flex h-16 items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <span class="text-xl font-bold text-nostr-purple">Coldforge</span>
+                            <span class="text-gray-400 ml-1">Relay Admin</span>
+                        </div>
+                        <div class="hidden md:block ml-10">
+                            <div class="flex items-baseline space-x-4">
+                                <a href="/admin/"
+                                   class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Dashboard
+                                </a>
+                                <a href="/admin/pubkeys"
+                                   class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Pubkeys
+                                </a>
+                                <a href="/admin/events"
+                                   class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Events
+                                </a>
+                                <a href="/admin/moderation"
+                                   class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Moderation
+                                </a>
+                                <a href="/admin/ips"
+                                   class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    IPs
+                                </a>
+                                <a href="/admin/kinds"
+                                   class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Kinds
+                                </a>
+                                <a href="/admin/settings"
+                                   class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Settings
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hidden md:block">
+                        <div id="auth-status" class="flex items-center">
+                            <span id="auth-pubkey" class="text-sm text-gray-400"></span>
+                            <button id="login-btn" onclick="loginWithNostr()"
+                                    class="ml-4 bg-nostr-purple hover:bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                                Login with Nostr
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mobile menu -->
+            <div class="md:hidden border-t border-gray-700" id="mobile-menu">
+                <div class="space-y-1 px-2 pb-3 pt-2">
+                    <a href="/admin/" class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Dashboard</a>
+                    <a href="/admin/pubkeys" class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Pubkeys</a>
+                    <a href="/admin/events" class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Events</a>
+                    <a href="/admin/moderation" class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Moderation</a>
+                    <a href="/admin/ips" class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">IPs</a>
+                    <a href="/admin/kinds" class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Kinds</a>
+                    <a href="/admin/settings" class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Settings</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main content -->
+        <main class="mx-auto max-w-7xl py-6 px-4 sm:px-6 lg:px-8">
+            {{template "content" .}}
+        </main>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <!-- Global htmx config -->
+    <script>
+        // htmx configuration
+        htmx.config.defaultSwapStyle = 'innerHTML';
+        htmx.config.includeIndicatorStyles = false;
+
+        // Global error handling
+        document.body.addEventListener('htmx:responseError', function(event) {
+            showToast('error', 'Request failed: ' + event.detail.xhr.status);
+        });
+
+        // Handle HX-Trigger headers for refreshing lists
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            const trigger = event.detail.xhr.getResponseHeader('HX-Trigger');
+            if (trigger) {
+                htmx.trigger(document.body, trigger);
+            }
+        });
+    </script>
+</body>
+</html>

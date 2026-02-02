@@ -1,0 +1,91 @@
+{{if not .Items}}
+<div class="p-8 text-center text-gray-500">
+    <svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+    </svg>
+    <p class="mt-2">No events pending moderation</p>
+</div>
+{{else}}
+<div class="divide-y divide-gray-700">
+    {{range .Items}}
+    <div class="p-4 hover:bg-gray-750">
+        <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-2">
+                    <code class="text-sm text-gray-300 bg-gray-700 px-2 py-1 rounded" title="{{.EventID}}">
+                        {{truncateEventID .EventID}}
+                    </code>
+                    <span class="inline-flex items-center rounded-full bg-yellow-600 px-2 py-0.5 text-xs font-medium text-white">
+                        {{.Status}}
+                    </span>
+                </div>
+                <div class="mt-2 text-sm text-gray-400">
+                    Reported: {{formatTime .ReportedAt}}
+                </div>
+                {{if .EventJSON}}
+                <div class="mt-2">
+                    <details class="text-sm">
+                        <summary class="text-gray-400 cursor-pointer hover:text-gray-300">View event content</summary>
+                        <pre class="mt-2 p-2 bg-gray-900 rounded text-xs text-gray-300 overflow-x-auto max-h-48">{{.EventJSON}}</pre>
+                    </details>
+                </div>
+                {{end}}
+            </div>
+            <div class="ml-4 flex-shrink-0 flex space-x-2">
+                <button onclick="approveEvent('{{.EventID}}')"
+                        class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Approve
+                </button>
+                <button onclick="rejectEvent('{{.EventID}}')"
+                        class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Reject
+                </button>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+
+{{if .HasMore}}
+<div class="p-4 border-t border-gray-700">
+    <button hx-get="/admin/moderation/queue?limit={{.Limit}}&offset={{add .Offset .Limit}}"
+            hx-target="#moderation-queue"
+            hx-swap="innerHTML"
+            class="w-full text-center text-sm text-nostr-purple hover:text-purple-400">
+        Load more...
+    </button>
+</div>
+{{end}}
+
+<div class="px-4 py-2 bg-gray-750 text-xs text-gray-500">
+    {{.TotalCount}} event(s) pending moderation
+</div>
+{{end}}
+
+<script>
+    async function approveEvent(eventID) {
+        const formData = new FormData();
+        formData.append('event_id', eventID);
+
+        try {
+            await signedRequest('POST', '/admin/moderation/approve', formData);
+        } catch (err) {
+            showToast('error', err.message);
+        }
+    }
+
+    async function rejectEvent(eventID) {
+        const reason = prompt('Reason for rejection (optional):');
+        if (reason === null) return; // Cancelled
+
+        const formData = new FormData();
+        formData.append('event_id', eventID);
+        formData.append('reason', reason);
+
+        try {
+            await signedRequest('POST', '/admin/moderation/reject', formData);
+        } catch (err) {
+            showToast('error', err.message);
+        }
+    }
+</script>

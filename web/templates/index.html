@@ -1,0 +1,190 @@
+{{template "layout.html" .}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">Dashboard</h1>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- Banned Pubkeys -->
+        <a href="/admin/pubkeys" class="bg-gray-800 overflow-hidden rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-400 truncate">Banned Pubkeys</dt>
+                            <dd class="text-lg font-semibold text-white">{{.Content.BannedPubkeysCount}}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Allowed Pubkeys -->
+        <a href="/admin/pubkeys" class="bg-gray-800 overflow-hidden rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-400 truncate">Allowed Pubkeys</dt>
+                            <dd class="text-lg font-semibold text-white">{{.Content.AllowedPubkeysCount}}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Banned Events -->
+        <a href="/admin/events" class="bg-gray-800 overflow-hidden rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-400 truncate">Banned Events</dt>
+                            <dd class="text-lg font-semibold text-white">{{.Content.BannedEventsCount}}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Blocked IPs -->
+        <a href="/admin/ips" class="bg-gray-800 overflow-hidden rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-400 truncate">Blocked IPs</dt>
+                            <dd class="text-lg font-semibold text-white">{{.Content.BlockedIPsCount}}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Allowed Kinds -->
+        <a href="/admin/kinds" class="bg-gray-800 overflow-hidden rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-400 truncate">Allowed Kinds</dt>
+                            <dd class="text-lg font-semibold text-white">
+                                {{if eq .Content.AllowedKindsCount 0}}
+                                    <span class="text-gray-500">All (no restrictions)</span>
+                                {{else}}
+                                    {{.Content.AllowedKindsCount}}
+                                {{end}}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Moderation Queue -->
+        <a href="/admin/moderation" class="bg-gray-800 overflow-hidden rounded-lg border border-gray-700 hover:border-gray-600 transition-colors {{if .Content.HasModeration}}ring-2 ring-nostr-purple{{end}}">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-nostr-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-400 truncate">Moderation Queue</dt>
+                            <dd class="text-lg font-semibold text-white">
+                                {{.Content.ModerationCount}}
+                                {{if .Content.HasModeration}}
+                                    <span class="ml-2 inline-flex items-center rounded-full bg-nostr-purple px-2 py-0.5 text-xs font-medium text-white">Pending</span>
+                                {{end}}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-medium text-white mb-4">Quick Actions</h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <a href="/admin/pubkeys" class="flex items-center p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
+                <span class="text-red-400 mr-3">+</span>
+                <span class="text-sm text-gray-200">Ban Pubkey</span>
+            </a>
+            <a href="/admin/events" class="flex items-center p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
+                <span class="text-orange-400 mr-3">+</span>
+                <span class="text-sm text-gray-200">Ban Event</span>
+            </a>
+            <a href="/admin/ips" class="flex items-center p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
+                <span class="text-yellow-400 mr-3">+</span>
+                <span class="text-sm text-gray-200">Block IP</span>
+            </a>
+            <a href="/admin/settings" class="flex items-center p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
+                <svg class="h-4 w-4 text-gray-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <span class="text-sm text-gray-200">Relay Settings</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Authentication Notice -->
+    <div id="auth-notice" class="bg-gray-800 rounded-lg border border-yellow-600/50 p-4 hidden">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-yellow-400">Authentication Required</h3>
+                <p class="mt-1 text-sm text-gray-400">
+                    To perform admin actions, you need to sign in with a Nostr browser extension (like nos2x, Alby, or Amber).
+                    Your pubkey must be in the relay's ADMIN_PUBKEYS list.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Check NIP-07 availability on load
+    document.addEventListener('DOMContentLoaded', function() {
+        if (!window.nostr) {
+            document.getElementById('auth-notice').classList.remove('hidden');
+        }
+    });
+</script>
+{{end}}

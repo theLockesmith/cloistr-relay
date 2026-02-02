@@ -1,0 +1,91 @@
+{{template "layout.html" .}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">Event Kind Management</h1>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg border border-gray-700">
+        <div class="p-4 border-b border-gray-700">
+            <h2 class="text-lg font-medium text-white flex items-center">
+                <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                </svg>
+                Allowed Event Kinds
+            </h2>
+            <p class="mt-1 text-sm text-gray-400">
+                When this list is empty, all event kinds are allowed. When kinds are added, only those kinds will be accepted.
+            </p>
+        </div>
+
+        <!-- Allow Form -->
+        <div class="p-4 border-b border-gray-700 bg-gray-750">
+            <form id="allow-kind-form" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="md:col-span-2">
+                    <label for="allow-kind" class="block text-sm font-medium text-gray-300">Kind Number</label>
+                    <input type="number" id="allow-kind" name="kind" required
+                           min="0" max="65535"
+                           placeholder="0-65535"
+                           class="mt-1 block w-full rounded-md border-gray-600 bg-gray-700 text-white shadow-sm focus:border-nostr-purple focus:ring-nostr-purple sm:text-sm p-2">
+                </div>
+                <div class="flex items-end md:col-span-2">
+                    <button type="submit"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                        <span class="loading-spinner mr-2">
+                            <svg class="animate-spin h-4 w-4 inline" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </span>
+                        Allow Kind
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Common Kinds Reference -->
+        <div class="p-4 border-b border-gray-700">
+            <h3 class="text-sm font-medium text-gray-300 mb-2">Common Event Kinds</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <span class="text-gray-400"><strong class="text-gray-300">0</strong> Metadata</span>
+                <span class="text-gray-400"><strong class="text-gray-300">1</strong> Short Note</span>
+                <span class="text-gray-400"><strong class="text-gray-300">3</strong> Contacts</span>
+                <span class="text-gray-400"><strong class="text-gray-300">4</strong> Encrypted DM</span>
+                <span class="text-gray-400"><strong class="text-gray-300">5</strong> Deletion</span>
+                <span class="text-gray-400"><strong class="text-gray-300">6</strong> Repost</span>
+                <span class="text-gray-400"><strong class="text-gray-300">7</strong> Reaction</span>
+                <span class="text-gray-400"><strong class="text-gray-300">14</strong> Direct Message</span>
+                <span class="text-gray-400"><strong class="text-gray-300">1059</strong> Gift Wrap</span>
+                <span class="text-gray-400"><strong class="text-gray-300">9735</strong> Zap Receipt</span>
+                <span class="text-gray-400"><strong class="text-gray-300">10002</strong> Relay List</span>
+                <span class="text-gray-400"><strong class="text-gray-300">30023</strong> Long-form</span>
+            </div>
+        </div>
+
+        <!-- Allowed Kinds List -->
+        <div id="allowed-kinds-list"
+             hx-get="/admin/kinds/allowed"
+             hx-trigger="load, refreshAllowedKinds from:body"
+             class="divide-y divide-gray-700">
+            <div class="p-4 text-center text-gray-500">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Allow kind form
+    document.getElementById('allow-kind-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            await signedRequest('POST', '/admin/kinds/allow', formData);
+            form.reset();
+        } catch (err) {
+            showToast('error', err.message);
+        }
+    });
+</script>
+{{end}}

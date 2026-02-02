@@ -1,0 +1,75 @@
+{{template "layout.html" .}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">Event Management</h1>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg border border-gray-700">
+        <div class="p-4 border-b border-gray-700">
+            <h2 class="text-lg font-medium text-white flex items-center">
+                <svg class="h-5 w-5 text-orange-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                Banned Events
+            </h2>
+            <p class="mt-1 text-sm text-gray-400">Events banned by ID will be rejected by the relay.</p>
+        </div>
+
+        <!-- Ban Form -->
+        <div class="p-4 border-b border-gray-700 bg-gray-750">
+            <form id="ban-event-form" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-1">
+                    <label for="ban-event-id" class="block text-sm font-medium text-gray-300">Event ID (hex)</label>
+                    <input type="text" id="ban-event-id" name="event_id" required
+                           placeholder="64 character hex event ID"
+                           class="mt-1 block w-full rounded-md border-gray-600 bg-gray-700 text-white shadow-sm focus:border-nostr-purple focus:ring-nostr-purple sm:text-sm p-2">
+                </div>
+                <div class="md:col-span-1">
+                    <label for="ban-event-reason" class="block text-sm font-medium text-gray-300">Reason (optional)</label>
+                    <input type="text" id="ban-event-reason" name="reason"
+                           placeholder="Reason for ban"
+                           class="mt-1 block w-full rounded-md border-gray-600 bg-gray-700 text-white shadow-sm focus:border-nostr-purple focus:ring-nostr-purple sm:text-sm p-2">
+                </div>
+                <div class="flex items-end">
+                    <button type="submit"
+                            class="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                        <span class="loading-spinner mr-2">
+                            <svg class="animate-spin h-4 w-4 inline" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </span>
+                        Ban Event
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Banned Events List -->
+        <div id="banned-events-list"
+             hx-get="/admin/events/banned"
+             hx-trigger="load, refreshBannedEvents from:body"
+             class="divide-y divide-gray-700">
+            <div class="p-4 text-center text-gray-500">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Ban event form
+    document.getElementById('ban-event-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            await signedRequest('POST', '/admin/events/ban', formData);
+            form.reset();
+        } catch (err) {
+            showToast('error', err.message);
+        }
+    });
+</script>
+{{end}}

@@ -1,0 +1,29 @@
+<div class="toast-enter p-4 rounded-lg shadow-lg {{if eq .Type "error"}}bg-red-600{{else if eq .Type "success"}}bg-green-600{{else}}bg-gray-600{{end}} text-white text-sm"
+     hx-swap-oob="beforeend:#toast-container">
+    <div class="flex items-center">
+        {{if eq .Type "error"}}
+        <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        {{else if eq .Type "success"}}
+        <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        {{end}}
+        <span>{{.Message}}</span>
+    </div>
+</div>
+<script>
+    // Auto-dismiss toast after 5 seconds
+    setTimeout(function() {
+        const toasts = document.querySelectorAll('#toast-container > div');
+        if (toasts.length > 0) {
+            const toast = toasts[toasts.length - 1];
+            toast.classList.remove('toast-enter');
+            toast.classList.add('toast-exit');
+            setTimeout(function() {
+                toast.remove();
+            }, 300);
+        }
+    }, 5000);
+</script>
