@@ -10,6 +10,7 @@ WORKDIR /build
 COPY go.mod ./
 COPY cmd/ cmd/
 COPY internal/ internal/
+COPY web/ web/
 
 # Download dependencies and generate go.sum
 RUN go mod tidy
@@ -29,6 +30,7 @@ WORKDIR /build
 COPY go.mod ./
 COPY cmd/ cmd/
 COPY internal/ internal/
+COPY web/ web/
 
 # Download dependencies
 RUN go mod tidy
