@@ -107,12 +107,6 @@ func formatTime(t time.Time) string {
 
 // Dashboard handler
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	// Redirect /admin to /admin/
-	if r.URL.Path == "/admin" {
-		http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
-		return
-	}
-
 	// Get counts for dashboard
 	bannedPubkeys, _ := h.store.ListBannedPubkeys(1, 0)
 	allowedPubkeys, _ := h.store.ListAllowedPubkeys(1, 0)

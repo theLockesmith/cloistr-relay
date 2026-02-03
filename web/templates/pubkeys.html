@@ -48,7 +48,7 @@
 
             <!-- Banned Pubkeys List -->
             <div id="banned-pubkeys-list"
-                 hx-get="/admin/pubkeys/banned"
+                 hx-get="/pubkeys/banned"
                  hx-trigger="load, refreshBannedPubkeys from:body"
                  class="divide-y divide-gray-700 max-h-96 overflow-y-auto">
                 <div class="p-4 text-center text-gray-500">Loading...</div>
@@ -91,7 +91,7 @@
 
             <!-- Allowed Pubkeys List -->
             <div id="allowed-pubkeys-list"
-                 hx-get="/admin/pubkeys/allowed"
+                 hx-get="/pubkeys/allowed"
                  hx-trigger="load, refreshAllowedPubkeys from:body"
                  class="divide-y divide-gray-700 max-h-96 overflow-y-auto">
                 <div class="p-4 text-center text-gray-500">Loading...</div>
@@ -108,7 +108,7 @@
         const formData = new FormData(form);
 
         try {
-            await signedRequest('POST', '/admin/pubkeys/ban', formData);
+            await signedRequest('POST', '/pubkeys/ban', formData);
             form.reset();
         } catch (err) {
             showToast('error', err.message);
@@ -122,7 +122,7 @@
         const formData = new FormData(form);
 
         try {
-            await signedRequest('POST', '/admin/pubkeys/allow', formData);
+            await signedRequest('POST', '/pubkeys/allow', formData);
             form.reset();
         } catch (err) {
             showToast('error', err.message);

@@ -49,7 +49,7 @@
 
         <!-- Blocked IPs List -->
         <div id="blocked-ips-list"
-             hx-get="/admin/ips/blocked"
+             hx-get="/ips/blocked"
              hx-trigger="load, refreshBlockedIPs from:body"
              class="divide-y divide-gray-700">
             <div class="p-4 text-center text-gray-500">Loading...</div>
@@ -65,7 +65,7 @@
         const formData = new FormData(form);
 
         try {
-            await signedRequest('POST', '/admin/ips/block', formData);
+            await signedRequest('POST', '/ips/block', formData);
             form.reset();
         } catch (err) {
             showToast('error', err.message);

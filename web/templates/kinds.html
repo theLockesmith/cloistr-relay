@@ -65,7 +65,7 @@
 
         <!-- Allowed Kinds List -->
         <div id="allowed-kinds-list"
-             hx-get="/admin/kinds/allowed"
+             hx-get="/kinds/allowed"
              hx-trigger="load, refreshAllowedKinds from:body"
              class="divide-y divide-gray-700">
             <div class="p-4 text-center text-gray-500">Loading...</div>
@@ -81,7 +81,7 @@
         const formData = new FormData(form);
 
         try {
-            await signedRequest('POST', '/admin/kinds/allow', formData);
+            await signedRequest('POST', '/kinds/allow', formData);
             form.reset();
         } catch (err) {
             showToast('error', err.message);

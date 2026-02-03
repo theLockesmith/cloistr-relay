@@ -41,7 +41,7 @@
 
 {{if .HasMore}}
 <div class="p-4 border-t border-gray-700">
-    <button hx-get="/admin/events/banned?limit={{.Limit}}&offset={{add .Offset .Limit}}"
+    <button hx-get="/events/banned?limit={{.Limit}}&offset={{add .Offset .Limit}}"
             hx-target="#banned-events-list"
             hx-swap="innerHTML"
             class="w-full text-center text-sm text-nostr-purple hover:text-purple-400">
@@ -63,7 +63,7 @@
         formData.append('event_id', eventID);
 
         try {
-            await signedRequest('POST', '/admin/events/unban', formData);
+            await signedRequest('POST', '/events/unban', formData);
         } catch (err) {
             showToast('error', err.message);
         }

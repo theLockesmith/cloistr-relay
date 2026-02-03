@@ -41,7 +41,7 @@
 
 {{if .HasMore}}
 <div class="p-4 border-t border-gray-700">
-    <button hx-get="/admin/pubkeys/banned?limit={{.Limit}}&offset={{add .Offset .Limit}}"
+    <button hx-get="/pubkeys/banned?limit={{.Limit}}&offset={{add .Offset .Limit}}"
             hx-target="#banned-pubkeys-list"
             hx-swap="innerHTML"
             class="w-full text-center text-sm text-nostr-purple hover:text-purple-400">
@@ -63,7 +63,7 @@
         formData.append('pubkey', pubkey);
 
         try {
-            await signedRequest('POST', '/admin/pubkeys/unban', formData);
+            await signedRequest('POST', '/pubkeys/unban', formData);
         } catch (err) {
             showToast('error', err.message);
         }

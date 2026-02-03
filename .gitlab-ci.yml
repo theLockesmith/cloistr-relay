@@ -6,8 +6,9 @@ stages:
 variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: "/certs"
-  # Image name for the container registry (registry.coldforge.xyz)
+  # Image names for the container registry (registry.coldforge.xyz)
   IMAGE_NAME: registry.coldforge.xyz/coldforge/coldforge-relay
+  ADMIN_IMAGE_NAME: registry.coldforge.xyz/coldforge/coldforge-relay-admin
   # Kubernetes namespace
   K8S_NAMESPACE: coldforge-relay
 
@@ -75,6 +76,26 @@ build:image:
       --destination ${IMAGE_NAME}:latest
       --build-arg CI_COMMIT_SHA=${CI_COMMIT_SHA}
       --build-arg CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME}
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Build and push admin UI Docker image
+build:admin-image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"registry.coldforge.xyz\":{\"auth\":\"$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context ${CI_PROJECT_DIR}
+      --dockerfile ${CI_PROJECT_DIR}/Dockerfile.admin
+      --destination ${ADMIN_IMAGE_NAME}:${CI_COMMIT_SHA}
+      --destination ${ADMIN_IMAGE_NAME}:${CI_COMMIT_REF_SLUG}
+      --destination ${ADMIN_IMAGE_NAME}:latest
   rules:
     - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG

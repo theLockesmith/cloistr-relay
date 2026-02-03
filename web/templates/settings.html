@@ -92,7 +92,7 @@
         formData.append('value', value);
 
         try {
-            await signedRequest('POST', '/admin/settings/update', formData);
+            await signedRequest('POST', '/settings/update', formData);
         } catch (err) {
             showToast('error', err.message);
         }

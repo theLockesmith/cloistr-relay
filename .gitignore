@@ -2,6 +2,7 @@
 
 # Go binary and build artifacts
 /relay
+/admin
 *.o
 *.a
 *.so

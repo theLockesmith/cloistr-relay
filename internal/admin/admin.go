@@ -45,51 +45,50 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	if err != nil {
 		log.Printf("Warning: failed to create static sub-filesystem: %v", err)
 	} else {
-		mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", http.FileServer(http.FS(staticFS))))
+		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	}
 
 	// Dashboard
-	mux.HandleFunc("/admin/", h.handleDashboard)
-	mux.HandleFunc("/admin", h.handleDashboard)
+	mux.HandleFunc("/", h.handleDashboard)
 
 	// Pubkeys
-	mux.HandleFunc("/admin/pubkeys", h.handlePubkeysPage)
-	mux.HandleFunc("/admin/pubkeys/banned", h.handleListBannedPubkeys)
-	mux.HandleFunc("/admin/pubkeys/allowed", h.handleListAllowedPubkeys)
-	mux.HandleFunc("/admin/pubkeys/ban", h.requireAuth(h.handleBanPubkey))
-	mux.HandleFunc("/admin/pubkeys/unban", h.requireAuth(h.handleUnbanPubkey))
-	mux.HandleFunc("/admin/pubkeys/allow", h.requireAuth(h.handleAllowPubkey))
-	mux.HandleFunc("/admin/pubkeys/disallow", h.requireAuth(h.handleDisallowPubkey))
+	mux.HandleFunc("/pubkeys", h.handlePubkeysPage)
+	mux.HandleFunc("/pubkeys/banned", h.handleListBannedPubkeys)
+	mux.HandleFunc("/pubkeys/allowed", h.handleListAllowedPubkeys)
+	mux.HandleFunc("/pubkeys/ban", h.requireAuth(h.handleBanPubkey))
+	mux.HandleFunc("/pubkeys/unban", h.requireAuth(h.handleUnbanPubkey))
+	mux.HandleFunc("/pubkeys/allow", h.requireAuth(h.handleAllowPubkey))
+	mux.HandleFunc("/pubkeys/disallow", h.requireAuth(h.handleDisallowPubkey))
 
 	// Events
-	mux.HandleFunc("/admin/events", h.handleEventsPage)
-	mux.HandleFunc("/admin/events/banned", h.handleListBannedEvents)
-	mux.HandleFunc("/admin/events/ban", h.requireAuth(h.handleBanEvent))
-	mux.HandleFunc("/admin/events/unban", h.requireAuth(h.handleUnbanEvent))
+	mux.HandleFunc("/events", h.handleEventsPage)
+	mux.HandleFunc("/events/banned", h.handleListBannedEvents)
+	mux.HandleFunc("/events/ban", h.requireAuth(h.handleBanEvent))
+	mux.HandleFunc("/events/unban", h.requireAuth(h.handleUnbanEvent))
 
 	// Moderation
-	mux.HandleFunc("/admin/moderation", h.handleModerationPage)
-	mux.HandleFunc("/admin/moderation/queue", h.handleListModerationQueue)
-	mux.HandleFunc("/admin/moderation/approve", h.requireAuth(h.handleApproveEvent))
-	mux.HandleFunc("/admin/moderation/reject", h.requireAuth(h.handleRejectEvent))
+	mux.HandleFunc("/moderation", h.handleModerationPage)
+	mux.HandleFunc("/moderation/queue", h.handleListModerationQueue)
+	mux.HandleFunc("/moderation/approve", h.requireAuth(h.handleApproveEvent))
+	mux.HandleFunc("/moderation/reject", h.requireAuth(h.handleRejectEvent))
 
 	// IPs
-	mux.HandleFunc("/admin/ips", h.handleIPsPage)
-	mux.HandleFunc("/admin/ips/blocked", h.handleListBlockedIPs)
-	mux.HandleFunc("/admin/ips/block", h.requireAuth(h.handleBlockIP))
-	mux.HandleFunc("/admin/ips/unblock", h.requireAuth(h.handleUnblockIP))
+	mux.HandleFunc("/ips", h.handleIPsPage)
+	mux.HandleFunc("/ips/blocked", h.handleListBlockedIPs)
+	mux.HandleFunc("/ips/block", h.requireAuth(h.handleBlockIP))
+	mux.HandleFunc("/ips/unblock", h.requireAuth(h.handleUnblockIP))
 
 	// Kinds
-	mux.HandleFunc("/admin/kinds", h.handleKindsPage)
-	mux.HandleFunc("/admin/kinds/allowed", h.handleListAllowedKinds)
-	mux.HandleFunc("/admin/kinds/allow", h.requireAuth(h.handleAllowKind))
-	mux.HandleFunc("/admin/kinds/disallow", h.requireAuth(h.handleDisallowKind))
+	mux.HandleFunc("/kinds", h.handleKindsPage)
+	mux.HandleFunc("/kinds/allowed", h.handleListAllowedKinds)
+	mux.HandleFunc("/kinds/allow", h.requireAuth(h.handleAllowKind))
+	mux.HandleFunc("/kinds/disallow", h.requireAuth(h.handleDisallowKind))
 
 	// Settings
-	mux.HandleFunc("/admin/settings", h.handleSettingsPage)
-	mux.HandleFunc("/admin/settings/update", h.requireAuth(h.handleUpdateSettings))
+	mux.HandleFunc("/settings", h.handleSettingsPage)
+	mux.HandleFunc("/settings/update", h.requireAuth(h.handleUpdateSettings))
 
-	log.Println("Admin UI enabled at /admin/")
+	log.Println("Admin UI enabled at /")
 }
 
 // requireAuth wraps a handler to require NIP-98 authentication

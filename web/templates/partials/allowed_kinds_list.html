@@ -32,7 +32,7 @@
         formData.append('kind', kind);
 
         try {
-            await signedRequest('POST', '/admin/kinds/disallow', formData);
+            await signedRequest('POST', '/kinds/disallow', formData);
         } catch (err) {
             showToast('error', err.message);
         }

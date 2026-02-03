@@ -28,7 +28,7 @@
     </script>
 
     <!-- NIP-07 auth helper -->
-    <script src="/admin/static/js/nostr-auth.js"></script>
+    <script src="/static/js/nostr-auth.js"></script>
 
     <style>
         /* Custom scrollbar */
@@ -67,31 +67,31 @@
                         </div>
                         <div class="hidden md:block ml-10">
                             <div class="flex items-baseline space-x-4">
-                                <a href="/admin/"
+                                <a href="/"
                                    class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Dashboard
                                 </a>
-                                <a href="/admin/pubkeys"
+                                <a href="/pubkeys"
                                    class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Pubkeys
                                 </a>
-                                <a href="/admin/events"
+                                <a href="/events"
                                    class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Events
                                 </a>
-                                <a href="/admin/moderation"
+                                <a href="/moderation"
                                    class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Moderation
                                 </a>
-                                <a href="/admin/ips"
+                                <a href="/ips"
                                    class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     IPs
                                 </a>
-                                <a href="/admin/kinds"
+                                <a href="/kinds"
                                    class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Kinds
                                 </a>
-                                <a href="/admin/settings"
+                                <a href="/settings"
                                    class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Settings
                                 </a>
@@ -113,13 +113,13 @@
             <!-- Mobile menu -->
             <div class="md:hidden border-t border-gray-700" id="mobile-menu">
                 <div class="space-y-1 px-2 pb-3 pt-2">
-                    <a href="/admin/" class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Dashboard</a>
-                    <a href="/admin/pubkeys" class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Pubkeys</a>
-                    <a href="/admin/events" class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Events</a>
-                    <a href="/admin/moderation" class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Moderation</a>
-                    <a href="/admin/ips" class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">IPs</a>
-                    <a href="/admin/kinds" class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Kinds</a>
-                    <a href="/admin/settings" class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Settings</a>
+                    <a href="/" class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Dashboard</a>
+                    <a href="/pubkeys" class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Pubkeys</a>
+                    <a href="/events" class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Events</a>
+                    <a href="/moderation" class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Moderation</a>
+                    <a href="/ips" class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">IPs</a>
+                    <a href="/kinds" class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Kinds</a>
+                    <a href="/settings" class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Settings</a>
                 </div>
             </div>
         </nav>
