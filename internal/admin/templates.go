@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"gitlab.com/coldforge/coldforge-relay/web"
@@ -21,7 +23,9 @@ type PageData struct {
 	AdminPubkey string
 }
 
-// loadTemplates loads and parses all templates
+// loadTemplates loads and parses templates using per-page cloning.
+// Each page gets its own template set so that {{define "content"}} blocks
+// don't override each other across different page templates.
 func (h *Handler) loadTemplates() {
 	funcMap := template.FuncMap{
 		"formatTime":      formatTime,
@@ -32,11 +36,30 @@ func (h *Handler) loadTemplates() {
 		"sub":             func(a, b int) int { return a - b },
 	}
 
-	tmpl, err := template.New("").Funcs(funcMap).ParseFS(web.Templates, "templates/*.html", "templates/partials/*.html")
+	// Parse shared templates (layout + partials) as a base
+	base, err := template.New("").Funcs(funcMap).ParseFS(web.Templates, "templates/layout.html", "templates/partials/*.html")
 	if err != nil {
-		log.Fatalf("Failed to parse templates: %v", err)
+		log.Fatalf("Failed to parse base templates: %v", err)
 	}
-	h.templates = tmpl
+
+	// Build per-page template sets by cloning the base and adding each page
+	h.pages = make(map[string]*template.Template)
+	pageFiles, err := fs.Glob(web.Templates, "templates/*.html")
+	if err != nil {
+		log.Fatalf("Failed to glob page templates: %v", err)
+	}
+
+	for _, f := range pageFiles {
+		name := filepath.Base(f)
+		if name == "layout.html" {
+			continue
+		}
+		clone, err := template.Must(base.Clone()).ParseFS(web.Templates, f)
+		if err != nil {
+			log.Fatalf("Failed to parse page template %s: %v", name, err)
+		}
+		h.pages[name] = clone
+	}
 }
 
 // renderPage renders a full page with layout
@@ -46,8 +69,15 @@ func (h *Handler) renderPage(w http.ResponseWriter, r *http.Request, name string
 		data.AdminPubkey = formatPubkey(pubkey)
 	}
 
+	tmpl, ok := h.pages[name]
+	if !ok {
+		log.Printf("Template not found: %s", name)
+		http.Error(w, "Template not found", http.StatusInternalServerError)
+		return
+	}
+
 	var buf bytes.Buffer
-	if err := h.templates.ExecuteTemplate(&buf, name, data); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, name, data); err != nil {
 		log.Printf("Template error (%s): %v", name, err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
@@ -59,15 +89,20 @@ func (h *Handler) renderPage(w http.ResponseWriter, r *http.Request, name string
 
 // renderPartial renders a partial template (for htmx responses)
 func (h *Handler) renderPartial(w http.ResponseWriter, name string, data interface{}) {
-	var buf bytes.Buffer
-	if err := h.templates.ExecuteTemplate(&buf, name, data); err != nil {
-		log.Printf("Template error (%s): %v", name, err)
-		http.Error(w, "Template error", http.StatusInternalServerError)
+	// Partials exist in all page template sets, use any one
+	for _, tmpl := range h.pages {
+		var buf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+			log.Printf("Template error (%s): %v", name, err)
+			http.Error(w, "Template error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		buf.WriteTo(w)
 		return
 	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
+	log.Printf("No template sets available for partial: %s", name)
+	http.Error(w, "Template error", http.StatusInternalServerError)
 }
 
 // renderError renders an error response (partial for htmx, full page otherwise)

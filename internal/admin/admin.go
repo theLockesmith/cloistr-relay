@@ -25,7 +25,7 @@ const (
 type Handler struct {
 	store        *management.Store
 	adminPubkeys []string
-	templates    *template.Template
+	pages        map[string]*template.Template
 }
 
 // NewHandler creates a new admin UI handler
