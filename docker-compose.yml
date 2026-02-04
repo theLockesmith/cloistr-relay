@@ -16,6 +16,19 @@ services:
       timeout: 5s
       retries: 5
 
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
+    container_name: coldforge-relay-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - dragonfly_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   relay:
     build:
       context: .
@@ -23,6 +36,8 @@ services:
     container_name: coldforge-relay
     depends_on:
       postgres:
+        condition: service_healthy
+      dragonfly:
         condition: service_healthy
     environment:
       RELAY_PORT: 3334
@@ -33,8 +48,13 @@ services:
       DB_NAME: nostr
       DB_USER: postgres
       DB_PASSWORD: postgres
-      AUTH_POLICY: "auth-write"  # Require authentication for writing events
-      # MIN_POW_DIFFICULTY: "0"  # NIP-13: optional PoW requirement (0 = disabled)
+      AUTH_POLICY: "auth-write"
+      # Dragonfly cache
+      CACHE_URL: "redis://dragonfly:6379"
+      EVENT_CACHE_ENABLED: "true"
+      WRITE_AHEAD_ENABLED: "true"
+      SESSION_STORE_ENABLED: "true"
+      RATE_LIMIT_DISTRIBUTED: "true"
     ports:
       - "3334:3334"
     healthcheck:
@@ -46,4 +66,6 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  dragonfly_data:
     driver: local
