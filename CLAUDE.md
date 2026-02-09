@@ -2,9 +2,10 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 15 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 77, 86) + WoT Filtering
+**Status:** Working - 17 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 70, 77, 86, 94) + WoT Filtering + Admin UI
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
+**Admin UI:** relay-admin.cloistr.xyz (LAN-only, standalone deployment)
 
 ## Documentation
 
@@ -70,15 +71,19 @@ docker compose logs -f relay
 ## Project Structure
 
 ```
-├── cmd/relay/          # Main entry point
+├── cmd/
+│   ├── relay/          # Main relay entry point
+│   └── admin/          # Standalone admin UI entry point
 ├── internal/
+│   ├── admin/          # Admin UI handlers (htmx + NIP-98 auth)
 │   ├── auth/           # NIP-42 authentication
 │   ├── cache/          # Redis/Dragonfly client wrapper
 │   ├── config/         # Configuration loading
 │   ├── eventcache/     # Hot event caching (Dragonfly)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── handlers/       # Event validation, NIP-40/22/13
-│   ├── management/     # NIP-86 relay management API
+│   ├── management/     # NIP-86 relay management API + store
+│   ├── protected/      # NIP-70 protected events handling
 │   ├── ratelimit/      # Distributed rate limiting (Dragonfly)
 │   ├── relay/          # Khatru relay setup
 │   ├── search/         # NIP-50 PostgreSQL full-text search
@@ -87,8 +92,12 @@ docker compose logs -f relay
 │   ├── wot/            # Web of Trust filtering
 │   ├── writeahead/     # Write-ahead log (Dragonfly)
 │   └── zaps/           # NIP-57 Lightning zaps
+├── web/
+│   ├── templates/      # HTML templates (layout + 8 pages + 7 partials)
+│   └── static/js/      # NIP-07/NIP-98 auth helper
 ├── tests/              # Test documentation
-├── Dockerfile          # Multi-stage build
+├── Dockerfile          # Relay multi-stage build
+├── Dockerfile.admin    # Admin UI multi-stage build
 └── docker-compose.yml  # Local development
 ```
 
@@ -122,13 +131,26 @@ Set via environment variables:
 - `GIFTWRAP_REQUIRE_AUTH` - NIP-59: Require auth to query gift wraps (default: true)
 - `ZAPS_ENABLED` - NIP-57: Enable zap receipt support (default: true)
 - `ZAPS_VALIDATE_RECEIPT` - NIP-57: Validate zap receipt structure (default: true)
+- `PROTECTED_EVENTS_ENABLED` - NIP-70: Enable protected event handling (default: true)
+- `PROTECTED_EVENTS_ALLOW` - NIP-70: Allow protected events from authenticated authors (default: true)
 
-## Monitoring Endpoints
+## Monitoring Endpoints (Relay)
 
 - `/metrics` - Prometheus metrics
 - `/health` - Health check (returns "OK")
 - `/` - NIP-11 relay info (with Accept: application/nostr+json header)
 - `/management` - NIP-86 relay management API (requires NIP-98 auth)
+
+## Admin UI
+
+Standalone htmx-based web interface for NIP-86 relay management.
+
+- **Deployed as:** separate container (`coldforge-relay-admin`)
+- **URL:** `https://relay-admin.cloistr.xyz/` (LAN-only via nginx)
+- **Auth:** NIP-07 browser extension + NIP-98 HTTP signatures
+- **Features:** Pubkey ban/allow, event ban, moderation queue, IP blocking, kind allowlist, relay settings
+- **ArgoCD app:** `relay-admin-production` in coldforge-config
+- **Config repo:** `coldforge-config/base/relay-admin/` + `overlays/production/relay-admin/`
 
 ## Next Steps
 

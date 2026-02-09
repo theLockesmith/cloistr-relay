@@ -15,6 +15,7 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
 	"gitlab.com/coldforge/coldforge-relay/internal/management"
 	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
+	"gitlab.com/coldforge/coldforge-relay/internal/protected"
 	"gitlab.com/coldforge/coldforge-relay/internal/ratelimit"
 	"gitlab.com/coldforge/coldforge-relay/internal/relay"
 	"gitlab.com/coldforge/coldforge-relay/internal/search"
@@ -195,6 +196,15 @@ func main() {
 			RequireBolt11:    false,
 		}
 		zaps.RegisterHandlers(r, zapsCfg)
+	}
+
+	// Initialize NIP-70 Protected Events (if enabled)
+	if cfg.ProtectedEventsEnabled {
+		protectedCfg := &protected.Config{
+			Enabled:              true,
+			AllowProtectedEvents: cfg.ProtectedEventsAllow,
+		}
+		protected.RegisterHandlers(r, protectedCfg)
 	}
 
 	// Register NIP-42 authentication handlers

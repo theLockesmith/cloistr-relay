@@ -63,6 +63,10 @@ type Config struct {
 	WriteAheadEnabled   bool // Enable write-ahead logging (events to Dragonfly first)
 	EventCacheEnabled   bool // Enable hot event caching in Dragonfly
 	SessionStoreEnabled bool // Enable distributed session state in Dragonfly
+
+	// NIP-70 Protected Events
+	ProtectedEventsEnabled bool // Enable NIP-70 protected event handling (default true)
+	ProtectedEventsAllow   bool // Allow protected events from authenticated authors (default true)
 }
 
 // Load reads configuration from environment variables
@@ -249,6 +253,16 @@ func Load() (*Config, error) {
 	}
 	if sessionEnabled := os.Getenv("SESSION_STORE_ENABLED"); sessionEnabled == "true" || sessionEnabled == "1" {
 		cfg.SessionStoreEnabled = true
+	}
+
+	// NIP-70 Protected Events (enabled by default)
+	cfg.ProtectedEventsEnabled = true
+	cfg.ProtectedEventsAllow = true
+	if protectedEnabled := os.Getenv("PROTECTED_EVENTS_ENABLED"); protectedEnabled == "false" || protectedEnabled == "0" {
+		cfg.ProtectedEventsEnabled = false
+	}
+	if protectedAllow := os.Getenv("PROTECTED_EVENTS_ALLOW"); protectedAllow == "false" || protectedAllow == "0" {
+		cfg.ProtectedEventsAllow = false
 	}
 
 	return cfg, nil
