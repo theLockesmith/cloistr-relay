@@ -1,7 +1,7 @@
 stages:
   - test
   - build
-  - deploy
+  # Deploy handled by ArgoCD GitOps (coldforge-config repo)
 
 variables:
   DOCKER_DRIVER: overlay2
@@ -9,8 +9,6 @@ variables:
   # Image names for the container registry (registry.coldforge.xyz)
   IMAGE_NAME: registry.coldforge.xyz/coldforge/coldforge-relay
   ADMIN_IMAGE_NAME: registry.coldforge.xyz/coldforge/coldforge-relay/admin
-  # Kubernetes namespace
-  K8S_NAMESPACE: coldforge-relay
 
 # Cache Go modules across jobs
 .go-cache: &go-cache
@@ -117,91 +115,3 @@ build:release:
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
-# =============================================================================
-# DEPLOY STAGE
-# =============================================================================
-
-# Initial deployment (creates all resources)
-deploy:initial:
-  stage: deploy
-  image:
-    name: bitnami/kubectl:latest
-    entrypoint: [""]
-  variables:
-    KUBECONFIG: /tmp/kubeconfig
-  before_script:
-    - echo "${KUBE_CONFIG}" | base64 -d > ${KUBECONFIG}
-    - kubectl config get-contexts
-  script:
-    - echo "Initial deployment of coldforge-relay..."
-    # Create namespace if it doesn't exist
-    - kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-    # Apply all manifests (requires manifests to be in repo or use Helm/Kustomize)
-    - |
-      echo "Note: For initial deployment, run Atlas playbook manually:"
-      echo "ansible-playbook playbooks/kube.yml -e 'manifest_names=[\"coldforge-relay\"]'"
-    # Verify namespace exists
-    - kubectl get namespace ${K8S_NAMESPACE}
-  environment:
-    name: production
-    url: https://relay.coldforge.xyz
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-      when: manual
-  needs:
-    - build:image
-
-# Deploy to Kubernetes (update existing deployment)
-deploy:production:
-  stage: deploy
-  image:
-    name: bitnami/kubectl:latest
-    entrypoint: [""]
-  variables:
-    KUBECONFIG: /tmp/kubeconfig
-  before_script:
-    # Set up kubeconfig from CI/CD variable
-    - echo "${KUBE_CONFIG}" | base64 -d > ${KUBECONFIG}
-    - kubectl config get-contexts
-  script:
-    - echo "Deploying coldforge-relay to ${K8S_NAMESPACE}..."
-    # Update the deployment image
-    - kubectl set image deployment/coldforge-relay
-      relay=${IMAGE_NAME}:${CI_COMMIT_SHA}
-      -n ${K8S_NAMESPACE}
-      --record
-    # Wait for rollout
-    - kubectl rollout status deployment/coldforge-relay -n ${K8S_NAMESPACE} --timeout=300s
-    # Show deployment status
-    - kubectl get pods -n ${K8S_NAMESPACE} -l app.kubernetes.io/name=coldforge-relay
-  environment:
-    name: production
-    url: https://relay.coldforge.xyz
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-      when: manual
-  needs:
-    - build:image
-
-# Rollback deployment (manual)
-rollback:production:
-  stage: deploy
-  image:
-    name: bitnami/kubectl:latest
-    entrypoint: [""]
-  variables:
-    KUBECONFIG: /tmp/kubeconfig
-  before_script:
-    - echo "${KUBE_CONFIG}" | base64 -d > ${KUBECONFIG}
-  script:
-    - echo "Rolling back coldforge-relay deployment..."
-    - kubectl rollout undo deployment/coldforge-relay -n ${K8S_NAMESPACE}
-    - kubectl rollout status deployment/coldforge-relay -n ${K8S_NAMESPACE} --timeout=300s
-  environment:
-    name: production
-    action: stop
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-      when: manual
-  needs:
-    - deploy:production
