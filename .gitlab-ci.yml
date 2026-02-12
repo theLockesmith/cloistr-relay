@@ -1,16 +1,7 @@
 stages:
   - test
   - build
-  # Deploy handled by ArgoCD GitOps (coldforge-config repo)
 
-variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: "/certs"
-  # Image names for the container registry (registry.coldforge.xyz)
-  IMAGE_NAME: registry.coldforge.xyz/coldforge/coldforge-relay
-  ADMIN_IMAGE_NAME: registry.coldforge.xyz/coldforge/coldforge-relay/admin
-
-# Cache Go modules across jobs
 .go-cache: &go-cache
   cache:
     key: ${CI_COMMIT_REF_SLUG}
@@ -18,11 +9,6 @@ variables:
       - .go/pkg/mod/
     policy: pull-push
 
-# =============================================================================
-# TEST STAGE
-# =============================================================================
-
-# Run unit tests
 test:unit:
   stage: test
   image: golang:1.24-alpine
@@ -38,7 +24,6 @@ test:unit:
     - go test -v -race -cover ./internal/...
   coverage: '/coverage: \d+\.\d+% of statements/'
 
-# Run linter (allow failure for now)
 lint:
   stage: test
   image: golang:1.24-alpine
@@ -53,65 +38,10 @@ lint:
     - ${GOPATH}/bin/golangci-lint run --timeout 5m ./...
   allow_failure: true
 
-# =============================================================================
-# BUILD STAGE
-# =============================================================================
-
-# Build and push Docker image
-build:image:
+build:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
   script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"registry.coldforge.xyz\":{\"auth\":\"$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context ${CI_PROJECT_DIR}
-      --dockerfile ${CI_PROJECT_DIR}/Dockerfile
-      --destination ${IMAGE_NAME}:${CI_COMMIT_SHA}
-      --destination ${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}
-      --destination ${IMAGE_NAME}:latest
-      --build-arg CI_COMMIT_SHA=${CI_COMMIT_SHA}
-      --build-arg CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME}
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_TAG
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-
-# Build and push admin UI Docker image
-build:admin-image:
-  stage: build
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
-  script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"registry.coldforge.xyz\":{\"auth\":\"$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context ${CI_PROJECT_DIR}
-      --dockerfile ${CI_PROJECT_DIR}/Dockerfile.admin
-      --destination ${ADMIN_IMAGE_NAME}:${CI_COMMIT_SHA}
-      --destination ${ADMIN_IMAGE_NAME}:${CI_COMMIT_REF_SLUG}
-      --destination ${ADMIN_IMAGE_NAME}:latest
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_TAG
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-
-# Build for tags (semantic versioning)
-build:release:
-  stage: build
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
-  script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"registry.coldforge.xyz\":{\"auth\":\"$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context ${CI_PROJECT_DIR}
-      --dockerfile ${CI_PROJECT_DIR}/Dockerfile
-      --destination ${IMAGE_NAME}:${CI_COMMIT_TAG}
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-
+    - /kaniko/executor --context ${CI_PROJECT_DIR} --dockerfile ${CI_PROJECT_DIR}/Dockerfile --no-push
