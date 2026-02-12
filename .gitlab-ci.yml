@@ -31,7 +31,7 @@ test:unit:
     GOPATH: ${CI_PROJECT_DIR}/.go
     CGO_ENABLED: "1"
   before_script:
-    - apk add --no-cache git ca-certificates build-base
+    - for i in 1 2 3 4 5; do apk add --no-cache git ca-certificates build-base && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
     - mkdir -p .go
   script:
     - go mod tidy
@@ -46,7 +46,7 @@ lint:
   variables:
     GOPATH: ${CI_PROJECT_DIR}/.go
   before_script:
-    - apk add --no-cache git ca-certificates curl
+    - for i in 1 2 3 4 5; do apk add --no-cache git ca-certificates curl && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
     - mkdir -p .go
     - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.62.2
   script:
