@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 17 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 70, 77, 86, 94) + WoT Filtering + Admin UI
+**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + Admin UI
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (LAN-only, standalone deployment)
@@ -85,6 +85,7 @@ docker compose logs -f relay
 │   ├── logging/        # Structured JSON logging
 │   ├── management/     # NIP-86 relay management API + store
 │   ├── middleware/     # Observability middleware (logging + tracing)
+│   ├── nip66/          # NIP-66 relay discovery and self-monitoring
 │   ├── protected/      # NIP-70 protected events handling
 │   ├── ratelimit/      # Distributed rate limiting (Dragonfly)
 │   ├── relay/          # Khatru relay setup
@@ -150,6 +151,11 @@ Set via environment variables:
 ### Logging
 - `LOG_LEVEL` - Log level: debug, info, warn, error (default: info)
 - `LOG_FORMAT` - Log format: json, text (default: json for production)
+
+### NIP-66 Relay Monitoring
+- `NIP66_ENABLED` - Enable NIP-66 relay discovery support (default: false)
+- `NIP66_SELF_MONITOR` - Enable self-monitoring (publish own health events, default: false)
+- `NIP66_MONITOR_KEY` - Private key for signing monitor events
 
 ## Monitoring Endpoints (Relay)
 

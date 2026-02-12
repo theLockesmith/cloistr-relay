@@ -81,6 +81,12 @@ type Config struct {
 	// Logging
 	LogLevel  string // Log level: debug, info, warn, error (default: info)
 	LogFormat string // Log format: json, text (default: json)
+
+	// NIP-66 Relay Monitoring
+	NIP66Enabled       bool   // Enable NIP-66 relay discovery support
+	NIP66SelfMonitor   bool   // Enable self-monitoring (publish own health events)
+	NIP66MonitorKey    string // Private key for signing monitor events
+	NIP66MonitorPubkey string // Public key of the monitor (derived from key)
 }
 
 // Load reads configuration from environment variables
@@ -319,6 +325,17 @@ func Load() (*Config, error) {
 	}
 	if logFormat := os.Getenv("LOG_FORMAT"); logFormat != "" {
 		cfg.LogFormat = logFormat
+	}
+
+	// NIP-66 Relay Monitoring (disabled by default)
+	if nip66Enabled := os.Getenv("NIP66_ENABLED"); nip66Enabled == "true" || nip66Enabled == "1" {
+		cfg.NIP66Enabled = true
+	}
+	if nip66SelfMonitor := os.Getenv("NIP66_SELF_MONITOR"); nip66SelfMonitor == "true" || nip66SelfMonitor == "1" {
+		cfg.NIP66SelfMonitor = true
+	}
+	if nip66Key := os.Getenv("NIP66_MONITOR_KEY"); nip66Key != "" {
+		cfg.NIP66MonitorKey = nip66Key
 	}
 
 	return cfg, nil

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/pprof"
-
 	"time"
+
+	"github.com/nbd-wtf/go-nostr"
 
 	"gitlab.com/coldforge/coldforge-relay/internal/auth"
 	"gitlab.com/coldforge/coldforge-relay/internal/cache"
@@ -25,6 +27,7 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/wot"
 	"gitlab.com/coldforge/coldforge-relay/internal/logging"
 	"gitlab.com/coldforge/coldforge-relay/internal/middleware"
+	"gitlab.com/coldforge/coldforge-relay/internal/nip66"
 	"gitlab.com/coldforge/coldforge-relay/internal/tracing"
 	"gitlab.com/coldforge/coldforge-relay/internal/writeahead"
 	"gitlab.com/coldforge/coldforge-relay/internal/zaps"
@@ -227,6 +230,37 @@ func main() {
 			AllowProtectedEvents: cfg.ProtectedEventsAllow,
 		}
 		protected.RegisterHandlers(r, protectedCfg)
+	}
+
+	// Initialize NIP-66 Relay Discovery (if enabled)
+	var selfMonitor *nip66.SelfMonitor
+	if cfg.NIP66Enabled {
+		nip66Cfg := &nip66.Config{
+			Enabled: true,
+		}
+		nip66.RegisterHandlers(r, nip66Cfg)
+		log.Println("NIP-66 relay discovery enabled")
+
+		// Start self-monitor if configured
+		if cfg.NIP66SelfMonitor && cfg.NIP66MonitorKey != "" {
+			monitorCfg := &nip66.MonitorConfig{
+				RelayURL:   cfg.RelayURL,
+				MonitorKey: cfg.NIP66MonitorKey,
+				Interval:   5 * time.Minute,
+				PublishFunc: func(ctx context.Context, event *nostr.Event) error {
+					return db.SaveEvent(ctx, event)
+				},
+			}
+			var err error
+			selfMonitor, err = nip66.NewSelfMonitor(monitorCfg)
+			if err != nil {
+				log.Printf("Warning: Failed to initialize NIP-66 self-monitor: %v", err)
+			} else {
+				selfMonitor.Start()
+				defer selfMonitor.Stop()
+				log.Println("NIP-66 self-monitor started")
+			}
+		}
 	}
 
 	// Register NIP-42 authentication handlers

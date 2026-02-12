@@ -14,6 +14,9 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/writeahead"
 )
 
+// Version is the relay software version (set at build time or default)
+var Version = "0.6.0"
+
 // NewRelay creates and configures a khatru relay with PostgreSQL storage
 func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend *search.SearchBackend) *khatru.Relay {
 	relay := khatru.NewRelay()
@@ -23,7 +26,9 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	relay.Info.Description = "Coldforge Nostr relay - built with khatru"
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
-	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 70, 77, 86, 94}
+	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
+	relay.Info.Software = "https://gitlab.com/coldforge/coldforge-relay"
+	relay.Info.Version = Version
 
 	// Enable NIP-77 Negentropy sync
 	relay.Negentropy = true
@@ -90,7 +95,9 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 	relay.Info.Description = "Coldforge Nostr relay - built with khatru"
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
-	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 70, 77, 86, 94}
+	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
+	relay.Info.Software = "https://gitlab.com/coldforge/coldforge-relay"
+	relay.Info.Version = Version
 
 	// Enable NIP-77 Negentropy sync
 	relay.Negentropy = true
