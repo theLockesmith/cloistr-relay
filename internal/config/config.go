@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all relay configuration
@@ -67,23 +68,37 @@ type Config struct {
 	// NIP-70 Protected Events
 	ProtectedEventsEnabled bool // Enable NIP-70 protected event handling (default true)
 	ProtectedEventsAllow   bool // Allow protected events from authenticated authors (default true)
+
+	// Database connection pool tuning
+	DBMaxOpenConns    int           // Max open connections (default: 25)
+	DBMaxIdleConns    int           // Max idle connections (default: 10)
+	DBConnMaxLifetime time.Duration // Max connection lifetime (default: 5m)
+	DBConnMaxIdleTime time.Duration // Max idle time before closing (default: 1m)
+
+	// Profiling
+	PProfEnabled bool // Enable pprof endpoints at /debug/pprof/
 }
 
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:                      3334,
-		RelayName:                 "coldforge-relay",
-		RelayURL:                  "ws://localhost:3334",
-		DBHost:                    "localhost",
-		DBPort:                    5432,
-		DBName:                    "nostr",
-		DBUser:                    "postgres",
-		MaxCreatedAtFuture:        300, // 5 minutes (NIP-22)
-		MaxCreatedAtPast:          0,   // Unlimited by default
-		RateLimitEventsPerSec:     10,  // 10 events/sec per IP
-		RateLimitFiltersPerSec:    20,  // 20 queries/sec per IP
-		RateLimitConnectionsPerSec: 5,  // 5 connections/sec per IP
+		Port:                       3334,
+		RelayName:                  "coldforge-relay",
+		RelayURL:                   "ws://localhost:3334",
+		DBHost:                     "localhost",
+		DBPort:                     5432,
+		DBName:                     "nostr",
+		DBUser:                     "postgres",
+		MaxCreatedAtFuture:         300, // 5 minutes (NIP-22)
+		MaxCreatedAtPast:           0,   // Unlimited by default
+		RateLimitEventsPerSec:      10,  // 10 events/sec per IP
+		RateLimitFiltersPerSec:     20,  // 20 queries/sec per IP
+		RateLimitConnectionsPerSec: 5,   // 5 connections/sec per IP
+		// Database pool defaults (tuned for typical relay workload)
+		DBMaxOpenConns:    25,               // Balance between throughput and DB load
+		DBMaxIdleConns:    10,               // Keep connections warm
+		DBConnMaxLifetime: 5 * time.Minute,  // Prevent stale connections
+		DBConnMaxIdleTime: 1 * time.Minute,  // Release idle connections
 	}
 
 	// Override from environment variables
@@ -263,6 +278,33 @@ func Load() (*Config, error) {
 	}
 	if protectedAllow := os.Getenv("PROTECTED_EVENTS_ALLOW"); protectedAllow == "false" || protectedAllow == "0" {
 		cfg.ProtectedEventsAllow = false
+	}
+
+	// Database connection pool tuning
+	if maxOpen := os.Getenv("DB_MAX_OPEN_CONNS"); maxOpen != "" {
+		if v, err := strconv.Atoi(maxOpen); err == nil && v > 0 {
+			cfg.DBMaxOpenConns = v
+		}
+	}
+	if maxIdle := os.Getenv("DB_MAX_IDLE_CONNS"); maxIdle != "" {
+		if v, err := strconv.Atoi(maxIdle); err == nil && v > 0 {
+			cfg.DBMaxIdleConns = v
+		}
+	}
+	if maxLifetime := os.Getenv("DB_CONN_MAX_LIFETIME"); maxLifetime != "" {
+		if v, err := time.ParseDuration(maxLifetime); err == nil {
+			cfg.DBConnMaxLifetime = v
+		}
+	}
+	if maxIdleTime := os.Getenv("DB_CONN_MAX_IDLE_TIME"); maxIdleTime != "" {
+		if v, err := time.ParseDuration(maxIdleTime); err == nil {
+			cfg.DBConnMaxIdleTime = v
+		}
+	}
+
+	// Profiling (disabled by default)
+	if pprof := os.Getenv("PPROF_ENABLED"); pprof == "true" || pprof == "1" {
+		cfg.PProfEnabled = true
 	}
 
 	return cfg, nil

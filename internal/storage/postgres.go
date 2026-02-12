@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/fiatjaf/eventstore/postgresql"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"gitlab.com/coldforge/coldforge-relay/internal/config"
 )
@@ -22,9 +23,22 @@ func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error)
 		cfg.DBName,
 	)
 
-	// Create backend with configuration
+	// Create sqlx connection with tuned pool settings
+	db, err := sqlx.Connect("postgres", dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
+	}
+
+	// Apply connection pool tuning
+	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
+	db.SetConnMaxIdleTime(cfg.DBConnMaxIdleTime)
+
+	// Create backend with pre-configured connection
 	backend := &postgresql.PostgresBackend{
 		DatabaseURL:       dbURL,
+		DB:                db, // Use our tuned connection
 		QueryLimit:        1000, // Max events per query
 		QueryIDsLimit:     500,  // Max IDs in a filter
 		QueryAuthorsLimit: 500,  // Max authors in a filter
@@ -32,12 +46,14 @@ func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error)
 		QueryTagsLimit:    1000, // Max tag values in filters (for Amethyst compatibility)
 	}
 
-	// Initialize the database connection and schema
+	// Initialize schema (won't create new connection since DB is already set)
 	if err := backend.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize postgres backend: %w", err)
 	}
 
-	log.Printf("Connected to PostgreSQL at %s:%d/%s", cfg.DBHost, cfg.DBPort, cfg.DBName)
+	log.Printf("Connected to PostgreSQL at %s:%d/%s (pool: %d open, %d idle, %v lifetime)",
+		cfg.DBHost, cfg.DBPort, cfg.DBName,
+		cfg.DBMaxOpenConns, cfg.DBMaxIdleConns, cfg.DBConnMaxLifetime)
 
 	return backend, nil
 }
@@ -61,6 +77,12 @@ func NewRawConnection(cfg *config.Config) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Apply connection pool tuning
+	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
+	db.SetConnMaxIdleTime(cfg.DBConnMaxIdleTime)
 
 	// Test the connection
 	if err := db.Ping(); err != nil {

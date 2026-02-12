@@ -134,12 +134,22 @@ Set via environment variables:
 - `PROTECTED_EVENTS_ENABLED` - NIP-70: Enable protected event handling (default: true)
 - `PROTECTED_EVENTS_ALLOW` - NIP-70: Allow protected events from authenticated authors (default: true)
 
+### Database Connection Pool Tuning
+- `DB_MAX_OPEN_CONNS` - Max open connections (default: 25)
+- `DB_MAX_IDLE_CONNS` - Max idle connections (default: 10)
+- `DB_CONN_MAX_LIFETIME` - Max connection lifetime (default: 5m)
+- `DB_CONN_MAX_IDLE_TIME` - Max idle time before closing (default: 1m)
+
+### Profiling
+- `PPROF_ENABLED` - Enable pprof endpoints at /debug/pprof/ (default: false)
+
 ## Monitoring Endpoints (Relay)
 
-- `/metrics` - Prometheus metrics
+- `/metrics` - Prometheus metrics (includes DB pool stats)
 - `/health` - Health check (returns "OK")
 - `/` - NIP-11 relay info (with Accept: application/nostr+json header)
 - `/management` - NIP-86 relay management API (requires NIP-98 auth)
+- `/debug/pprof/*` - Go pprof profiling (when PPROF_ENABLED=true)
 
 ## Admin UI
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 
 	"time"
 
@@ -54,6 +55,11 @@ func main() {
 		log.Printf("Warning: Failed to initialize search index: %v", err)
 		// Continue without search
 		searchBackend = nil
+	}
+
+	// Optimize database indexes for common query patterns
+	if err := storage.OptimizeIndexes(rawDB); err != nil {
+		log.Printf("Warning: Failed to optimize indexes: %v", err)
 	}
 
 	// Initialize cache (Dragonfly/Redis)
@@ -213,6 +219,7 @@ func main() {
 
 	// Register Prometheus metrics
 	metrics.RegisterRelayMetrics(r)
+	metrics.RegisterDBPoolMetrics(rawDB, 15*time.Second)
 	log.Println("Prometheus metrics enabled at /metrics")
 
 	// Create HTTP mux to serve both relay and metrics
@@ -231,7 +238,21 @@ func main() {
 		mgmtHandler := management.NewHandler(mgmtStore, cfg.AdminPubkeys)
 		mux.Handle("/management", mgmtHandler)
 		log.Println("NIP-86 management API enabled at /management")
+	}
 
+	// Profiling endpoints (for performance debugging)
+	if cfg.PProfEnabled {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		mux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		mux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		mux.Handle("/debug/pprof/block", pprof.Handler("block"))
+		mux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+		log.Println("pprof profiling enabled at /debug/pprof/")
 	}
 
 	// Start the relay server

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"time"
 
@@ -86,6 +87,42 @@ var (
 		Name: "nostr_relay_info",
 		Help: "Relay information",
 	}, []string{"name", "version"})
+
+	// Database pool metrics
+	dbPoolOpenConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_db_pool_open_connections",
+		Help: "Number of open database connections",
+	})
+
+	dbPoolInUseConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_db_pool_in_use_connections",
+		Help: "Number of database connections currently in use",
+	})
+
+	dbPoolIdleConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_db_pool_idle_connections",
+		Help: "Number of idle database connections",
+	})
+
+	dbPoolWaitCount = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_db_pool_wait_total",
+		Help: "Total number of connections waited for",
+	})
+
+	dbPoolWaitDuration = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_db_pool_wait_seconds_total",
+		Help: "Total time spent waiting for connections",
+	})
+
+	dbPoolMaxIdleClosed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_db_pool_max_idle_closed_total",
+		Help: "Total connections closed due to max idle",
+	})
+
+	dbPoolMaxLifetimeClosed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_db_pool_max_lifetime_closed_total",
+		Help: "Total connections closed due to max lifetime",
+	})
 )
 
 // Handler returns the Prometheus metrics HTTP handler
@@ -204,6 +241,50 @@ func kindToString(kind int) string {
 // RecordNIP46Message increments the NIP-46 message counter
 func RecordNIP46Message() {
 	nip46MessagesRelayed.Inc()
+}
+
+// RegisterDBPoolMetrics starts a goroutine to collect database pool stats
+func RegisterDBPoolMetrics(db *sql.DB, interval time.Duration) {
+	// Track previous values for counters (they're cumulative from DB stats)
+	var prevWaitCount int64
+	var prevWaitDuration time.Duration
+	var prevMaxIdleClosed int64
+	var prevMaxLifetimeClosed int64
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			stats := db.Stats()
+
+			// Gauges - current values
+			dbPoolOpenConnections.Set(float64(stats.OpenConnections))
+			dbPoolInUseConnections.Set(float64(stats.InUse))
+			dbPoolIdleConnections.Set(float64(stats.Idle))
+
+			// Counters - add delta since last collection
+			if stats.WaitCount > prevWaitCount {
+				dbPoolWaitCount.Add(float64(stats.WaitCount - prevWaitCount))
+				prevWaitCount = stats.WaitCount
+			}
+
+			if stats.WaitDuration > prevWaitDuration {
+				dbPoolWaitDuration.Add((stats.WaitDuration - prevWaitDuration).Seconds())
+				prevWaitDuration = stats.WaitDuration
+			}
+
+			if stats.MaxIdleClosed > prevMaxIdleClosed {
+				dbPoolMaxIdleClosed.Add(float64(stats.MaxIdleClosed - prevMaxIdleClosed))
+				prevMaxIdleClosed = stats.MaxIdleClosed
+			}
+
+			if stats.MaxLifetimeClosed > prevMaxLifetimeClosed {
+				dbPoolMaxLifetimeClosed.Add(float64(stats.MaxLifetimeClosed - prevMaxLifetimeClosed))
+				prevMaxLifetimeClosed = stats.MaxLifetimeClosed
+			}
+		}
+	}()
 }
 
 // categorizeRejection extracts a category from rejection message
