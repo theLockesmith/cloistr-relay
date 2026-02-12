@@ -23,6 +23,9 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/session"
 	"gitlab.com/coldforge/coldforge-relay/internal/storage"
 	"gitlab.com/coldforge/coldforge-relay/internal/wot"
+	"gitlab.com/coldforge/coldforge-relay/internal/logging"
+	"gitlab.com/coldforge/coldforge-relay/internal/middleware"
+	"gitlab.com/coldforge/coldforge-relay/internal/tracing"
 	"gitlab.com/coldforge/coldforge-relay/internal/writeahead"
 	"gitlab.com/coldforge/coldforge-relay/internal/zaps"
 )
@@ -35,6 +38,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
+
+	// Initialize structured logging
+	logging.Init(&logging.Config{
+		Level:     cfg.LogLevel,
+		UseJSON:   cfg.LogFormat == "json",
+		Component: "relay",
+	})
+
+	// Initialize tracing
+	tracing.Init(&tracing.Config{
+		ServiceName: "coldforge-relay",
+		Enabled:     true,
+	})
 
 	// Initialize PostgreSQL storage backend
 	db, err := storage.NewPostgresBackend(cfg)
@@ -221,6 +237,10 @@ func main() {
 	metrics.RegisterRelayMetrics(r)
 	metrics.RegisterDBPoolMetrics(rawDB, 15*time.Second)
 	log.Println("Prometheus metrics enabled at /metrics")
+
+	// Register observability (structured logging + tracing)
+	middleware.RegisterObservability(r)
+	log.Println("Structured logging and tracing enabled")
 
 	// Create HTTP mux to serve both relay and metrics
 	mux := http.NewServeMux()

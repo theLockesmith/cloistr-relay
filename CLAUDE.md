@@ -82,16 +82,20 @@ docker compose logs -f relay
 │   ├── eventcache/     # Hot event caching (Dragonfly)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── handlers/       # Event validation, NIP-40/22/13
+│   ├── logging/        # Structured JSON logging
 │   ├── management/     # NIP-86 relay management API + store
+│   ├── middleware/     # Observability middleware (logging + tracing)
 │   ├── protected/      # NIP-70 protected events handling
 │   ├── ratelimit/      # Distributed rate limiting (Dragonfly)
 │   ├── relay/          # Khatru relay setup
 │   ├── search/         # NIP-50 PostgreSQL full-text search
 │   ├── session/        # Distributed session state (Dragonfly)
 │   ├── storage/        # PostgreSQL backend
+│   ├── tracing/        # Distributed tracing with spans
 │   ├── wot/            # Web of Trust filtering
 │   ├── writeahead/     # Write-ahead log (Dragonfly)
 │   └── zaps/           # NIP-57 Lightning zaps
+├── dashboards/         # Grafana dashboard JSON files
 ├── web/
 │   ├── templates/      # HTML templates (layout + 8 pages + 7 partials)
 │   └── static/js/      # NIP-07/NIP-98 auth helper
@@ -142,6 +146,10 @@ Set via environment variables:
 
 ### Profiling
 - `PPROF_ENABLED` - Enable pprof endpoints at /debug/pprof/ (default: false)
+
+### Logging
+- `LOG_LEVEL` - Log level: debug, info, warn, error (default: info)
+- `LOG_FORMAT` - Log format: json, text (default: json for production)
 
 ## Monitoring Endpoints (Relay)
 

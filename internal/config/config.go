@@ -77,6 +77,10 @@ type Config struct {
 
 	// Profiling
 	PProfEnabled bool // Enable pprof endpoints at /debug/pprof/
+
+	// Logging
+	LogLevel  string // Log level: debug, info, warn, error (default: info)
+	LogFormat string // Log format: json, text (default: json)
 }
 
 // Load reads configuration from environment variables
@@ -305,6 +309,16 @@ func Load() (*Config, error) {
 	// Profiling (disabled by default)
 	if pprof := os.Getenv("PPROF_ENABLED"); pprof == "true" || pprof == "1" {
 		cfg.PProfEnabled = true
+	}
+
+	// Logging (defaults: info level, json format)
+	cfg.LogLevel = "info"
+	cfg.LogFormat = "json"
+	if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
+		cfg.LogLevel = logLevel
+	}
+	if logFormat := os.Getenv("LOG_FORMAT"); logFormat != "" {
+		cfg.LogFormat = logFormat
 	}
 
 	return cfg, nil
