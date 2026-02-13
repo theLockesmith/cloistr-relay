@@ -16,6 +16,7 @@ import (
 	"gitlab.com/coldforge/coldforge-relay/internal/eventcache"
 	"gitlab.com/coldforge/coldforge-relay/internal/giftwrap"
 	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
+	"gitlab.com/coldforge/coldforge-relay/internal/haven"
 	"gitlab.com/coldforge/coldforge-relay/internal/management"
 	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
 	"gitlab.com/coldforge/coldforge-relay/internal/protected"
@@ -260,6 +261,29 @@ func main() {
 				defer selfMonitor.Stop()
 				log.Println("NIP-66 self-monitor started")
 			}
+		}
+	}
+
+	// Initialize HAVEN-style box routing (if enabled)
+	var havenSystem *haven.HavenSystem
+	if cfg.HavenEnabled && cfg.HavenOwnerPubkey != "" {
+		havenCfg := &haven.Config{
+			Enabled:               true,
+			OwnerPubkey:           cfg.HavenOwnerPubkey,
+			PrivateKinds:          cfg.HavenPrivateKinds,
+			AllowPublicOutboxRead: cfg.HavenAllowPublicOutboxRead,
+			AllowPublicInboxWrite: cfg.HavenAllowPublicInboxWrite,
+			RequireAuthForChat:    cfg.HavenRequireAuthForChat,
+			RequireAuthForPrivate: cfg.HavenRequireAuthForPrivate,
+			BlastrEnabled:         cfg.HavenBlastrEnabled,
+			BlastrRelays:          cfg.HavenBlastrRelays,
+			ImporterEnabled:       cfg.HavenImporterEnabled,
+			ImporterRelays:        cfg.HavenImporterRelays,
+		}
+		// Use RegisterFullSystem to enable Blastr and Importer
+		havenSystem = haven.RegisterFullSystem(r, havenCfg, db.SaveEvent)
+		if havenSystem != nil {
+			defer havenSystem.Stop()
 		}
 	}
 

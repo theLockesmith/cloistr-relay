@@ -82,6 +82,7 @@ docker compose logs -f relay
 │   ├── eventcache/     # Hot event caching (Dragonfly)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── handlers/       # Event validation, NIP-40/22/13
+│   ├── haven/          # HAVEN-style box routing (inbox/outbox/chat/private)
 │   ├── logging/        # Structured JSON logging
 │   ├── management/     # NIP-86 relay management API + store
 │   ├── middleware/     # Observability middleware (logging + tracing)
@@ -187,8 +188,10 @@ Standalone htmx-based web interface for NIP-86 relay management.
 | Phase 4 | Performance (pool tuning, indexes, pprof) | ✅ Complete |
 | Phase 5 | Observability (logging, tracing, Grafana) | ✅ Complete |
 | NIP-66 | Relay Health Monitoring | ✅ Complete |
+| HAVEN Phase 1 | Box routing | ✅ Complete |
+| HAVEN Phase 2 | Blastr + Importer | ✅ Complete |
 
-## Next: HAVEN-Style Relay Separation
+## HAVEN-Style Relay Separation
 
 **Reference:** [bitvora/haven](https://github.com/bitvora/haven) - "High Availability Vault for Events on Nostr"
 
@@ -198,52 +201,84 @@ HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay type
 
 | Box | Purpose | Access | Event Kinds |
 |-----|---------|--------|-------------|
-| **Private** | Drafts, eCash, personal notes | Owner only (auth required) | Any private kinds |
-| **Chat** | DMs and group chats | WoT-filtered (auth required) | 4, 1059 (gift wrap) |
-| **Inbox** | Events addressed to owner | Public write, owner read | Mentions, replies, zaps |
-| **Outbox** | Owner's public notes | Owner write, public read | 1, 6, 7, 30023, etc. |
+| **Private** | Drafts, eCash, personal notes | Owner only (auth required) | 30024, 31234, 7375, 7376, 30078, 10003, 30003 |
+| **Chat** | DMs and group chats | WoT-filtered (auth required) | 4, 13, 1059, 1060 |
+| **Inbox** | Events addressed to owner | Public write, owner read | 1, 6, 7, 9735, 1111, 30023 (when tagged) |
+| **Outbox** | Owner's public notes | Owner write, public read | 0, 1, 3, 6, 7, 10002, 30023 |
 
-### Implementation Approach
+### Implementation Status
 
-**Option A: Virtual Separation (Single Relay)**
-- Route events to different storage paths based on kind/author
-- Different auth policies per "box"
-- Simpler deployment, shared resources
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Box Router** | ✅ Complete | Routes events by kind/author/tags |
+| **Auth Policies** | ✅ Complete | Per-box authentication requirements |
+| **Filter Routing** | ✅ Complete | Query routing to correct boxes |
+| **WoT Integration** | ✅ Ready | Chat box uses existing WoT |
+| **Inbox Importer** | ✅ Complete | Pull tagged events from other relays |
+| **Outbox Blastr** | ✅ Complete | Broadcast outbox events to other relays |
 
-**Option B: Physical Separation (Multiple Relays)**
-- Four separate relay instances
-- Different URLs: private.relay.xyz, chat.relay.xyz, etc.
-- Better isolation, more complex deployment
+### Configuration
 
-**Option C: Hybrid (Recommended)**
-- Single relay binary with box routing
-- Virtual separation in storage
-- Optional: Different ports/paths per box
-
-### Features to Implement
-
-1. **Box Router** - Route events to correct box based on kind/author/tags
-2. **Auth Policies** - Different auth requirements per box
-3. **Inbox Importer** - Pull tagged events from other relays
-4. **Outbox Blastr** - Broadcast outbox events to other relays
-5. **WoT Integration** - Already have this for chat/inbox spam protection
-
-### Configuration (Planned)
-
-```
+```bash
+# Enable HAVEN box routing
 HAVEN_ENABLED=true
-HAVEN_MODE=virtual          # virtual, physical, hybrid
-HAVEN_OWNER_PUBKEY=...      # Owner pubkey for box routing
-HAVEN_PRIVATE_KINDS=...     # Kinds for private box
-HAVEN_BLASTR_RELAYS=...     # Relays to blast outbox to
-HAVEN_IMPORT_RELAYS=...     # Relays to import inbox from
+HAVEN_OWNER_PUBKEY=<hex>              # Owner pubkey for box routing
+
+# Access control (defaults shown)
+HAVEN_ALLOW_PUBLIC_OUTBOX_READ=true   # Public can read owner's posts
+HAVEN_ALLOW_PUBLIC_INBOX_WRITE=true   # Anyone can tag/mention owner
+HAVEN_REQUIRE_AUTH_FOR_CHAT=true      # DMs require authentication
+HAVEN_REQUIRE_AUTH_FOR_PRIVATE=true   # Private box requires authentication
+
+# Additional private kinds (comma-separated)
+HAVEN_PRIVATE_KINDS=<kind1,kind2,...>
+
+# Outbox Blastr (broadcast owner's posts to other relays)
+HAVEN_BLASTR_ENABLED=true
+HAVEN_BLASTR_RELAYS=wss://relay1.example.com,wss://relay2.example.com
+
+# Inbox Importer (fetch events tagged to owner from other relays)
+HAVEN_IMPORTER_ENABLED=true
+HAVEN_IMPORTER_RELAYS=wss://relay1.example.com,wss://relay2.example.com
 ```
+
+### Architecture
+
+```
+internal/haven/
+├── types.go         # Box types, default kinds, config, access policies
+├── router.go        # Event/filter routing logic
+├── handlers.go      # RejectEvent, RejectFilter, OverwriteFilter, HavenSystem
+├── blastr.go        # Outbox event broadcasting to other relays
+├── importer.go      # Inbox event fetching from other relays
+├── router_test.go   # Router tests
+├── handlers_test.go # Handler tests
+├── blastr_test.go   # Blastr tests
+└── importer_test.go # Importer tests
+```
+
+### Blastr (Outbox Broadcasting)
+
+The Blastr component automatically broadcasts owner's outbox events to configured relays:
+- Listens for OnEventSaved events
+- Routes only outbox events (owner's public posts)
+- Manages relay connections with automatic reconnection
+- Queues events for async broadcast
+- Tracks broadcast statistics
+
+### Importer (Inbox Fetching)
+
+The Importer component polls configured relays for events addressed to the owner:
+- Polls every 5 minutes (configurable)
+- Looks for events with p-tag matching owner pubkey
+- Deduplicates events to avoid storing duplicates
+- Routes events to inbox or chat box based on kind
+- Tracks import statistics
 
 ## Future Roadmap
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| **HAVEN Separation** | Inbox/Outbox/Private/Chat model | 🔴 Next |
 | **RSS Bridge** | atomstr or built-in feed integration | Medium |
 | **Algorithmic Feeds** | User-controlled feed algorithms | Medium |
 | **NIP-0A CRDTs** | Contact list conflict resolution | Medium |

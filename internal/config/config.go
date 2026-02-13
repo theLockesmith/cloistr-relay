@@ -87,6 +87,19 @@ type Config struct {
 	NIP66SelfMonitor   bool   // Enable self-monitoring (publish own health events)
 	NIP66MonitorKey    string // Private key for signing monitor events
 	NIP66MonitorPubkey string // Public key of the monitor (derived from key)
+
+	// HAVEN-style Relay Separation
+	HavenEnabled              bool     // Enable HAVEN box routing
+	HavenOwnerPubkey          string   // Owner pubkey for box routing
+	HavenPrivateKinds         []int    // Additional kinds for private box
+	HavenAllowPublicOutboxRead bool    // Allow unauthenticated outbox reads (default: true)
+	HavenAllowPublicInboxWrite bool    // Allow unauthenticated inbox writes (default: true)
+	HavenRequireAuthForChat   bool     // Require auth for chat box (default: true)
+	HavenRequireAuthForPrivate bool    // Require auth for private box (default: true)
+	HavenBlastrEnabled        bool     // Enable outbox broadcasting
+	HavenBlastrRelays         []string // Relays to broadcast to
+	HavenImporterEnabled      bool     // Enable inbox importing
+	HavenImporterRelays       []string // Relays to import from
 }
 
 // Load reads configuration from environment variables
@@ -338,6 +351,47 @@ func Load() (*Config, error) {
 		cfg.NIP66MonitorKey = nip66Key
 	}
 
+	// HAVEN-style Relay Separation
+	// Defaults
+	cfg.HavenAllowPublicOutboxRead = true
+	cfg.HavenAllowPublicInboxWrite = true
+	cfg.HavenRequireAuthForChat = true
+	cfg.HavenRequireAuthForPrivate = true
+
+	if havenEnabled := os.Getenv("HAVEN_ENABLED"); havenEnabled == "true" || havenEnabled == "1" {
+		cfg.HavenEnabled = true
+	}
+	if havenOwner := os.Getenv("HAVEN_OWNER_PUBKEY"); havenOwner != "" {
+		cfg.HavenOwnerPubkey = havenOwner
+	}
+	if havenPrivateKinds := os.Getenv("HAVEN_PRIVATE_KINDS"); havenPrivateKinds != "" {
+		cfg.HavenPrivateKinds = parseIntList(havenPrivateKinds)
+	}
+	if havenPublicOutbox := os.Getenv("HAVEN_ALLOW_PUBLIC_OUTBOX_READ"); havenPublicOutbox == "false" || havenPublicOutbox == "0" {
+		cfg.HavenAllowPublicOutboxRead = false
+	}
+	if havenPublicInbox := os.Getenv("HAVEN_ALLOW_PUBLIC_INBOX_WRITE"); havenPublicInbox == "false" || havenPublicInbox == "0" {
+		cfg.HavenAllowPublicInboxWrite = false
+	}
+	if havenAuthChat := os.Getenv("HAVEN_REQUIRE_AUTH_FOR_CHAT"); havenAuthChat == "false" || havenAuthChat == "0" {
+		cfg.HavenRequireAuthForChat = false
+	}
+	if havenAuthPrivate := os.Getenv("HAVEN_REQUIRE_AUTH_FOR_PRIVATE"); havenAuthPrivate == "false" || havenAuthPrivate == "0" {
+		cfg.HavenRequireAuthForPrivate = false
+	}
+	if havenBlastr := os.Getenv("HAVEN_BLASTR_ENABLED"); havenBlastr == "true" || havenBlastr == "1" {
+		cfg.HavenBlastrEnabled = true
+	}
+	if havenBlastrRelays := os.Getenv("HAVEN_BLASTR_RELAYS"); havenBlastrRelays != "" {
+		cfg.HavenBlastrRelays = parseCommaSeparated(havenBlastrRelays)
+	}
+	if havenImporter := os.Getenv("HAVEN_IMPORTER_ENABLED"); havenImporter == "true" || havenImporter == "1" {
+		cfg.HavenImporterEnabled = true
+	}
+	if havenImporterRelays := os.Getenv("HAVEN_IMPORTER_RELAYS"); havenImporterRelays != "" {
+		cfg.HavenImporterRelays = parseCommaSeparated(havenImporterRelays)
+	}
+
 	return cfg, nil
 }
 
@@ -352,6 +406,25 @@ func parseCommaSeparated(s string) []string {
 		trimmed := strings.TrimSpace(part)
 		if trimmed != "" {
 			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// parseIntList parses a comma-separated list of integers
+func parseIntList(s string) []int {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	var result []int
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		if v, err := strconv.Atoi(trimmed); err == nil {
+			result = append(result, v)
 		}
 	}
 	return result
