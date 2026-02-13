@@ -176,6 +176,81 @@ Standalone htmx-based web interface for NIP-86 relay management.
 - **ArgoCD app:** `relay-admin-production` in coldforge-config
 - **Config repo:** `coldforge-config/base/relay-admin/` + `overlays/production/relay-admin/`
 
-## Next Steps
+## Completed Phases
 
-See `~/claude/coldforge/services/relay/CLAUDE.md` for full roadmap.
+| Phase | Focus | Status |
+|-------|-------|--------|
+| Phase 0 | Foundation (Core Infrastructure) | ✅ Complete |
+| Phase 1 | Dragonfly Expansion | ✅ Complete |
+| Phase 2 | Additional NIPs | ✅ Complete |
+| Phase 3 | Infrastructure (HPA, alerting, backup) | ✅ Complete |
+| Phase 4 | Performance (pool tuning, indexes, pprof) | ✅ Complete |
+| Phase 5 | Observability (logging, tracing, Grafana) | ✅ Complete |
+| NIP-66 | Relay Health Monitoring | ✅ Complete |
+
+## Next: HAVEN-Style Relay Separation
+
+**Reference:** [bitvora/haven](https://github.com/bitvora/haven) - "High Availability Vault for Events on Nostr"
+
+HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay types in one:
+
+### The Four Boxes
+
+| Box | Purpose | Access | Event Kinds |
+|-----|---------|--------|-------------|
+| **Private** | Drafts, eCash, personal notes | Owner only (auth required) | Any private kinds |
+| **Chat** | DMs and group chats | WoT-filtered (auth required) | 4, 1059 (gift wrap) |
+| **Inbox** | Events addressed to owner | Public write, owner read | Mentions, replies, zaps |
+| **Outbox** | Owner's public notes | Owner write, public read | 1, 6, 7, 30023, etc. |
+
+### Implementation Approach
+
+**Option A: Virtual Separation (Single Relay)**
+- Route events to different storage paths based on kind/author
+- Different auth policies per "box"
+- Simpler deployment, shared resources
+
+**Option B: Physical Separation (Multiple Relays)**
+- Four separate relay instances
+- Different URLs: private.relay.xyz, chat.relay.xyz, etc.
+- Better isolation, more complex deployment
+
+**Option C: Hybrid (Recommended)**
+- Single relay binary with box routing
+- Virtual separation in storage
+- Optional: Different ports/paths per box
+
+### Features to Implement
+
+1. **Box Router** - Route events to correct box based on kind/author/tags
+2. **Auth Policies** - Different auth requirements per box
+3. **Inbox Importer** - Pull tagged events from other relays
+4. **Outbox Blastr** - Broadcast outbox events to other relays
+5. **WoT Integration** - Already have this for chat/inbox spam protection
+
+### Configuration (Planned)
+
+```
+HAVEN_ENABLED=true
+HAVEN_MODE=virtual          # virtual, physical, hybrid
+HAVEN_OWNER_PUBKEY=...      # Owner pubkey for box routing
+HAVEN_PRIVATE_KINDS=...     # Kinds for private box
+HAVEN_BLASTR_RELAYS=...     # Relays to blast outbox to
+HAVEN_IMPORT_RELAYS=...     # Relays to import inbox from
+```
+
+## Future Roadmap
+
+| Item | Description | Priority |
+|------|-------------|----------|
+| **HAVEN Separation** | Inbox/Outbox/Private/Chat model | 🔴 Next |
+| **RSS Bridge** | atomstr or built-in feed integration | Medium |
+| **Algorithmic Feeds** | User-controlled feed algorithms | Medium |
+| **NIP-0A CRDTs** | Contact list conflict resolution | Medium |
+| **Geographic Distribution** | Multi-region deployment | Low |
+
+## Resources
+
+- [HAVEN GitHub](https://github.com/bitvora/haven)
+- [Outbox Model (Nostrify)](https://nostrify.dev/relay/outbox)
+- [Relay Type Nomenclature Discussion](https://github.com/nostr-protocol/nips/issues/1282)
