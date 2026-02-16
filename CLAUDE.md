@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + Admin UI
+**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (LAN-only, standalone deployment)
@@ -158,6 +158,19 @@ Set via environment variables:
 - `NIP66_SELF_MONITOR` - Enable self-monitoring (publish own health events, default: false)
 - `NIP66_MONITOR_KEY` - Private key for signing monitor events
 
+### HAVEN Box Routing
+- `HAVEN_ENABLED` - Enable HAVEN-style box routing (default: false)
+- `HAVEN_OWNER_PUBKEY` - Owner pubkey for box routing (required if enabled)
+- `HAVEN_PRIVATE_KINDS` - Additional kinds for private box (comma-separated)
+- `HAVEN_ALLOW_PUBLIC_OUTBOX_READ` - Public can read owner's posts (default: true)
+- `HAVEN_ALLOW_PUBLIC_INBOX_WRITE` - Anyone can tag/mention owner (default: true)
+- `HAVEN_REQUIRE_AUTH_FOR_CHAT` - DMs require authentication (default: true)
+- `HAVEN_REQUIRE_AUTH_FOR_PRIVATE` - Private box requires authentication (default: true)
+- `HAVEN_BLASTR_ENABLED` - Enable outbox broadcasting (default: false)
+- `HAVEN_BLASTR_RELAYS` - Relays to broadcast outbox events to (comma-separated)
+- `HAVEN_IMPORTER_ENABLED` - Enable inbox event fetching (default: false)
+- `HAVEN_IMPORTER_RELAYS` - Relays to fetch inbox events from (comma-separated)
+
 ## Monitoring Endpoints (Relay)
 
 - `/metrics` - Prometheus metrics (includes DB pool stats)
@@ -279,10 +292,17 @@ The Importer component polls configured relays for events addressed to the owner
 
 | Item | Description | Priority |
 |------|-------------|----------|
+| **HAVEN Metrics** | Prometheus metrics for box routing stats | High |
 | **RSS Bridge** | atomstr or built-in feed integration | Medium |
 | **Algorithmic Feeds** | User-controlled feed algorithms | Medium |
 | **NIP-0A CRDTs** | Contact list conflict resolution | Medium |
 | **Geographic Distribution** | Multi-region deployment | Low |
+
+### Potential Enhancements
+- **HAVEN E-tag Routing**: Route reactions/reposts by looking up referenced events
+- **HAVEN Admin UI**: Box statistics and configuration in admin panel
+- **Blastr Retry Logic**: Persistent retry queue for failed broadcasts
+- **Importer Webhooks**: Real-time inbox updates via WebSocket subscriptions
 
 ## Resources
 
