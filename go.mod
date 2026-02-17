@@ -1,4 +1,4 @@
-module gitlab.com/coldforge/coldforge-relay
+module git.coldforge.xyz/coldforge/cloistr-relay
 
 go 1.24.1
 
