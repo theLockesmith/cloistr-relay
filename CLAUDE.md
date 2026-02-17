@@ -5,7 +5,7 @@
 **Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
-**Admin UI:** relay-admin.cloistr.xyz (LAN-only, standalone deployment)
+**Admin UI:** relay-admin.cloistr.xyz (integrated via host-based routing)
 
 ## Documentation
 
@@ -72,10 +72,9 @@ docker compose logs -f relay
 
 ```
 ├── cmd/
-│   ├── relay/          # Main relay entry point
-│   └── admin/          # Standalone admin UI entry point
+│   └── relay/          # Main relay entry point (includes host-based routing for admin UI)
 ├── internal/
-│   ├── admin/          # Admin UI handlers (htmx + NIP-98 auth)
+│   ├── admin/          # Admin UI handlers (htmx + NIP-98 auth) - integrated into relay via host routing
 │   ├── auth/           # NIP-42 authentication
 │   ├── cache/          # Redis/Dragonfly client wrapper
 │   ├── config/         # Configuration loading
@@ -102,8 +101,7 @@ docker compose logs -f relay
 │   ├── templates/      # HTML templates (layout + 8 pages + 7 partials)
 │   └── static/js/      # NIP-07/NIP-98 auth helper
 ├── tests/              # Test documentation
-├── Dockerfile          # Relay multi-stage build
-├── Dockerfile.admin    # Admin UI multi-stage build
+├── Dockerfile          # Relay multi-stage build (includes admin UI)
 └── docker-compose.yml  # Local development
 ```
 
@@ -181,14 +179,13 @@ Set via environment variables:
 
 ## Admin UI
 
-Standalone htmx-based web interface for NIP-86 relay management.
+Htmx-based web interface for NIP-86 relay management, integrated into the main relay binary.
 
-- **Deployed as:** separate container (`coldforge-relay-admin`)
-- **URL:** `https://relay-admin.cloistr.xyz/` (LAN-only via nginx)
+- **Routing:** Host-based routing in `cmd/relay/main.go` - requests to `relay-admin.*` hostnames are routed to the admin UI mux
+- **URL:** `https://relay-admin.cloistr.xyz/` (via Cloudflare Tunnel, LAN DNS points to internal IP)
 - **Auth:** NIP-07 browser extension + NIP-98 HTTP signatures
 - **Features:** Pubkey ban/allow, event ban, moderation queue, IP blocking, kind allowlist, relay settings
-- **ArgoCD app:** `relay-admin-production` in coldforge-config
-- **Config repo:** `coldforge-config/base/relay-admin/` + `overlays/production/relay-admin/`
+- **Requirements:** `ADMIN_PUBKEYS` must be set, `mgmtStore` initialized (happens when admin pubkeys configured)
 
 ## Completed Phases
 
