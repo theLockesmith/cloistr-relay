@@ -11,8 +11,9 @@ import (
 
 // Handler manages HAVEN box routing for events and queries
 type Handler struct {
-	router *Router
-	config *Config
+	router  *Router
+	config  *Config
+	metrics *Metrics
 }
 
 // truncateID safely truncates an ID/pubkey for logging
@@ -32,8 +33,9 @@ func NewHandler(cfg *Config) *Handler {
 		cfg = DefaultConfig()
 	}
 	return &Handler{
-		router: NewRouter(cfg),
-		config: cfg,
+		router:  NewRouter(cfg),
+		config:  cfg,
+		metrics: GetMetrics(),
 	}
 }
 
@@ -61,6 +63,7 @@ func (h *Handler) RejectEvent() func(context.Context, *nostr.Event) (bool, strin
 			if h.router.chatKinds[event.Kind] {
 				box = BoxChat
 			} else {
+				h.metrics.RecordEventRejected(BoxUnknown, "no_box")
 				return true, "restricted: event does not belong to any HAVEN box"
 			}
 		}
@@ -68,16 +71,25 @@ func (h *Handler) RejectEvent() func(context.Context, *nostr.Event) (bool, strin
 		// Get authenticated pubkey
 		authedPubkey := khatru.GetAuthed(ctx)
 
+		// Record access attempt
+		h.metrics.RecordAccessAttempt(box, "write")
+
 		// Check write access
 		if !h.router.CanAccessBox(box, authedPubkey, true) {
 			switch box {
 			case BoxPrivate:
 				if authedPubkey == "" {
+					h.metrics.RecordAccessDenied(box, "write", "auth_required")
+					h.metrics.RecordEventRejected(box, "auth_required")
 					return true, "auth-required: authentication required for private box"
 				}
+				h.metrics.RecordAccessDenied(box, "write", "not_owner")
+				h.metrics.RecordEventRejected(box, "not_owner")
 				return true, "restricted: only owner can write to private box"
 			case BoxChat:
 				if authedPubkey == "" {
+					h.metrics.RecordAccessDenied(box, "write", "auth_required")
+					h.metrics.RecordEventRejected(box, "auth_required")
 					return true, "auth-required: authentication required for chat"
 				}
 				// Allowed (WoT filtering happens separately)
@@ -85,6 +97,8 @@ func (h *Handler) RejectEvent() func(context.Context, *nostr.Event) (bool, strin
 				// Public write allowed by default
 			case BoxOutbox:
 				if authedPubkey != h.config.OwnerPubkey {
+					h.metrics.RecordAccessDenied(box, "write", "not_owner")
+					h.metrics.RecordEventRejected(box, "not_owner")
 					return true, "restricted: only owner can write to outbox"
 				}
 			}
@@ -93,8 +107,12 @@ func (h *Handler) RejectEvent() func(context.Context, *nostr.Event) (bool, strin
 		// Verify event author matches authenticated pubkey for write operations
 		if authedPubkey != "" && event.PubKey != authedPubkey {
 			// This is handled by khatru, but double-check
+			h.metrics.RecordEventRejected(box, "pubkey_mismatch")
 			return true, "restricted: can only publish events as yourself"
 		}
+
+		// Record successful routing
+		h.metrics.RecordEventRouted(box)
 
 		return false, ""
 	}
@@ -114,26 +132,40 @@ func (h *Handler) RejectFilter() func(context.Context, nostr.Filter) (bool, stri
 
 		// Check read access for each targeted box
 		for _, box := range boxes {
+			// Record access attempt
+			h.metrics.RecordAccessAttempt(box, "read")
+
 			if !h.router.CanAccessBox(box, authedPubkey, false) {
 				switch box {
 				case BoxPrivate:
 					if authedPubkey == "" {
+						h.metrics.RecordAccessDenied(box, "read", "auth_required")
+						h.metrics.RecordFilterRejected(box, "auth_required")
 						return true, "auth-required: authentication required for private box"
 					}
+					h.metrics.RecordAccessDenied(box, "read", "not_owner")
+					h.metrics.RecordFilterRejected(box, "not_owner")
 					return true, "restricted: only owner can read private box"
 				case BoxChat:
 					if authedPubkey == "" {
+						h.metrics.RecordAccessDenied(box, "read", "auth_required")
+						h.metrics.RecordFilterRejected(box, "auth_required")
 						return true, "auth-required: authentication required for chat"
 					}
 					// Chat access is WoT filtered, allow for now
 				case BoxInbox:
 					if authedPubkey != h.config.OwnerPubkey {
+						h.metrics.RecordAccessDenied(box, "read", "not_owner")
+						h.metrics.RecordFilterRejected(box, "not_owner")
 						return true, "restricted: only owner can read inbox"
 					}
 				case BoxOutbox:
 					// Public read allowed
 				}
 			}
+
+			// Record successful filter routing
+			h.metrics.RecordFilterRouted(box)
 		}
 
 		return false, ""
@@ -182,8 +214,11 @@ func (h *Handler) OnEventSaved() func(context.Context, *nostr.Event) {
 
 // RegisterHandlers registers HAVEN handlers with the relay
 func RegisterHandlers(relay *khatru.Relay, cfg *Config) *Handler {
+	metrics := GetMetrics()
+
 	if cfg == nil || !cfg.Enabled {
 		log.Println("HAVEN: disabled")
+		metrics.SetHavenEnabled(false)
 		return nil
 	}
 
@@ -201,6 +236,9 @@ func RegisterHandlers(relay *khatru.Relay, cfg *Config) *Handler {
 	// Register event saved handler for logging
 	relay.OnEventSaved = append(relay.OnEventSaved, handler.OnEventSaved())
 
+	// Set metrics
+	metrics.SetHavenEnabled(true)
+
 	log.Printf("HAVEN: enabled for owner %s", truncateID(cfg.OwnerPubkey))
 	log.Printf("HAVEN: boxes - private (owner), chat (WoT), inbox (public write), outbox (public read)")
 
@@ -217,8 +255,13 @@ type HavenSystem struct {
 // RegisterFullSystem registers HAVEN handlers plus Blastr and Importer
 // storeFunc is used by the Importer to store fetched events
 func RegisterFullSystem(relay *khatru.Relay, cfg *Config, storeFunc func(context.Context, *nostr.Event) error) *HavenSystem {
+	metrics := GetMetrics()
+
 	if cfg == nil || !cfg.Enabled {
 		log.Println("HAVEN: disabled")
+		metrics.SetHavenEnabled(false)
+		metrics.SetBlastrEnabled(false)
+		metrics.SetImporterEnabled(false)
 		return nil
 	}
 
@@ -233,14 +276,20 @@ func RegisterFullSystem(relay *khatru.Relay, cfg *Config, storeFunc func(context
 		// Register Blastr's OnEventSaved handler
 		relay.OnEventSaved = append(relay.OnEventSaved, system.Blastr.OnEventSaved())
 		system.Blastr.Start()
+		metrics.SetBlastrEnabled(true)
 		log.Printf("HAVEN Blastr: broadcasting to %d relays", len(cfg.BlastrRelays))
+	} else {
+		metrics.SetBlastrEnabled(false)
 	}
 
 	// Initialize Importer (fetches inbox events)
 	if cfg.ImporterEnabled && len(cfg.ImporterRelays) > 0 && storeFunc != nil {
 		system.Importer = NewImporter(cfg, storeFunc)
 		system.Importer.Start()
+		metrics.SetImporterEnabled(true)
 		log.Printf("HAVEN Importer: polling %d relays", len(cfg.ImporterRelays))
+	} else {
+		metrics.SetImporterEnabled(false)
 	}
 
 	return system

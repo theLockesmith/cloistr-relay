@@ -21,6 +21,7 @@ type Blastr struct {
 	wg           sync.WaitGroup
 	mu           sync.RWMutex
 	stats        BlastrStats
+	metrics      *Metrics
 }
 
 // BlastrStats tracks broadcast statistics
@@ -114,6 +115,7 @@ func NewBlastr(cfg *Config) *Blastr {
 		eventQueue: make(chan *nostr.Event, 100),
 		ctx:        ctx,
 		cancel:     cancel,
+		metrics:    GetMetrics(),
 	}
 }
 
@@ -155,12 +157,15 @@ func (b *Blastr) Broadcast(event *nostr.Event) {
 	select {
 	case b.eventQueue <- event:
 		// Event queued
+		b.metrics.RecordBlastrQueued()
+		b.metrics.SetBlastrQueueSize(len(b.eventQueue))
 	default:
 		// Queue full, log and drop
 		log.Printf("HAVEN Blastr: queue full, dropping event %s", truncateID(event.ID))
 		b.mu.Lock()
 		b.stats.EventsFailed++
 		b.mu.Unlock()
+		b.metrics.RecordBlastrDropped()
 	}
 }
 
@@ -190,6 +195,9 @@ func (b *Blastr) broadcastEvent(event *nostr.Event) {
 	ctx, cancel := context.WithTimeout(b.ctx, 10*time.Second)
 	defer cancel()
 
+	// Update queue size metric after processing
+	defer b.metrics.SetBlastrQueueSize(len(b.eventQueue))
+
 	for _, relayURL := range b.config.BlastrRelays {
 		wg.Add(1)
 		go func(url string) {
@@ -198,9 +206,11 @@ func (b *Blastr) broadcastEvent(event *nostr.Event) {
 			err := b.relayPool.Publish(ctx, url, event)
 			if err != nil {
 				log.Printf("HAVEN Blastr: failed to publish to %s: %v", url, err)
+				b.metrics.RecordBlastrRelayPublish(url, false)
 				return
 			}
 
+			b.metrics.RecordBlastrRelayPublish(url, true)
 			mu.Lock()
 			successCount++
 			mu.Unlock()
@@ -213,10 +223,13 @@ func (b *Blastr) broadcastEvent(event *nostr.Event) {
 	if successCount > 0 {
 		b.stats.EventsBroadcast++
 		b.stats.LastBroadcast = time.Now()
+		b.metrics.RecordBlastrBroadcast()
 	} else {
 		b.stats.EventsFailed++
+		b.metrics.RecordBlastrFailed()
 	}
 	b.stats.RelaysConnected = b.relayPool.ConnectedCount()
+	b.metrics.SetBlastrRelaysConnected(b.stats.RelaysConnected)
 	b.mu.Unlock()
 
 	log.Printf("HAVEN Blastr: broadcast event %s to %d/%d relays",

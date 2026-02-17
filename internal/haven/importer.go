@@ -22,6 +22,7 @@ type Importer struct {
 	stats       ImporterStats
 	lastFetch   map[string]time.Time // Last successful fetch per relay
 	seenEvents  map[string]bool      // Dedup recent events
+	metrics     *Metrics
 }
 
 // ImporterStats tracks import statistics
@@ -69,6 +70,7 @@ func NewImporter(cfg *Config, storeFunc func(context.Context, *nostr.Event) erro
 		cancel:     cancel,
 		lastFetch:  make(map[string]time.Time),
 		seenEvents: make(map[string]bool),
+		metrics:    GetMetrics(),
 	}
 }
 
@@ -125,6 +127,9 @@ func (i *Importer) pollAllRelays() {
 	i.stats.LastPollTime = time.Now()
 	i.mu.Unlock()
 
+	// Record poll timestamp in metrics
+	i.metrics.SetImporterLastPollTimestamp(float64(time.Now().Unix()))
+
 	var wg sync.WaitGroup
 
 	for _, relayURL := range i.config.ImporterRelays {
@@ -143,6 +148,9 @@ func (i *Importer) pollAllRelays() {
 	i.mu.Lock()
 	i.stats.RelaysPolled = len(i.config.ImporterRelays)
 	i.mu.Unlock()
+
+	// Update metrics
+	i.metrics.SetImporterRelaysPolled(len(i.config.ImporterRelays))
 }
 
 // pollRelay fetches events from a single relay
@@ -157,6 +165,8 @@ func (i *Importer) pollRelay(relayURL string) {
 		i.mu.Lock()
 		i.stats.FetchErrors++
 		i.mu.Unlock()
+		i.metrics.RecordImporterFetchError()
+		i.metrics.RecordImporterRelayFetch(relayURL, false)
 		return
 	}
 
@@ -192,8 +202,13 @@ func (i *Importer) pollRelay(relayURL string) {
 		i.mu.Lock()
 		i.stats.FetchErrors++
 		i.mu.Unlock()
+		i.metrics.RecordImporterFetchError()
+		i.metrics.RecordImporterRelayFetch(relayURL, false)
 		return
 	}
+
+	// Record successful fetch
+	i.metrics.RecordImporterRelayFetch(relayURL, true)
 
 	// Process events
 	imported := 0
@@ -207,12 +222,14 @@ func (i *Importer) pollRelay(relayURL string) {
 
 		if seen {
 			skipped++
+			i.metrics.RecordImporterSkipped()
 			continue
 		}
 
 		// Skip events from the owner (those go to outbox, not inbox)
 		if event.PubKey == i.config.OwnerPubkey {
 			skipped++
+			i.metrics.RecordImporterSkipped()
 			continue
 		}
 
@@ -220,6 +237,7 @@ func (i *Importer) pollRelay(relayURL string) {
 		box := i.router.RouteEvent(event)
 		if box != BoxInbox && box != BoxChat {
 			skipped++
+			i.metrics.RecordImporterSkipped()
 			continue
 		}
 
@@ -235,6 +253,7 @@ func (i *Importer) pollRelay(relayURL string) {
 		i.mu.Unlock()
 
 		imported++
+		i.metrics.RecordImporterImported()
 	}
 
 	// Update last fetch time

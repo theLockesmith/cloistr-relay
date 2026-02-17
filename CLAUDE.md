@@ -200,6 +200,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | NIP-66 | Relay Health Monitoring | ✅ Complete |
 | HAVEN Phase 1 | Box routing | ✅ Complete |
 | HAVEN Phase 2 | Blastr + Importer | ✅ Complete |
+| HAVEN Phase 3 | Prometheus Metrics | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -226,6 +227,7 @@ HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay type
 | **WoT Integration** | ✅ Ready | Chat box uses existing WoT |
 | **Inbox Importer** | ✅ Complete | Pull tagged events from other relays |
 | **Outbox Blastr** | ✅ Complete | Broadcast outbox events to other relays |
+| **Prometheus Metrics** | ✅ Complete | Full metrics for box routing, Blastr, Importer |
 
 ### Configuration
 
@@ -261,10 +263,12 @@ internal/haven/
 ├── handlers.go      # RejectEvent, RejectFilter, OverwriteFilter, HavenSystem
 ├── blastr.go        # Outbox event broadcasting to other relays
 ├── importer.go      # Inbox event fetching from other relays
+├── metrics.go       # Prometheus metrics for HAVEN components
 ├── router_test.go   # Router tests
 ├── handlers_test.go # Handler tests
 ├── blastr_test.go   # Blastr tests
-└── importer_test.go # Importer tests
+├── importer_test.go # Importer tests
+└── metrics_test.go  # Metrics tests
 ```
 
 ### Blastr (Outbox Broadcasting)
@@ -285,11 +289,45 @@ The Importer component polls configured relays for events addressed to the owner
 - Routes events to inbox or chat box based on kind
 - Tracks import statistics
 
+### HAVEN Prometheus Metrics
+
+HAVEN exposes comprehensive Prometheus metrics at `/metrics`:
+
+**Box Routing Metrics:**
+- `nostr_relay_haven_events_routed_total{box}` - Events routed to each box
+- `nostr_relay_haven_events_rejected_total{box,reason}` - Events rejected per box
+- `nostr_relay_haven_filters_routed_total{box}` - Filters routed to each box
+- `nostr_relay_haven_filters_rejected_total{box,reason}` - Filter rejections
+- `nostr_relay_haven_access_attempts_total{box,operation}` - Box access attempts
+- `nostr_relay_haven_access_denied_total{box,operation,reason}` - Access denials
+
+**Blastr Metrics:**
+- `nostr_relay_haven_blastr_events_broadcast_total` - Successfully broadcast events
+- `nostr_relay_haven_blastr_events_failed_total` - Failed broadcasts
+- `nostr_relay_haven_blastr_events_queued_total` - Events queued for broadcast
+- `nostr_relay_haven_blastr_events_dropped_total` - Events dropped (queue full)
+- `nostr_relay_haven_blastr_relays_connected` - Connected relay count (gauge)
+- `nostr_relay_haven_blastr_queue_size` - Current queue size (gauge)
+- `nostr_relay_haven_blastr_relay_publish_total{relay,status}` - Per-relay publish stats
+
+**Importer Metrics:**
+- `nostr_relay_haven_importer_events_imported_total` - Events imported
+- `nostr_relay_haven_importer_events_skipped_total` - Events skipped (duplicates)
+- `nostr_relay_haven_importer_fetch_errors_total` - Fetch errors
+- `nostr_relay_haven_importer_relays_polled` - Relays polled count (gauge)
+- `nostr_relay_haven_importer_last_poll_timestamp` - Last poll timestamp (gauge)
+- `nostr_relay_haven_importer_relay_fetch_total{relay,status}` - Per-relay fetch stats
+
+**System Status:**
+- `nostr_relay_haven_enabled` - HAVEN enabled status (1/0)
+- `nostr_relay_haven_blastr_enabled` - Blastr enabled status (1/0)
+- `nostr_relay_haven_importer_enabled` - Importer enabled status (1/0)
+- `nostr_relay_haven_box_events_stored{box}` - Events stored per box (gauge)
+
 ## Future Roadmap
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| **HAVEN Metrics** | Prometheus metrics for box routing stats | High |
 | **RSS Bridge** | atomstr or built-in feed integration | Medium |
 | **Algorithmic Feeds** | User-controlled feed algorithms | Medium |
 | **NIP-0A CRDTs** | Contact list conflict resolution | Medium |
