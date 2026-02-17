@@ -6,10 +6,12 @@ import (
 	"log"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/auth"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/cache"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
@@ -333,12 +335,39 @@ func main() {
 		log.Println("pprof profiling enabled at /debug/pprof/")
 	}
 
+	// Create admin UI mux (served on relay-admin.* hostnames)
+	var adminMux *http.ServeMux
+	if mgmtStore != nil && len(cfg.AdminPubkeys) > 0 {
+		adminMux = http.NewServeMux()
+		adminHandler := admin.NewHandler(mgmtStore, cfg.AdminPubkeys)
+		adminHandler.RegisterRoutes(adminMux)
+		log.Println("Admin UI enabled for relay-admin.* hostnames")
+	}
+
+	// Host-based router: relay-admin.* -> admin UI, everything else -> relay
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		// Strip port if present
+		if idx := strings.Index(host, ":"); idx != -1 {
+			host = host[:idx]
+		}
+
+		// Route admin hostnames to admin UI
+		if strings.HasPrefix(host, "relay-admin.") && adminMux != nil {
+			adminMux.ServeHTTP(w, r)
+			return
+		}
+
+		// Everything else goes to relay
+		mux.ServeHTTP(w, r)
+	})
+
 	// Start the relay server
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("Starting Coldforge relay on %s", addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Failed to start relay: %v", err)
 	}
 }
