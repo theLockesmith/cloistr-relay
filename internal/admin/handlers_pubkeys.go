@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"gitlab.com/coldforge/coldforge-relay/internal/management"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
 )
 
 // PubkeysListData holds data for the pubkeys list partials

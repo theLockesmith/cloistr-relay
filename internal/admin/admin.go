@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gitlab.com/coldforge/coldforge-relay/internal/management"
-	"gitlab.com/coldforge/coldforge-relay/web"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
+	"git.coldforge.xyz/coldforge/cloistr-relay/web"
 )
 
 // contextKey is used for storing values in request context

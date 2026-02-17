@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/coldforge/coldforge-relay/internal/logging"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/logging"
 )
 
 // Span represents a trace span for timing operations

@@ -12,8 +12,8 @@ import (
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
-	"gitlab.com/coldforge/coldforge-relay/internal/logging"
-	"gitlab.com/coldforge/coldforge-relay/internal/tracing"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/logging"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/tracing"
 )
 
 var connectionCounter uint64

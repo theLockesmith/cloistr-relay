@@ -10,8 +10,8 @@ import (
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
-	"gitlab.com/coldforge/coldforge-relay/internal/config"
-	"gitlab.com/coldforge/coldforge-relay/internal/metrics"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/metrics"
 )
 
 // RegisterHandlers registers all event handlers with the relay

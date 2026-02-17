@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"gitlab.com/coldforge/coldforge-relay/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
 )
 
 // TestRejectInvalidEvents_ValidEvent tests that valid events are accepted

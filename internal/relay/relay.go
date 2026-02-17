@@ -7,11 +7,11 @@ import (
 	"github.com/fiatjaf/eventstore/postgresql"
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
-	"gitlab.com/coldforge/coldforge-relay/internal/config"
-	"gitlab.com/coldforge/coldforge-relay/internal/eventcache"
-	"gitlab.com/coldforge/coldforge-relay/internal/handlers"
-	"gitlab.com/coldforge/coldforge-relay/internal/search"
-	"gitlab.com/coldforge/coldforge-relay/internal/writeahead"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/eventcache"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/handlers"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/search"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/writeahead"
 )
 
 // Version is the relay software version (set at build time or default)
@@ -27,7 +27,7 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
 	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
-	relay.Info.Software = "https://gitlab.com/coldforge/coldforge-relay"
+	relay.Info.Software = "https://git.coldforge.xyz/coldforge/cloistr-relay"
 	relay.Info.Version = Version
 
 	// Enable NIP-77 Negentropy sync
@@ -96,7 +96,7 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
 	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
-	relay.Info.Software = "https://gitlab.com/coldforge/coldforge-relay"
+	relay.Info.Software = "https://git.coldforge.xyz/coldforge/cloistr-relay"
 	relay.Info.Version = Version
 
 	// Enable NIP-77 Negentropy sync

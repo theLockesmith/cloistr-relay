@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/coldforge/coldforge-relay/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/cache"
 )
 
 // Store handles database operations for WoT follow relationships

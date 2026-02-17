@@ -11,8 +11,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"gitlab.com/coldforge/coldforge-relay/internal/admin"
-	"gitlab.com/coldforge/coldforge-relay/internal/management"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
 )
 
 func main() {
