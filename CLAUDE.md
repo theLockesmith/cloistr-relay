@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI
+**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (integrated via host-based routing)
@@ -79,6 +79,7 @@ docker compose logs -f relay
 │   ├── cache/          # Redis/Dragonfly client wrapper
 │   ├── config/         # Configuration loading
 │   ├── eventcache/     # Hot event caching (Dragonfly)
+│   ├── feeds/          # RSS/Atom feed generation (Nostr-to-RSS bridge)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── haven/          # HAVEN-style box routing (inbox/outbox/chat/private)
@@ -169,12 +170,21 @@ Set via environment variables:
 - `HAVEN_IMPORTER_ENABLED` - Enable inbox event fetching (default: false)
 - `HAVEN_IMPORTER_RELAYS` - Relays to fetch inbox events from (comma-separated)
 
+### RSS/Atom Feeds
+- `FEED_ENABLED` - Enable RSS/Atom feeds (default: auto-enabled when HAVEN is enabled)
+- `FEED_LIMIT` - Default number of items in feeds (default: 20)
+- `FEED_MAX_LIMIT` - Maximum items allowed via ?limit= parameter (default: 100)
+- `FEED_INCLUDE_LONG_FORM` - Include kind 30023 articles in feeds (default: true)
+- `FEED_INCLUDE_REPLIES` - Include replies (events with e-tags) in feeds (default: false)
+
 ## Monitoring Endpoints (Relay)
 
 - `/metrics` - Prometheus metrics (includes DB pool stats)
 - `/health` - Health check (returns "OK")
 - `/` - NIP-11 relay info (with Accept: application/nostr+json header)
 - `/management` - NIP-86 relay management API (requires NIP-98 auth)
+- `/feed/rss` or `/feed/rss.xml` - RSS 2.0 feed of owner's posts (when FEED_ENABLED)
+- `/feed/atom` or `/feed/atom.xml` - Atom 1.0 feed of owner's posts (when FEED_ENABLED)
 - `/debug/pprof/*` - Go pprof profiling (when PPROF_ENABLED=true)
 
 ## Admin UI
@@ -202,6 +212,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | HAVEN Phase 1 | Box routing | ✅ Complete |
 | HAVEN Phase 2 | Blastr + Importer | ✅ Complete |
 | HAVEN Phase 3 | Prometheus Metrics | ✅ Complete |
+| RSS Bridge | Nostr-to-RSS/Atom feeds | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -326,11 +337,61 @@ HAVEN exposes comprehensive Prometheus metrics at `/metrics`:
 - `nostr_relay_haven_importer_enabled` - Importer enabled status (1/0)
 - `nostr_relay_haven_box_events_stored{box}` - Events stored per box (gauge)
 
+## RSS/Atom Feeds (Nostr-to-RSS Bridge)
+
+The relay includes built-in RSS and Atom feed generation for syndicating owner's posts to traditional feed readers.
+
+### Features
+
+- **RSS 2.0** feed at `/feed/rss` (or `/feed/rss.xml`)
+- **Atom 1.0** feed at `/feed/atom` (or `/feed/atom.xml`)
+- Automatic conversion of kind 1 (short notes) and kind 30023 (long-form articles)
+- Configurable item limits via `?limit=N` query parameter
+- Proper HTML formatting with URL linkification
+- Hashtag extraction from event t-tags
+- Reply filtering (excludes replies by default)
+- Cache headers for CDN/proxy caching (5 minute TTL)
+
+### Configuration
+
+```bash
+# Enable feeds (auto-enabled when HAVEN is enabled)
+FEED_ENABLED=true
+
+# Items per feed
+FEED_LIMIT=20              # Default items
+FEED_MAX_LIMIT=100         # Maximum via ?limit=
+
+# Content options
+FEED_INCLUDE_LONG_FORM=true   # Include kind 30023 articles
+FEED_INCLUDE_REPLIES=false    # Exclude replies by default
+```
+
+### Architecture
+
+```
+internal/feeds/
+├── types.go         # Config, FeedItem, FeedMetadata
+├── handler.go       # HTTP handlers, event-to-feed conversion
+├── rss.go           # RSS 2.0 XML generation
+├── atom.go          # Atom 1.0 XML generation
+└── feeds_test.go    # Comprehensive tests
+```
+
+### Usage
+
+```bash
+# Get RSS feed
+curl https://relay.cloistr.xyz/feed/rss
+
+# Get Atom feed with custom limit
+curl https://relay.cloistr.xyz/feed/atom?limit=50
+```
+
 ## Future Roadmap
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| **RSS Bridge** | atomstr or built-in feed integration | Medium |
 | **Algorithmic Feeds** | User-controlled feed algorithms | Medium |
 | **NIP-0A CRDTs** | Contact list conflict resolution | Medium |
 | **Geographic Distribution** | Multi-region deployment | Low |

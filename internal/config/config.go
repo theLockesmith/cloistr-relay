@@ -100,6 +100,13 @@ type Config struct {
 	HavenBlastrRelays         []string // Relays to broadcast to
 	HavenImporterEnabled      bool     // Enable inbox importing
 	HavenImporterRelays       []string // Relays to import from
+
+	// RSS/Atom Feed
+	FeedEnabled         bool // Enable RSS/Atom feed endpoints
+	FeedLimit           int  // Default number of items in feeds (default: 20)
+	FeedMaxLimit        int  // Maximum items allowed (default: 100)
+	FeedIncludeLongForm bool // Include kind 30023 articles (default: true)
+	FeedIncludeReplies  bool // Include replies (default: false)
 }
 
 // Load reads configuration from environment variables
@@ -390,6 +397,38 @@ func Load() (*Config, error) {
 	}
 	if havenImporterRelays := os.Getenv("HAVEN_IMPORTER_RELAYS"); havenImporterRelays != "" {
 		cfg.HavenImporterRelays = parseCommaSeparated(havenImporterRelays)
+	}
+
+	// RSS/Atom Feed (enabled by default when HAVEN is enabled)
+	cfg.FeedLimit = 20
+	cfg.FeedMaxLimit = 100
+	cfg.FeedIncludeLongForm = true
+	cfg.FeedIncludeReplies = false
+
+	if feedEnabled := os.Getenv("FEED_ENABLED"); feedEnabled == "true" || feedEnabled == "1" {
+		cfg.FeedEnabled = true
+	} else if feedEnabled == "false" || feedEnabled == "0" {
+		cfg.FeedEnabled = false
+	} else {
+		// Auto-enable feeds when HAVEN is enabled
+		cfg.FeedEnabled = cfg.HavenEnabled
+	}
+
+	if feedLimit := os.Getenv("FEED_LIMIT"); feedLimit != "" {
+		if v, err := strconv.Atoi(feedLimit); err == nil && v > 0 {
+			cfg.FeedLimit = v
+		}
+	}
+	if feedMaxLimit := os.Getenv("FEED_MAX_LIMIT"); feedMaxLimit != "" {
+		if v, err := strconv.Atoi(feedMaxLimit); err == nil && v > 0 {
+			cfg.FeedMaxLimit = v
+		}
+	}
+	if feedLongForm := os.Getenv("FEED_INCLUDE_LONG_FORM"); feedLongForm == "false" || feedLongForm == "0" {
+		cfg.FeedIncludeLongForm = false
+	}
+	if feedReplies := os.Getenv("FEED_INCLUDE_REPLIES"); feedReplies == "true" || feedReplies == "1" {
+		cfg.FeedIncludeReplies = true
 	}
 
 	return cfg, nil

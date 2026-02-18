@@ -13,6 +13,7 @@ import (
 
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/auth"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/feeds"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/cache"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/eventcache"
@@ -313,6 +314,33 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	// RSS/Atom feed endpoints (if enabled)
+	if cfg.FeedEnabled {
+		// Determine owner pubkey - prefer HAVEN owner, fall back to relay pubkey
+		ownerPubkey := cfg.HavenOwnerPubkey
+		if ownerPubkey == "" {
+			ownerPubkey = cfg.RelayPubkey
+		}
+
+		if ownerPubkey != "" {
+			feedCfg := &feeds.Config{
+				Enabled:         true,
+				OwnerPubkey:     ownerPubkey,
+				RelayURL:        cfg.RelayURL,
+				RelayName:       cfg.RelayName,
+				DefaultLimit:    cfg.FeedLimit,
+				MaxLimit:        cfg.FeedMaxLimit,
+				IncludeLongForm: cfg.FeedIncludeLongForm,
+				IncludeReplies:  cfg.FeedIncludeReplies,
+			}
+			feedHandler := feeds.NewHandler(feedCfg, db)
+			feedHandler.RegisterRoutes(mux)
+			log.Printf("RSS/Atom feeds enabled at /feed/rss and /feed/atom")
+		} else {
+			log.Println("RSS/Atom feeds disabled: no owner pubkey configured")
+		}
+	}
 
 	// NIP-86 management API endpoint
 	if mgmtStore != nil {
