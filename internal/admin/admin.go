@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
 	"git.coldforge.xyz/coldforge/cloistr-relay/web"
 )
@@ -26,6 +27,8 @@ type Handler struct {
 	store        *management.Store
 	adminPubkeys []string
 	pages        map[string]*template.Template
+	havenSystem  *haven.HavenSystem
+	havenConfig  *haven.Config
 }
 
 // NewHandler creates a new admin UI handler
@@ -36,6 +39,12 @@ func NewHandler(store *management.Store, adminPubkeys []string) *Handler {
 	}
 	h.loadTemplates()
 	return h
+}
+
+// SetHavenSystem sets the HAVEN system reference for stats display
+func (h *Handler) SetHavenSystem(system *haven.HavenSystem, config *haven.Config) {
+	h.havenSystem = system
+	h.havenConfig = config
 }
 
 // RegisterRoutes registers all admin UI routes on the given mux
@@ -87,6 +96,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Settings
 	mux.HandleFunc("/settings", h.handleSettingsPage)
 	mux.HandleFunc("/settings/update", h.requireAuth(h.handleUpdateSettings))
+
+	// HAVEN
+	mux.HandleFunc("/haven", h.handleHavenPage)
+	mux.HandleFunc("/haven/stats", h.handleHavenStats)
 
 	log.Println("Admin UI enabled at /")
 }

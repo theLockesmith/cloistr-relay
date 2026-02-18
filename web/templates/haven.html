@@ -1,0 +1,117 @@
+{{template "layout.html" .}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">HAVEN Box Routing</h1>
+        {{if .Content.Enabled}}
+        <span class="inline-flex items-center rounded-full bg-green-500/10 px-3 py-1 text-sm font-medium text-green-400 ring-1 ring-inset ring-green-500/20">
+            Enabled
+        </span>
+        {{else}}
+        <span class="inline-flex items-center rounded-full bg-gray-500/10 px-3 py-1 text-sm font-medium text-gray-400 ring-1 ring-inset ring-gray-500/20">
+            Disabled
+        </span>
+        {{end}}
+    </div>
+
+    {{if not .Content.Enabled}}
+    <!-- HAVEN Disabled Notice -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-white">HAVEN is not enabled</h3>
+                <p class="mt-2 text-sm text-gray-400">
+                    HAVEN-style box routing separates events into four boxes: Private, Chat, Inbox, and Outbox.
+                    To enable HAVEN, set the following environment variables:
+                </p>
+                <pre class="mt-3 p-3 bg-gray-900 rounded text-xs text-gray-300 overflow-x-auto">HAVEN_ENABLED=true
+HAVEN_OWNER_PUBKEY=&lt;your-hex-pubkey&gt;</pre>
+            </div>
+        </div>
+    </div>
+    {{else}}
+
+    <!-- Owner Info -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-medium text-white mb-4">Owner</h2>
+        <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-nostr-purple flex items-center justify-center">
+                <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-white">{{.Content.OwnerDisplay}}</p>
+                <p class="text-xs text-gray-500 font-mono">{{.Content.OwnerPubkey}}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Box Overview -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-medium text-white mb-4">Boxes</h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <!-- Private Box -->
+            <div class="bg-gray-700/50 rounded-lg p-4">
+                <div class="flex items-center mb-2">
+                    <svg class="h-5 w-5 text-purple-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    </svg>
+                    <span class="font-medium text-white">Private</span>
+                </div>
+                <p class="text-xs text-gray-400">Drafts, eCash, personal notes</p>
+                <p class="text-xs text-gray-500 mt-1">Owner only{{if .Content.RequireAuthForPrivate}} (auth required){{end}}</p>
+            </div>
+
+            <!-- Chat Box -->
+            <div class="bg-gray-700/50 rounded-lg p-4">
+                <div class="flex items-center mb-2">
+                    <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                    </svg>
+                    <span class="font-medium text-white">Chat</span>
+                </div>
+                <p class="text-xs text-gray-400">DMs and group chats</p>
+                <p class="text-xs text-gray-500 mt-1">WoT-filtered{{if .Content.RequireAuthForChat}} (auth required){{end}}</p>
+            </div>
+
+            <!-- Inbox Box -->
+            <div class="bg-gray-700/50 rounded-lg p-4">
+                <div class="flex items-center mb-2">
+                    <svg class="h-5 w-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                    </svg>
+                    <span class="font-medium text-white">Inbox</span>
+                </div>
+                <p class="text-xs text-gray-400">Events addressed to owner</p>
+                <p class="text-xs text-gray-500 mt-1">{{if .Content.AllowPublicInboxWrite}}Public write{{else}}Auth required{{end}}, owner read</p>
+            </div>
+
+            <!-- Outbox Box -->
+            <div class="bg-gray-700/50 rounded-lg p-4">
+                <div class="flex items-center mb-2">
+                    <svg class="h-5 w-5 text-orange-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                    </svg>
+                    <span class="font-medium text-white">Outbox</span>
+                </div>
+                <p class="text-xs text-gray-400">Owner's public notes</p>
+                <p class="text-xs text-gray-500 mt-1">Owner write, {{if .Content.AllowPublicOutboxRead}}public read{{else}}auth required{{end}}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Section (refreshable via htmx) -->
+    <div id="haven-stats" hx-get="/haven/stats" hx-trigger="every 30s" hx-swap="innerHTML">
+        {{template "haven_stats.html" .Content}}
+    </div>
+
+    {{end}}
+</div>
+{{end}}

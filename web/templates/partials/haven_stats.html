@@ -1,0 +1,117 @@
+{{define "haven_stats.html"}}
+{{if .HasStats}}
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <!-- Blastr Stats -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-medium text-white">Blastr (Outbox Broadcasting)</h2>
+            {{if .BlastrEnabled}}
+            <span class="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">Active</span>
+            {{else}}
+            <span class="inline-flex items-center rounded-full bg-gray-500/10 px-2 py-0.5 text-xs font-medium text-gray-400">Disabled</span>
+            {{end}}
+        </div>
+
+        {{if .BlastrEnabled}}
+        {{if .BlastrStats}}
+        <dl class="grid grid-cols-2 gap-4">
+            <div>
+                <dt class="text-sm text-gray-400">Events Broadcast</dt>
+                <dd class="text-2xl font-semibold text-white">{{.BlastrStats.EventsBroadcast}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Failed</dt>
+                <dd class="text-2xl font-semibold text-red-400">{{.BlastrStats.EventsFailed}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Relays Connected</dt>
+                <dd class="text-2xl font-semibold text-white">{{.BlastrStats.RelaysConnected}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Last Broadcast</dt>
+                <dd class="text-sm text-gray-300">{{.BlastrStats.LastBroadcast}}</dd>
+            </div>
+        </dl>
+
+        {{if .BlastrRelays}}
+        <div class="mt-4 pt-4 border-t border-gray-700">
+            <h3 class="text-sm font-medium text-gray-400 mb-2">Target Relays</h3>
+            <ul class="space-y-1">
+                {{range .BlastrRelays}}
+                <li class="text-xs text-gray-500 font-mono truncate">{{.}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+        {{else}}
+        <p class="text-sm text-gray-400">No stats available yet</p>
+        {{end}}
+        {{else}}
+        <p class="text-sm text-gray-400">Blastr broadcasts owner's outbox events to other relays. Enable with HAVEN_BLASTR_ENABLED=true</p>
+        {{end}}
+    </div>
+
+    <!-- Importer Stats -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-medium text-white">Importer (Inbox Fetching)</h2>
+            {{if .ImporterEnabled}}
+            <span class="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">Active</span>
+            {{else}}
+            <span class="inline-flex items-center rounded-full bg-gray-500/10 px-2 py-0.5 text-xs font-medium text-gray-400">Disabled</span>
+            {{end}}
+        </div>
+
+        {{if .ImporterEnabled}}
+        {{if .ImporterStats}}
+        <dl class="grid grid-cols-2 gap-4">
+            <div>
+                <dt class="text-sm text-gray-400">Events Imported</dt>
+                <dd class="text-2xl font-semibold text-white">{{.ImporterStats.EventsImported}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Skipped</dt>
+                <dd class="text-2xl font-semibold text-gray-400">{{.ImporterStats.EventsSkipped}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Fetch Errors</dt>
+                <dd class="text-2xl font-semibold text-red-400">{{.ImporterStats.FetchErrors}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Last Import</dt>
+                <dd class="text-sm text-gray-300">{{.ImporterStats.LastImport}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Relays Polled</dt>
+                <dd class="text-2xl font-semibold text-white">{{.ImporterStats.RelaysPolled}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm text-gray-400">Last Poll</dt>
+                <dd class="text-sm text-gray-300">{{.ImporterStats.LastPollTime}}</dd>
+            </div>
+        </dl>
+
+        {{if .ImporterRelays}}
+        <div class="mt-4 pt-4 border-t border-gray-700">
+            <h3 class="text-sm font-medium text-gray-400 mb-2">Source Relays</h3>
+            <ul class="space-y-1">
+                {{range .ImporterRelays}}
+                <li class="text-xs text-gray-500 font-mono truncate">{{.}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+        {{else}}
+        <p class="text-sm text-gray-400">No stats available yet</p>
+        {{end}}
+        {{else}}
+        <p class="text-sm text-gray-400">Importer fetches events addressed to owner from other relays. Enable with HAVEN_IMPORTER_ENABLED=true</p>
+        {{end}}
+    </div>
+</div>
+{{else}}
+<div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <p class="text-sm text-gray-400">Statistics will appear here when HAVEN components are active.</p>
+</div>
+{{end}}
+{{end}}

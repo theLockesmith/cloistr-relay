@@ -268,8 +268,9 @@ func main() {
 
 	// Initialize HAVEN-style box routing (if enabled)
 	var havenSystem *haven.HavenSystem
+	var havenCfg *haven.Config
 	if cfg.HavenEnabled && cfg.HavenOwnerPubkey != "" {
-		havenCfg := &haven.Config{
+		havenCfg = &haven.Config{
 			Enabled:               true,
 			OwnerPubkey:           cfg.HavenOwnerPubkey,
 			PrivateKinds:          cfg.HavenPrivateKinds,
@@ -340,6 +341,8 @@ func main() {
 	if mgmtStore != nil && len(cfg.AdminPubkeys) > 0 {
 		adminMux = http.NewServeMux()
 		adminHandler := admin.NewHandler(mgmtStore, cfg.AdminPubkeys)
+		// Inject HAVEN system for admin UI stats display
+		adminHandler.SetHavenSystem(havenSystem, havenCfg)
 		adminHandler.RegisterRoutes(adminMux)
 		log.Println("Admin UI enabled for relay-admin.* hostnames")
 	}

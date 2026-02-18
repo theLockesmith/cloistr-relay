@@ -184,7 +184,8 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 - **Routing:** Host-based routing in `cmd/relay/main.go` - requests to `relay-admin.*` hostnames are routed to the admin UI mux
 - **URL:** `https://relay-admin.cloistr.xyz/` (via Cloudflare Tunnel, LAN DNS points to internal IP)
 - **Auth:** NIP-07 browser extension + NIP-98 HTTP signatures
-- **Features:** Pubkey ban/allow, event ban, moderation queue, IP blocking, kind allowlist, relay settings
+- **Features:** Pubkey ban/allow, event ban, moderation queue, IP blocking, kind allowlist, relay settings, HAVEN dashboard
+- **HAVEN Page:** Shows box routing status, owner info, Blastr/Importer stats (auto-refreshes every 30s)
 - **Requirements:** `ADMIN_PUBKEYS` must be set, `mgmtStore` initialized (happens when admin pubkeys configured)
 
 ## Completed Phases
@@ -228,6 +229,7 @@ HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay type
 | **Inbox Importer** | ✅ Complete | Pull tagged events from other relays |
 | **Outbox Blastr** | ✅ Complete | Broadcast outbox events to other relays |
 | **Prometheus Metrics** | ✅ Complete | Full metrics for box routing, Blastr, Importer |
+| **Admin UI** | ✅ Complete | HAVEN dashboard in relay admin panel |
 
 ### Configuration
 
@@ -335,7 +337,6 @@ HAVEN exposes comprehensive Prometheus metrics at `/metrics`:
 
 ### Potential Enhancements
 - **HAVEN E-tag Routing**: Route reactions/reposts by looking up referenced events
-- **HAVEN Admin UI**: Box statistics and configuration in admin panel
 - **Blastr Retry Logic**: Persistent retry queue for failed broadcasts
 - **Importer Webhooks**: Real-time inbox updates via WebSocket subscriptions
 
