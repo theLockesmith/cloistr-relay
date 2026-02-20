@@ -107,6 +107,13 @@ type Config struct {
 	FeedMaxLimit        int  // Maximum items allowed (default: 100)
 	FeedIncludeLongForm bool // Include kind 30023 articles (default: true)
 	FeedIncludeReplies  bool // Include replies (default: false)
+
+	// Algorithmic Feeds
+	AlgoEnabled          bool    // Enable algorithmic feed support
+	AlgoDefault          string  // Default algorithm: chronological, wot-ranked, engagement, trending
+	AlgoWoTWeight        float64 // Weight for WoT score (0-1, default: 0.3)
+	AlgoEngagementWeight float64 // Weight for engagement score (0-1, default: 0.4)
+	AlgoRecencyWeight    float64 // Weight for recency score (0-1, default: 0.3)
 }
 
 // Load reads configuration from environment variables
@@ -429,6 +436,34 @@ func Load() (*Config, error) {
 	}
 	if feedReplies := os.Getenv("FEED_INCLUDE_REPLIES"); feedReplies == "true" || feedReplies == "1" {
 		cfg.FeedIncludeReplies = true
+	}
+
+	// Algorithmic Feeds (opt-in, disabled by default)
+	cfg.AlgoDefault = "chronological"
+	cfg.AlgoWoTWeight = 0.3
+	cfg.AlgoEngagementWeight = 0.4
+	cfg.AlgoRecencyWeight = 0.3
+
+	if algoEnabled := os.Getenv("ALGO_ENABLED"); algoEnabled == "true" || algoEnabled == "1" {
+		cfg.AlgoEnabled = true
+	}
+	if algoDefault := os.Getenv("ALGO_DEFAULT"); algoDefault != "" {
+		cfg.AlgoDefault = algoDefault
+	}
+	if wotWeight := os.Getenv("ALGO_WOT_WEIGHT"); wotWeight != "" {
+		if v, err := strconv.ParseFloat(wotWeight, 64); err == nil && v >= 0 && v <= 1 {
+			cfg.AlgoWoTWeight = v
+		}
+	}
+	if engagementWeight := os.Getenv("ALGO_ENGAGEMENT_WEIGHT"); engagementWeight != "" {
+		if v, err := strconv.ParseFloat(engagementWeight, 64); err == nil && v >= 0 && v <= 1 {
+			cfg.AlgoEngagementWeight = v
+		}
+	}
+	if recencyWeight := os.Getenv("ALGO_RECENCY_WEIGHT"); recencyWeight != "" {
+		if v, err := strconv.ParseFloat(recencyWeight, 64); err == nil && v >= 0 && v <= 1 {
+			cfg.AlgoRecencyWeight = v
+		}
 	}
 
 	return cfg, nil

@@ -12,6 +12,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/algo"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/auth"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/feeds"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/cache"
@@ -164,6 +165,7 @@ func main() {
 	}
 
 	// Initialize WoT filtering (if enabled)
+	var wotHandler *wot.Handler
 	if cfg.WoTEnabled && cfg.WoTOwnerPubkey != "" {
 		wotStore := wot.NewStore(rawDB, 5*time.Minute)
 		if err := wotStore.Init(); err != nil {
@@ -205,8 +207,22 @@ func main() {
 			wotCfg.Policies[wot.TrustLevelUnknown] = policy
 		}
 
-		wot.RegisterHandlers(r, wotStore, wotCfg)
+		wotHandler = wot.RegisterHandlers(r, wotStore, wotCfg)
 	}
+
+	// Initialize Algorithmic Feeds (if enabled)
+	var algoHandler *algo.Handler
+	if cfg.AlgoEnabled {
+		algoCfg := &algo.Config{
+			Enabled:          true,
+			DefaultAlgorithm: algo.ParseAlgorithm(cfg.AlgoDefault),
+			WoTWeight:        cfg.AlgoWoTWeight,
+			EngagementWeight: cfg.AlgoEngagementWeight,
+			RecencyWeight:    cfg.AlgoRecencyWeight,
+		}
+		algoHandler = algo.RegisterAlgorithmSupport(r, algoCfg, rawDB, wotHandler)
+	}
+	_ = algoHandler // Available for feed handler integration
 
 	// Initialize NIP-59 Gift Wrap (if enabled)
 	if cfg.GiftWrapEnabled {
@@ -325,16 +341,22 @@ func main() {
 
 		if ownerPubkey != "" {
 			feedCfg := &feeds.Config{
-				Enabled:         true,
-				OwnerPubkey:     ownerPubkey,
-				RelayURL:        cfg.RelayURL,
-				RelayName:       cfg.RelayName,
-				DefaultLimit:    cfg.FeedLimit,
-				MaxLimit:        cfg.FeedMaxLimit,
-				IncludeLongForm: cfg.FeedIncludeLongForm,
-				IncludeReplies:  cfg.FeedIncludeReplies,
+				Enabled:          true,
+				OwnerPubkey:      ownerPubkey,
+				RelayURL:         cfg.RelayURL,
+				RelayName:        cfg.RelayName,
+				DefaultLimit:     cfg.FeedLimit,
+				MaxLimit:         cfg.FeedMaxLimit,
+				IncludeLongForm:  cfg.FeedIncludeLongForm,
+				IncludeReplies:   cfg.FeedIncludeReplies,
+				DefaultAlgorithm: cfg.AlgoDefault,
 			}
 			feedHandler := feeds.NewHandler(feedCfg, db)
+			// Connect algorithm handler if enabled
+			if algoHandler != nil {
+				feedHandler.SetAlgoHandler(algoHandler)
+				log.Println("RSS/Atom feeds with algorithmic sorting enabled")
+			}
 			feedHandler.RegisterRoutes(mux)
 			log.Printf("RSS/Atom feeds enabled at /feed/rss and /feed/atom")
 		} else {

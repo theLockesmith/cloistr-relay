@@ -12,6 +12,8 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
+
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/algo"
 )
 
 // EventQuerier is an interface for querying events from the database
@@ -21,8 +23,9 @@ type EventQuerier interface {
 
 // Handler handles RSS/Atom feed HTTP requests
 type Handler struct {
-	config  *Config
-	querier EventQuerier
+	config      *Config
+	querier     EventQuerier
+	algoHandler *algo.Handler
 }
 
 // NewHandler creates a new feed handler
@@ -41,6 +44,11 @@ func NewHandler(cfg *Config, querier EventQuerier) *Handler {
 		config:  cfg,
 		querier: querier,
 	}
+}
+
+// SetAlgoHandler sets the algorithm handler for ranked feeds
+func (h *Handler) SetAlgoHandler(algoHandler *algo.Handler) {
+	h.algoHandler = algoHandler
 }
 
 // RegisterRoutes registers feed routes on the provided mux
@@ -129,16 +137,31 @@ func (h *Handler) fetchFeedItems(r *http.Request) ([]FeedItem, error) {
 		}
 	}
 
+	// Parse algorithm from query string (opt-in)
+	algoName := r.URL.Query().Get("algo")
+	if algoName == "" {
+		algoName = h.config.DefaultAlgorithm
+	}
+
 	// Build filter for notes (kind 1) from owner
 	kinds := []int{1} // Short text notes
 	if h.config.IncludeLongForm {
 		kinds = append(kinds, 30023) // Long-form articles
 	}
 
+	// For algorithmic feeds, fetch more events than limit so we can rank them
+	fetchLimit := limit
+	if algoName != "" && algoName != "chronological" && h.algoHandler != nil {
+		fetchLimit = limit * 3 // Fetch 3x to allow for better ranking
+		if fetchLimit > 200 {
+			fetchLimit = 200
+		}
+	}
+
 	filter := nostr.Filter{
 		Authors: []string{h.config.OwnerPubkey},
 		Kinds:   kinds,
-		Limit:   limit,
+		Limit:   fetchLimit,
 	}
 
 	// Query events
@@ -155,6 +178,30 @@ func (h *Handler) fetchFeedItems(r *http.Request) ([]FeedItem, error) {
 			continue
 		}
 		events = append(events, event)
+	}
+
+	// Apply algorithmic scoring if enabled and requested
+	if algoName != "" && algoName != "chronological" && h.algoHandler != nil {
+		algorithm := algo.ParseAlgorithm(algoName)
+		scored := h.algoHandler.ScoreEventsForFeed(ctx, events, algorithm)
+
+		// Take only the top 'limit' events after scoring
+		if len(scored) > limit {
+			scored = scored[:limit]
+		}
+
+		// Convert scored events to feed items
+		items := make([]FeedItem, 0, len(scored))
+		for _, se := range scored {
+			item := h.eventToFeedItem(se.Event)
+			items = append(items, item)
+		}
+		return items, nil
+	}
+
+	// No algorithmic scoring - just use chronological order
+	if len(events) > limit {
+		events = events[:limit]
 	}
 
 	// Convert to feed items

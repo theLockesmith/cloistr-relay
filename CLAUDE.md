@@ -2,10 +2,15 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds
+**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (integrated via host-based routing)
+
+## REQUIRED READING (Before ANY Action)
+
+**Claude MUST read this file at the start of every session:**
+- `~/claude/coldforge/cloistr/CLAUDE.md` - Cloistr project rules (contains further required reading)
 
 ## Documentation
 
@@ -75,6 +80,7 @@ docker compose logs -f relay
 │   └── relay/          # Main relay entry point (includes host-based routing for admin UI)
 ├── internal/
 │   ├── admin/          # Admin UI handlers (htmx + NIP-98 auth) - integrated into relay via host routing
+│   ├── algo/           # Algorithmic feed scoring engine (opt-in, WoT-ranked, engagement, trending)
 │   ├── auth/           # NIP-42 authentication
 │   ├── cache/          # Redis/Dragonfly client wrapper
 │   ├── config/         # Configuration loading
@@ -177,6 +183,13 @@ Set via environment variables:
 - `FEED_INCLUDE_LONG_FORM` - Include kind 30023 articles in feeds (default: true)
 - `FEED_INCLUDE_REPLIES` - Include replies (events with e-tags) in feeds (default: false)
 
+### Algorithmic Feeds (Opt-in)
+- `ALGO_ENABLED` - Enable algorithmic feed support (default: false)
+- `ALGO_DEFAULT` - Default algorithm: chronological, wot-ranked, engagement, trending (default: chronological)
+- `ALGO_WOT_WEIGHT` - Weight for WoT score in trending algorithm (0-1, default: 0.3)
+- `ALGO_ENGAGEMENT_WEIGHT` - Weight for engagement score (0-1, default: 0.4)
+- `ALGO_RECENCY_WEIGHT` - Weight for recency score (0-1, default: 0.3)
+
 ## Monitoring Endpoints (Relay)
 
 - `/metrics` - Prometheus metrics (includes DB pool stats)
@@ -213,6 +226,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | HAVEN Phase 2 | Blastr + Importer | ✅ Complete |
 | HAVEN Phase 3 | Prometheus Metrics | ✅ Complete |
 | RSS Bridge | Nostr-to-RSS/Atom feeds | ✅ Complete |
+| Algorithmic Feeds | Opt-in ranked feeds (WoT, engagement, trending) | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -388,11 +402,80 @@ curl https://relay.cloistr.xyz/feed/rss
 curl https://relay.cloistr.xyz/feed/atom?limit=50
 ```
 
+## Algorithmic Feeds (Opt-in)
+
+The relay supports opt-in algorithmic feed ranking, integrating with the existing WoT system.
+
+### Available Algorithms
+
+| Algorithm | Description | Scoring |
+|-----------|-------------|---------|
+| `chronological` | Default - no ranking | Timestamp only |
+| `wot-ranked` | Rank by Web of Trust level | 70% WoT + 30% recency |
+| `engagement` | Rank by reactions/reposts/zaps | 70% engagement + 30% recency |
+| `trending` | Balance of all factors | Configurable weights |
+| `personalized` | User preference boosting | Base score + personal boosts |
+
+### Opt-in Methods
+
+**Via REQ filter tag:**
+```json
+["REQ", "feed", {"kinds": [1], "#algo": ["wot-ranked"]}]
+```
+
+**Via RSS/Atom feed URL parameter:**
+```bash
+curl https://relay.cloistr.xyz/feed/rss?algo=trending
+curl https://relay.cloistr.xyz/feed/atom?algo=engagement&limit=50
+```
+
+### Engagement Scoring
+
+Events are scored based on:
+- Reactions (kind 7): 1 point each
+- Reposts (kind 6): 3 points each
+- Replies (kind 1 with e-tag): 2 points each
+- Zaps (kind 9735): 5 points + log bonus for amount
+
+### User Preferences (Personalized Algorithm)
+
+The personalized algorithm supports:
+- **Muted pubkeys** - Filter out specific users
+- **Muted words** - Filter content containing words
+- **Muted hashtags** - Filter by hashtag
+- **Boosted pubkeys** - Increase score for favorite users
+- **Boosted hashtags** - Increase score for topics
+- **Min WoT level** - Only show trusted users
+
+### Architecture
+
+```
+internal/algo/
+├── types.go         # Algorithm types, config, preferences
+├── scorer.go        # Event scoring engine
+├── handler.go       # Relay integration, filter handling
+└── algo_test.go     # Comprehensive tests
+```
+
+### Configuration
+
+```bash
+# Enable algorithmic feeds (opt-in)
+ALGO_ENABLED=true
+
+# Default algorithm (users can override via ?algo= parameter)
+ALGO_DEFAULT=chronological
+
+# Trending algorithm weights (should sum to 1.0)
+ALGO_WOT_WEIGHT=0.3
+ALGO_ENGAGEMENT_WEIGHT=0.4
+ALGO_RECENCY_WEIGHT=0.3
+```
+
 ## Future Roadmap
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| **Algorithmic Feeds** | User-controlled feed algorithms | Medium |
 | **NIP-0A CRDTs** | Contact list conflict resolution | Medium |
 | **Geographic Distribution** | Multi-region deployment | Low |
 

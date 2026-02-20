@@ -32,6 +32,9 @@ type Config struct {
 
 	// IncludeReplies includes replies (events with e-tags) in feeds
 	IncludeReplies bool
+
+	// DefaultAlgorithm is the default feed algorithm (chronological if not set)
+	DefaultAlgorithm string
 }
 
 // DefaultConfig returns sensible defaults for feed configuration
