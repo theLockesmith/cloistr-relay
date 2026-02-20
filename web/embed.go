@@ -7,7 +7,7 @@ import "embed"
 //go:embed templates/*.html templates/partials/*.html
 var Templates embed.FS
 
-// Static contains all static assets (JS, CSS) for the admin UI
+// Static contains all static assets (JS, CSS, icons) for the admin UI
 //
-//go:embed static/js/*.js
+//go:embed static/*.ico static/*.svg static/*.png static/js/*.js
 var Static embed.FS

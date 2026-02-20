@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/pprof"
@@ -37,6 +38,7 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/tracing"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/writeahead"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/zaps"
+	"git.coldforge.xyz/coldforge/cloistr-relay/web"
 )
 
 // eventLookupAdapter implements haven.EventLookup using the PostgreSQL backend
@@ -368,6 +370,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	// Serve favicon from embedded static files
+	staticFS, err := fs.Sub(web.Static, "static")
+	if err == nil {
+		mux.Handle("/favicon.ico", http.FileServer(http.FS(staticFS)))
+		mux.Handle("/favicon.svg", http.FileServer(http.FS(staticFS)))
+		mux.Handle("/apple-touch-icon.png", http.FileServer(http.FS(staticFS)))
+	}
 
 	// RSS/Atom feed endpoints (if enabled)
 	if cfg.FeedEnabled {
