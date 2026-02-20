@@ -98,6 +98,9 @@ type Config struct {
 	HavenRequireAuthForPrivate bool    // Require auth for private box (default: true)
 	HavenBlastrEnabled        bool     // Enable outbox broadcasting
 	HavenBlastrRelays         []string // Relays to broadcast to
+	HavenBlastrRetryEnabled   bool     // Enable persistent retry queue (requires Redis/Dragonfly)
+	HavenBlastrMaxRetries     int      // Maximum retry attempts per event/relay (default: 6)
+	HavenBlastrRetryInterval  int      // Retry worker interval in seconds (default: 30)
 	HavenImporterEnabled      bool     // Enable inbox importing
 	HavenImporterRelays       []string // Relays to import from
 
@@ -398,6 +401,21 @@ func Load() (*Config, error) {
 	}
 	if havenBlastrRelays := os.Getenv("HAVEN_BLASTR_RELAYS"); havenBlastrRelays != "" {
 		cfg.HavenBlastrRelays = parseCommaSeparated(havenBlastrRelays)
+	}
+	if havenBlastrRetry := os.Getenv("HAVEN_BLASTR_RETRY_ENABLED"); havenBlastrRetry == "true" || havenBlastrRetry == "1" {
+		cfg.HavenBlastrRetryEnabled = true
+	}
+	cfg.HavenBlastrMaxRetries = 6 // Default
+	if maxRetries := os.Getenv("HAVEN_BLASTR_MAX_RETRIES"); maxRetries != "" {
+		if v, err := strconv.Atoi(maxRetries); err == nil && v > 0 {
+			cfg.HavenBlastrMaxRetries = v
+		}
+	}
+	cfg.HavenBlastrRetryInterval = 30 // Default: 30 seconds
+	if retryInterval := os.Getenv("HAVEN_BLASTR_RETRY_INTERVAL"); retryInterval != "" {
+		if v, err := strconv.Atoi(retryInterval); err == nil && v > 0 {
+			cfg.HavenBlastrRetryInterval = v
+		}
 	}
 	if havenImporter := os.Getenv("HAVEN_IMPORTER_ENABLED"); havenImporter == "true" || havenImporter == "1" {
 		cfg.HavenImporterEnabled = true

@@ -127,6 +127,12 @@ type Config struct {
 	BlastrEnabled bool     // Enable broadcasting outbox events to other relays
 	BlastrRelays  []string // Relays to broadcast outbox events to
 
+	// Blastr retry settings
+	BlastrRetryEnabled  bool   // Enable persistent retry queue (requires Redis/Dragonfly)
+	BlastrRetryKey      string // Redis key for retry queue (default: "haven:blastr:retry")
+	BlastrMaxRetries    int    // Maximum retry attempts per event/relay (default: 6)
+	BlastrRetryInterval int    // Retry worker interval in seconds (default: 30)
+
 	// Importer settings (incoming event fetching)
 	ImporterEnabled bool     // Enable fetching inbox events from other relays
 	ImporterRelays  []string // Relays to fetch inbox events from
@@ -140,6 +146,9 @@ func DefaultConfig() *Config {
 		AllowPublicInboxWrite: true,  // Anyone can mention/tag the owner
 		RequireAuthForChat:    true,  // DMs require authentication
 		RequireAuthForPrivate: true,  // Private box requires authentication
+		BlastrRetryKey:        "haven:blastr:retry",
+		BlastrMaxRetries:      6,
+		BlastrRetryInterval:   30,
 	}
 }
 

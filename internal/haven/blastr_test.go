@@ -2,6 +2,7 @@ package haven
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -242,5 +243,182 @@ func TestBlastrStats_Fields(t *testing.T) {
 	}
 	if stats.RelaysConnected != 3 {
 		t.Error("RelaysConnected not set correctly")
+	}
+}
+
+// TestRetryBackoff tests the exponential backoff calculation
+func TestRetryBackoff(t *testing.T) {
+	tests := []struct {
+		attempt  int
+		expected time.Duration
+	}{
+		{0, 30 * time.Second},   // Attempt 0 treated as 1
+		{1, 30 * time.Second},   // 30 * 2^0 = 30
+		{2, 60 * time.Second},   // 30 * 2^1 = 60
+		{3, 120 * time.Second},  // 30 * 2^2 = 120
+		{4, 240 * time.Second},  // 30 * 2^3 = 240
+		{5, 480 * time.Second},  // 30 * 2^4 = 480
+		{6, 960 * time.Second},  // 30 * 2^5 = 960
+		{7, 960 * time.Second},  // Capped at 960
+		{10, 960 * time.Second}, // Capped at 960
+	}
+
+	for _, tt := range tests {
+		result := retryBackoff(tt.attempt)
+		if result != tt.expected {
+			t.Errorf("retryBackoff(%d) = %v, want %v", tt.attempt, result, tt.expected)
+		}
+	}
+}
+
+// TestRetryEntry_JSON tests RetryEntry JSON marshaling
+func TestRetryEntry_JSON(t *testing.T) {
+	entry := RetryEntry{
+		EventID:   "event123",
+		Event:     []byte(`{"id":"event123","kind":1}`),
+		RelayURL:  "wss://relay.example.com",
+		Attempts:  3,
+		AddedAt:   1234567890,
+		LastError: "connection refused",
+	}
+
+	// Test that it can be marshaled without error
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Errorf("Failed to marshal RetryEntry: %v", err)
+	}
+
+	// Test that it can be unmarshaled
+	var decoded RetryEntry
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Errorf("Failed to unmarshal RetryEntry: %v", err)
+	}
+
+	if decoded.EventID != entry.EventID {
+		t.Errorf("EventID = %s, want %s", decoded.EventID, entry.EventID)
+	}
+	if decoded.RelayURL != entry.RelayURL {
+		t.Errorf("RelayURL = %s, want %s", decoded.RelayURL, entry.RelayURL)
+	}
+	if decoded.Attempts != entry.Attempts {
+		t.Errorf("Attempts = %d, want %d", decoded.Attempts, entry.Attempts)
+	}
+}
+
+// TestBlastr_SetRedisClient tests setting the Redis client
+func TestBlastr_SetRedisClient(t *testing.T) {
+	cfg := &Config{
+		Enabled:       true,
+		OwnerPubkey:   ownerPubkey,
+		BlastrEnabled: true,
+		BlastrRelays:  []string{"wss://relay.example.com"},
+	}
+
+	blastr := NewBlastr(cfg)
+
+	// Initially nil
+	if blastr.rdb != nil {
+		t.Error("Redis client should be nil initially")
+	}
+
+	// SetRedisClient with nil shouldn't panic
+	blastr.SetRedisClient(nil)
+}
+
+// TestBlastr_RetryQueueSize_NoRedis tests RetryQueueSize without Redis
+func TestBlastr_RetryQueueSize_NoRedis(t *testing.T) {
+	cfg := &Config{
+		Enabled:       true,
+		OwnerPubkey:   ownerPubkey,
+		BlastrEnabled: true,
+		BlastrRelays:  []string{"wss://relay.example.com"},
+	}
+
+	blastr := NewBlastr(cfg)
+
+	// Without Redis, should return 0
+	size := blastr.RetryQueueSize(context.Background())
+	if size != 0 {
+		t.Errorf("RetryQueueSize without Redis = %d, want 0", size)
+	}
+}
+
+// TestBlastr_RetryConfig tests retry configuration
+func TestBlastr_RetryConfig(t *testing.T) {
+	cfg := &Config{
+		Enabled:             true,
+		OwnerPubkey:         ownerPubkey,
+		BlastrEnabled:       true,
+		BlastrRelays:        []string{"wss://relay.example.com"},
+		BlastrRetryEnabled:  true,
+		BlastrRetryKey:      "custom:retry:key",
+		BlastrMaxRetries:    10,
+		BlastrRetryInterval: 60,
+	}
+
+	blastr := NewBlastr(cfg)
+
+	// Check that custom retry key is used
+	if blastr.retryKey != "custom:retry:key" {
+		t.Errorf("retryKey = %s, want custom:retry:key", blastr.retryKey)
+	}
+}
+
+// TestBlastr_RetryConfig_Defaults tests default retry configuration
+func TestBlastr_RetryConfig_Defaults(t *testing.T) {
+	cfg := &Config{
+		Enabled:       true,
+		OwnerPubkey:   ownerPubkey,
+		BlastrEnabled: true,
+		BlastrRelays:  []string{"wss://relay.example.com"},
+		// No retry config set
+	}
+
+	blastr := NewBlastr(cfg)
+
+	// Check that default retry key is used
+	if blastr.retryKey != "haven:blastr:retry" {
+		t.Errorf("retryKey = %s, want haven:blastr:retry", blastr.retryKey)
+	}
+}
+
+// TestBlastr_ClearRetryQueue_NoRedis tests ClearRetryQueue without Redis
+func TestBlastr_ClearRetryQueue_NoRedis(t *testing.T) {
+	cfg := &Config{
+		Enabled:       true,
+		OwnerPubkey:   ownerPubkey,
+		BlastrEnabled: true,
+		BlastrRelays:  []string{"wss://relay.example.com"},
+	}
+
+	blastr := NewBlastr(cfg)
+
+	// Without Redis, should return nil (no error)
+	err := blastr.ClearRetryQueue(context.Background())
+	if err != nil {
+		t.Errorf("ClearRetryQueue without Redis returned error: %v", err)
+	}
+}
+
+// TestBlastrStats_RetryFields tests retry-related stats fields
+func TestBlastrStats_RetryFields(t *testing.T) {
+	stats := BlastrStats{
+		EventsBroadcast:  10,
+		EventsFailed:     2,
+		RelaysConnected:  3,
+		LastBroadcast:    time.Now(),
+		RetryQueueSize:   5,
+		EventsRetried:    3,
+		RetriesExhausted: 1,
+	}
+
+	if stats.RetryQueueSize != 5 {
+		t.Error("RetryQueueSize not set correctly")
+	}
+	if stats.EventsRetried != 3 {
+		t.Error("EventsRetried not set correctly")
+	}
+	if stats.RetriesExhausted != 1 {
+		t.Error("RetriesExhausted not set correctly")
 	}
 }

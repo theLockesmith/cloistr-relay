@@ -323,6 +323,9 @@ func main() {
 			RequireAuthForPrivate: cfg.HavenRequireAuthForPrivate,
 			BlastrEnabled:         cfg.HavenBlastrEnabled,
 			BlastrRelays:          cfg.HavenBlastrRelays,
+			BlastrRetryEnabled:    cfg.HavenBlastrRetryEnabled && cacheClient != nil,
+			BlastrMaxRetries:      cfg.HavenBlastrMaxRetries,
+			BlastrRetryInterval:   cfg.HavenBlastrRetryInterval,
 			ImporterEnabled:       cfg.HavenImporterEnabled,
 			ImporterRelays:        cfg.HavenImporterRelays,
 		}
@@ -333,6 +336,12 @@ func main() {
 			// Set up E-tag routing for reactions/reposts
 			havenSystem.SetEventLookup(&eventLookupAdapter{db: db})
 			log.Println("HAVEN E-tag routing enabled for reactions/reposts")
+
+			// Set up Blastr retry queue if cache is available
+			if havenSystem.Blastr != nil && cacheClient != nil && cfg.HavenBlastrRetryEnabled {
+				havenSystem.Blastr.SetRedisClient(cacheClient.RedisClient())
+				log.Println("HAVEN Blastr retry queue enabled")
+			}
 		}
 	}
 

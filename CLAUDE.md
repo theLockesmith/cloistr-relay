@@ -173,6 +173,9 @@ Set via environment variables:
 - `HAVEN_REQUIRE_AUTH_FOR_PRIVATE` - Private box requires authentication (default: true)
 - `HAVEN_BLASTR_ENABLED` - Enable outbox broadcasting (default: false)
 - `HAVEN_BLASTR_RELAYS` - Relays to broadcast outbox events to (comma-separated)
+- `HAVEN_BLASTR_RETRY_ENABLED` - Enable persistent retry queue (requires Redis/Dragonfly)
+- `HAVEN_BLASTR_MAX_RETRIES` - Maximum retry attempts per event/relay (default: 6)
+- `HAVEN_BLASTR_RETRY_INTERVAL` - Retry worker interval in seconds (default: 30)
 - `HAVEN_IMPORTER_ENABLED` - Enable inbox event fetching (default: false)
 - `HAVEN_IMPORTER_RELAYS` - Relays to fetch inbox events from (comma-separated)
 
@@ -228,6 +231,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | RSS Bridge | Nostr-to-RSS/Atom feeds | ✅ Complete |
 | Algorithmic Feeds | Opt-in ranked feeds (WoT, engagement, trending) | ✅ Complete |
 | HAVEN E-tag Routing | Route reactions/reposts via event lookup | ✅ Complete |
+| Blastr Retry Queue | Persistent retry for failed broadcasts | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -308,6 +312,7 @@ The Blastr component automatically broadcasts owner's outbox events to configure
 - Manages relay connections with automatic reconnection
 - Queues events for async broadcast
 - Tracks broadcast statistics
+- **Persistent Retry Queue**: Failed broadcasts are stored in Redis/Dragonfly and retried with exponential backoff (30s, 60s, 120s, 240s, 480s, 960s, max 6 retries)
 
 ### Importer (Inbox Fetching)
 
@@ -363,6 +368,10 @@ HAVEN exposes comprehensive Prometheus metrics at `/metrics`:
 - `nostr_relay_haven_blastr_relays_connected` - Connected relay count (gauge)
 - `nostr_relay_haven_blastr_queue_size` - Current queue size (gauge)
 - `nostr_relay_haven_blastr_relay_publish_total{relay,status}` - Per-relay publish stats
+- `nostr_relay_haven_blastr_retry_queued_total` - Failed broadcasts queued for retry
+- `nostr_relay_haven_blastr_retry_success_total` - Successful retries
+- `nostr_relay_haven_blastr_retry_exhausted_total` - Retries that exhausted max attempts
+- `nostr_relay_haven_blastr_retry_queue_size` - Current retry queue size (gauge)
 
 **Importer Metrics:**
 - `nostr_relay_haven_importer_events_imported_total` - Events imported

@@ -77,6 +77,27 @@ var (
 		Help: "Total publish attempts per relay",
 	}, []string{"relay", "status"})
 
+	// Blastr retry metrics
+	havenBlastrRetryQueued = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_retry_queued_total",
+		Help: "Total number of failed broadcasts queued for retry",
+	})
+
+	havenBlastrRetrySuccess = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_retry_success_total",
+		Help: "Total number of successful retries",
+	})
+
+	havenBlastrRetryExhausted = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_retry_exhausted_total",
+		Help: "Total number of retries that exhausted max attempts",
+	})
+
+	havenBlastrRetryQueueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_blastr_retry_queue_size",
+		Help: "Current number of events in the retry queue",
+	})
+
 	// Importer metrics
 	havenImporterEventsImported = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "nostr_relay_haven_importer_events_imported_total",
@@ -206,6 +227,26 @@ func (m *Metrics) RecordBlastrRelayPublish(relay string, success bool) {
 		status = "failed"
 	}
 	havenBlastrRelayPublishTotal.WithLabelValues(truncateRelay(relay), status).Inc()
+}
+
+// RecordBlastrRetryQueued records an event being queued for retry
+func (m *Metrics) RecordBlastrRetryQueued() {
+	havenBlastrRetryQueued.Inc()
+}
+
+// RecordBlastrRetrySuccess records a successful retry
+func (m *Metrics) RecordBlastrRetrySuccess() {
+	havenBlastrRetrySuccess.Inc()
+}
+
+// RecordBlastrRetryExhausted records retries exhausted for an event
+func (m *Metrics) RecordBlastrRetryExhausted() {
+	havenBlastrRetryExhausted.Inc()
+}
+
+// SetBlastrRetryQueueSize sets the retry queue size
+func (m *Metrics) SetBlastrRetryQueueSize(size int) {
+	havenBlastrRetryQueueSize.Set(float64(size))
 }
 
 // RecordImporterImported records an imported event
