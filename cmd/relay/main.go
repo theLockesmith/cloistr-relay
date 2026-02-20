@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fiatjaf/eventstore/postgresql"
 	"github.com/nbd-wtf/go-nostr"
 
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
@@ -37,6 +38,31 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/writeahead"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/zaps"
 )
+
+// eventLookupAdapter implements haven.EventLookup using the PostgreSQL backend
+type eventLookupAdapter struct {
+	db *postgresql.PostgresBackend
+}
+
+// GetEventByID looks up an event by its ID
+func (a *eventLookupAdapter) GetEventByID(ctx context.Context, id string) (*nostr.Event, error) {
+	filter := nostr.Filter{
+		IDs:   []string{id},
+		Limit: 1,
+	}
+
+	eventCh, err := a.db.QueryEvents(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the first (and only) event from the channel
+	for event := range eventCh {
+		return event, nil
+	}
+
+	return nil, nil // Event not found
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -304,6 +330,9 @@ func main() {
 		havenSystem = haven.RegisterFullSystem(r, havenCfg, db.SaveEvent)
 		if havenSystem != nil {
 			defer havenSystem.Stop()
+			// Set up E-tag routing for reactions/reposts
+			havenSystem.SetEventLookup(&eventLookupAdapter{db: db})
+			log.Println("HAVEN E-tag routing enabled for reactions/reposts")
 		}
 	}
 

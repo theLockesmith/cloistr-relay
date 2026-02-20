@@ -1,6 +1,7 @@
 package haven
 
 import (
+	"context"
 	"testing"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -1242,5 +1243,310 @@ func TestDefaultKindConstants(t *testing.T) {
 	// Test outbox kinds
 	if len(DefaultOutboxKinds) == 0 {
 		t.Error("DefaultOutboxKinds should not be empty")
+	}
+}
+
+// mockEventLookup implements EventLookup for testing E-tag routing
+type mockEventLookup struct {
+	events map[string]*nostr.Event
+}
+
+func (m *mockEventLookup) GetEventByID(ctx context.Context, id string) (*nostr.Event, error) {
+	if event, ok := m.events[id]; ok {
+		return event, nil
+	}
+	return nil, nil
+}
+
+// TestRouteEvent_ETagRouting_ReactionToOwnerEvent tests that reactions to owner's events go to inbox
+func TestRouteEvent_ETagRouting_ReactionToOwnerEvent(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup with owner's event
+	ownerEventID := "ownerevent123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{
+			ownerEventID: {
+				ID:     ownerEventID,
+				PubKey: ownerPubkey,
+				Kind:   1,
+			},
+		},
+	}
+	router.SetEventLookup(lookup)
+
+	// Reaction (kind 7) to owner's event
+	reaction := &nostr.Event{
+		Kind:   7,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"e", ownerEventID},
+		},
+	}
+
+	box := router.RouteEvent(reaction)
+	if box != BoxInbox {
+		t.Errorf("RouteEvent() for reaction to owner's event = %v, want %v", box, BoxInbox)
+	}
+}
+
+// TestRouteEvent_ETagRouting_RepostOfOwnerEvent tests that reposts of owner's events go to inbox
+func TestRouteEvent_ETagRouting_RepostOfOwnerEvent(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup with owner's event
+	ownerEventID := "ownerevent123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{
+			ownerEventID: {
+				ID:     ownerEventID,
+				PubKey: ownerPubkey,
+				Kind:   1,
+			},
+		},
+	}
+	router.SetEventLookup(lookup)
+
+	// Repost (kind 6) of owner's event
+	repost := &nostr.Event{
+		Kind:   6,
+		PubKey: bobPubkey,
+		Tags: nostr.Tags{
+			{"e", ownerEventID},
+		},
+	}
+
+	box := router.RouteEvent(repost)
+	if box != BoxInbox {
+		t.Errorf("RouteEvent() for repost of owner's event = %v, want %v", box, BoxInbox)
+	}
+}
+
+// TestRouteEvent_ETagRouting_ReactionToOthersEvent tests that reactions to non-owner events return unknown
+func TestRouteEvent_ETagRouting_ReactionToOthersEvent(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup with someone else's event
+	otherEventID := "otherevent123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{
+			otherEventID: {
+				ID:     otherEventID,
+				PubKey: bobPubkey, // Not the owner
+				Kind:   1,
+			},
+		},
+	}
+	router.SetEventLookup(lookup)
+
+	// Reaction (kind 7) to someone else's event
+	reaction := &nostr.Event{
+		Kind:   7,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"e", otherEventID},
+		},
+	}
+
+	box := router.RouteEvent(reaction)
+	if box != BoxUnknown {
+		t.Errorf("RouteEvent() for reaction to non-owner's event = %v, want %v", box, BoxUnknown)
+	}
+}
+
+// TestRouteEvent_ETagRouting_ReactionWithPTag tests that p-tag takes precedence over e-tag lookup
+func TestRouteEvent_ETagRouting_ReactionWithPTag(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup - no events (to ensure e-tag lookup isn't needed)
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{},
+	}
+	router.SetEventLookup(lookup)
+
+	// Reaction with p-tag to owner (should go to inbox without e-tag lookup)
+	reaction := &nostr.Event{
+		Kind:   7,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"p", ownerPubkey},
+			{"e", "nonexistenteventid"},
+		},
+	}
+
+	box := router.RouteEvent(reaction)
+	if box != BoxInbox {
+		t.Errorf("RouteEvent() for reaction with owner p-tag = %v, want %v", box, BoxInbox)
+	}
+}
+
+// TestRouteEvent_ETagRouting_WithoutEventLookup tests behavior without event lookup set
+func TestRouteEvent_ETagRouting_WithoutEventLookup(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+	// Don't set event lookup
+
+	// Reaction without p-tag (can't determine if it's to owner's event)
+	reaction := &nostr.Event{
+		Kind:   7,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"e", "someeventid"},
+		},
+	}
+
+	box := router.RouteEvent(reaction)
+	if box != BoxUnknown {
+		t.Errorf("RouteEvent() for reaction without event lookup = %v, want %v", box, BoxUnknown)
+	}
+}
+
+// TestRouteEvent_ETagRouting_EventNotFound tests behavior when referenced event is not found
+func TestRouteEvent_ETagRouting_EventNotFound(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup with no events
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{},
+	}
+	router.SetEventLookup(lookup)
+
+	// Reaction to non-existent event
+	reaction := &nostr.Event{
+		Kind:   7,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"e", "nonexistenteventid"},
+		},
+	}
+
+	box := router.RouteEvent(reaction)
+	if box != BoxUnknown {
+		t.Errorf("RouteEvent() for reaction to non-existent event = %v, want %v", box, BoxUnknown)
+	}
+}
+
+// TestRouteEvent_ETagRouting_MultipleETags tests that any e-tag referencing owner's event routes to inbox
+func TestRouteEvent_ETagRouting_MultipleETags(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup with owner's event as second e-tag
+	ownerEventID := "ownerevent123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	otherEventID := "otherevent123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{
+			ownerEventID: {
+				ID:     ownerEventID,
+				PubKey: ownerPubkey,
+				Kind:   1,
+			},
+			otherEventID: {
+				ID:     otherEventID,
+				PubKey: bobPubkey,
+				Kind:   1,
+			},
+		},
+	}
+	router.SetEventLookup(lookup)
+
+	// Reaction with multiple e-tags, owner's event is second
+	reaction := &nostr.Event{
+		Kind:   7,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"e", otherEventID},
+			{"e", ownerEventID},
+		},
+	}
+
+	box := router.RouteEvent(reaction)
+	if box != BoxInbox {
+		t.Errorf("RouteEvent() for reaction with owner's event in multiple e-tags = %v, want %v", box, BoxInbox)
+	}
+}
+
+// TestRouteEvent_ETagRouting_NonReactionKinds tests that e-tag routing only applies to kind 6 and 7
+func TestRouteEvent_ETagRouting_NonReactionKinds(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Set up mock event lookup with owner's event
+	ownerEventID := "ownerevent123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	lookup := &mockEventLookup{
+		events: map[string]*nostr.Event{
+			ownerEventID: {
+				ID:     ownerEventID,
+				PubKey: ownerPubkey,
+				Kind:   1,
+			},
+		},
+	}
+	router.SetEventLookup(lookup)
+
+	// Text note (kind 1) with e-tag referencing owner's event - should NOT use e-tag routing
+	textNote := &nostr.Event{
+		Kind:   1,
+		PubKey: alicePubkey,
+		Tags: nostr.Tags{
+			{"e", ownerEventID},
+		},
+	}
+
+	box := router.RouteEvent(textNote)
+	// Kind 1 without p-tag to owner should be unknown (e-tag routing is only for kind 6/7)
+	if box != BoxUnknown {
+		t.Errorf("RouteEvent() for text note with e-tag = %v, want %v (e-tag routing is only for kind 6/7)", box, BoxUnknown)
+	}
+}
+
+// TestSetEventLookup tests the SetEventLookup method
+func TestSetEventLookup(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+
+	// Initially no event lookup
+	if router.eventLookup != nil {
+		t.Error("Router should initially have nil eventLookup")
+	}
+
+	// Set event lookup
+	lookup := &mockEventLookup{}
+	router.SetEventLookup(lookup)
+
+	if router.eventLookup == nil {
+		t.Error("SetEventLookup should set the eventLookup field")
 	}
 }

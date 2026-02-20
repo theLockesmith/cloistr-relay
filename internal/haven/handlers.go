@@ -39,6 +39,12 @@ func NewHandler(cfg *Config) *Handler {
 	}
 }
 
+// SetEventLookup sets the event lookup interface for e-tag routing.
+// This enables routing reactions/reposts to inbox when they reference owner's events.
+func (h *Handler) SetEventLookup(lookup EventLookup) {
+	h.router.SetEventLookup(lookup)
+}
+
 // boxContextKey is used to store the determined box in context
 type boxContextKey struct{}
 
@@ -306,6 +312,15 @@ func (s *HavenSystem) Stop() {
 	if s.Importer != nil {
 		s.Importer.Stop()
 	}
+}
+
+// SetEventLookup sets the event lookup interface for e-tag routing.
+// This enables routing reactions/reposts to inbox when they reference owner's events.
+func (s *HavenSystem) SetEventLookup(lookup EventLookup) {
+	if s == nil || s.Handler == nil {
+		return
+	}
+	s.Handler.SetEventLookup(lookup)
 }
 
 // Stats returns combined statistics

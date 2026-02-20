@@ -227,6 +227,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | HAVEN Phase 3 | Prometheus Metrics | ✅ Complete |
 | RSS Bridge | Nostr-to-RSS/Atom feeds | ✅ Complete |
 | Algorithmic Feeds | Opt-in ranked feeds (WoT, engagement, trending) | ✅ Complete |
+| HAVEN E-tag Routing | Route reactions/reposts via event lookup | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -248,6 +249,7 @@ HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay type
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **Box Router** | ✅ Complete | Routes events by kind/author/tags |
+| **E-tag Routing** | ✅ Complete | Routes reactions/reposts to inbox via event lookup |
 | **Auth Policies** | ✅ Complete | Per-box authentication requirements |
 | **Filter Routing** | ✅ Complete | Query routing to correct boxes |
 | **WoT Integration** | ✅ Ready | Chat box uses existing WoT |
@@ -285,13 +287,13 @@ HAVEN_IMPORTER_RELAYS=wss://relay1.example.com,wss://relay2.example.com
 
 ```
 internal/haven/
-├── types.go         # Box types, default kinds, config, access policies
-├── router.go        # Event/filter routing logic
+├── types.go         # Box types, default kinds, config, access policies, EventLookup interface
+├── router.go        # Event/filter routing logic (includes E-tag routing for reactions/reposts)
 ├── handlers.go      # RejectEvent, RejectFilter, OverwriteFilter, HavenSystem
 ├── blastr.go        # Outbox event broadcasting to other relays
 ├── importer.go      # Inbox event fetching from other relays
 ├── metrics.go       # Prometheus metrics for HAVEN components
-├── router_test.go   # Router tests
+├── router_test.go   # Router tests (includes E-tag routing tests)
 ├── handlers_test.go # Handler tests
 ├── blastr_test.go   # Blastr tests
 ├── importer_test.go # Importer tests
@@ -315,6 +317,31 @@ The Importer component polls configured relays for events addressed to the owner
 - Deduplicates events to avoid storing duplicates
 - Routes events to inbox or chat box based on kind
 - Tracks import statistics
+
+### E-tag Routing
+
+The E-tag routing feature enables intelligent inbox routing for reactions (kind 7) and reposts (kind 6) that reference the owner's events, even without a p-tag:
+
+**How it works:**
+1. When a reaction or repost arrives without a p-tag to the owner
+2. The router looks up the referenced event(s) in the e-tags
+3. If any referenced event was authored by the owner, the event is routed to inbox
+4. This allows receiving reactions/reposts to owner's content from other relays
+
+**Implementation:**
+- `EventLookup` interface in `types.go` for database queries
+- `referencesOwnerEvent()` method in `router.go` for e-tag checking
+- Adapter in `main.go` wraps PostgreSQL backend for event lookups
+- P-tag routing takes precedence (no lookup needed if owner is p-tagged)
+
+**Example:**
+```
+Event: Reaction (kind 7) from Alice
+Tags: [["e", "owner_note_123"]]
+
+Without E-tag routing: → BoxUnknown (rejected)
+With E-tag routing: Looks up owner_note_123 → Author is owner → BoxInbox
+```
 
 ### HAVEN Prometheus Metrics
 
@@ -480,7 +507,6 @@ ALGO_RECENCY_WEIGHT=0.3
 | **Geographic Distribution** | Multi-region deployment | Low |
 
 ### Potential Enhancements
-- **HAVEN E-tag Routing**: Route reactions/reposts by looking up referenced events
 - **Blastr Retry Logic**: Persistent retry queue for failed broadcasts
 - **Importer Webhooks**: Real-time inbox updates via WebSocket subscriptions
 

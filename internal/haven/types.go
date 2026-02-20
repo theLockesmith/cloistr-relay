@@ -11,6 +11,20 @@
 // Reference: https://github.com/bitvora/haven
 package haven
 
+import (
+	"context"
+
+	"github.com/nbd-wtf/go-nostr"
+)
+
+// EventLookup is an interface for looking up events by ID
+// This is used for E-tag routing to determine if a reaction/repost
+// is targeting one of the owner's events
+type EventLookup interface {
+	// GetEventByID returns an event by its ID, or nil if not found
+	GetEventByID(ctx context.Context, id string) (*nostr.Event, error)
+}
+
 // Box represents the type of storage box for event routing
 type Box int
 

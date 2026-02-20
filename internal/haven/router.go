@@ -1,6 +1,8 @@
 package haven
 
 import (
+	"context"
+
 	"github.com/nbd-wtf/go-nostr"
 )
 
@@ -11,6 +13,7 @@ type Router struct {
 	chatKinds    map[int]bool
 	inboxKinds   map[int]bool
 	outboxKinds  map[int]bool
+	eventLookup  EventLookup // Optional: for e-tag routing
 }
 
 // NewRouter creates a new box router
@@ -45,6 +48,13 @@ func NewRouter(cfg *Config) *Router {
 	}
 
 	return r
+}
+
+// SetEventLookup sets the event lookup interface for e-tag routing.
+// When set, reactions (kind 7) and reposts (kind 6) will be routed to inbox
+// if they reference one of the owner's events.
+func (r *Router) SetEventLookup(lookup EventLookup) {
+	r.eventLookup = lookup
 }
 
 // RouteEvent determines which box an event should be stored in
@@ -110,9 +120,48 @@ func (r *Router) isAddressedToOwner(event *nostr.Event) bool {
 		}
 	}
 
-	// For reactions and reposts, we'd need to check if they reference
-	// the owner's events (would require event lookup)
-	// For now, we accept them if they're inbox kinds
+	// For reactions (kind 7) and reposts (kind 6), check e-tags
+	// to see if they reference the owner's events
+	if (event.Kind == 6 || event.Kind == 7) && r.eventLookup != nil {
+		if r.referencesOwnerEvent(event) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// referencesOwnerEvent checks if an event's e-tags reference any of the owner's events
+func (r *Router) referencesOwnerEvent(event *nostr.Event) bool {
+	if r.eventLookup == nil {
+		return false
+	}
+
+	ownerPubkey := r.config.OwnerPubkey
+
+	// Extract all e-tags (event references)
+	for _, tag := range event.Tags {
+		if len(tag) < 2 || tag[0] != "e" {
+			continue
+		}
+
+		eventID := tag[1]
+		if eventID == "" {
+			continue
+		}
+
+		// Look up the referenced event
+		ctx := context.Background()
+		referencedEvent, err := r.eventLookup.GetEventByID(ctx, eventID)
+		if err != nil || referencedEvent == nil {
+			continue
+		}
+
+		// Check if the referenced event is from the owner
+		if referencedEvent.PubKey == ownerPubkey {
+			return true
+		}
+	}
 
 	return false
 }
