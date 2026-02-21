@@ -125,6 +125,12 @@ func NewHandler(store *Store, ownerPubkey string, cfg *Config) *Handler {
 // RejectEventByTrust returns a handler that rejects events based on WoT trust level
 func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool, string) {
 	return func(ctx context.Context, event *nostr.Event) (bool, string) {
+		// NIP-46 Nostr Connect events (kind 24133) are exempt from POW requirements
+		// These are ephemeral events used for remote signer communication
+		if event.Kind == 24133 {
+			return false, ""
+		}
+
 		level := h.getTrustLevel(event.PubKey)
 		policy := h.policies[level]
 
