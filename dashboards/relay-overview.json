@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Coldforge Relay monitoring dashboard",
+  "description": "Cloistr Relay monitoring dashboard",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -1306,7 +1306,7 @@
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["nostr", "relay", "coldforge"],
+  "tags": ["nostr", "relay", "cloistr"],
   "templating": {
     "list": [
       {
@@ -1363,8 +1363,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Coldforge Relay Overview",
-  "uid": "coldforge-relay-overview",
+  "title": "Cloistr Relay Overview",
+  "uid": "cloistr-relay-overview",
   "version": 1,
   "weekStart": ""
 }

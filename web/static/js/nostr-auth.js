@@ -1,4 +1,4 @@
-// nostr-auth.js - NIP-07 authentication helper for Coldforge Relay Admin
+// nostr-auth.js - NIP-07 authentication helper for Cloistr Relay Admin
 
 // Check if NIP-07 extension is available
 function hasNostrExtension() {

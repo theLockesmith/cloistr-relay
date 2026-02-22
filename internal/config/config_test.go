@@ -22,7 +22,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 		expected interface{}
 	}{
 		{"Port", cfg.Port, 3334},
-		{"RelayName", cfg.RelayName, "coldforge-relay"},
+		{"RelayName", cfg.RelayName, "Cloistr Relay"},
 		{"RelayURL", cfg.RelayURL, "ws://localhost:3334"},
 		{"DBHost", cfg.DBHost, "localhost"},
 		{"DBPort", cfg.DBPort, 5432},

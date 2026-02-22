@@ -41,7 +41,7 @@ services:
         condition: service_healthy
     environment:
       RELAY_PORT: 3334
-      RELAY_NAME: "coldforge-relay"
+      RELAY_NAME: "Cloistr Relay"
       RELAY_URL: "ws://localhost:3334"
       DB_HOST: postgres
       DB_PORT: 5432

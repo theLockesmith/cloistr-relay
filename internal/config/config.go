@@ -123,7 +123,7 @@ type Config struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                       3334,
-		RelayName:                  "coldforge-relay",
+		RelayName:                  "Cloistr Relay",
 		RelayURL:                   "ws://localhost:3334",
 		DBHost:                     "localhost",
 		DBPort:                     5432,

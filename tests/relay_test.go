@@ -27,8 +27,8 @@ func TestConfigLoadIntegration(t *testing.T) {
 			t.Errorf("Expected port 3334, got %d", cfg.Port)
 		}
 
-		if cfg.RelayName != "coldforge-relay" {
-			t.Errorf("Expected relay name 'coldforge-relay', got %s", cfg.RelayName)
+		if cfg.RelayName != "Cloistr Relay" {
+			t.Errorf("Expected relay name 'Cloistr Relay', got %s", cfg.RelayName)
 		}
 
 		if cfg.DBHost != "localhost" {

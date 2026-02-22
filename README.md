@@ -1,10 +1,10 @@
-# coldforge-relay
+# cloistr-relay
 
 A Nostr relay implementation using the khatru framework.
 
 ## Overview
 
-coldforge-relay is a high-performance Nostr relay built on the [khatru](https://github.com/fiatjaf/khatru) framework. It provides:
+Cloistr Relay is a high-performance Nostr relay built on the [khatru](https://github.com/fiatjaf/khatru) framework. It provides:
 
 - WebSocket-based Nostr protocol support (NIP-01)
 - PostgreSQL event storage backend
