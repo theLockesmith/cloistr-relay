@@ -103,8 +103,9 @@ type Config struct {
 	HavenBlastrRetryEnabled   bool     // Enable persistent retry queue (requires Redis/Dragonfly)
 	HavenBlastrMaxRetries     int      // Maximum retry attempts per event/relay (default: 6)
 	HavenBlastrRetryInterval  int      // Retry worker interval in seconds (default: 30)
-	HavenImporterEnabled      bool     // Enable inbox importing
-	HavenImporterRelays       []string // Relays to import from
+	HavenImporterEnabled         bool     // Enable inbox importing
+	HavenImporterRelays          []string // Relays to import from
+	HavenImporterRealtimeEnabled bool     // Enable real-time WebSocket subscriptions (vs polling)
 
 	// RSS/Atom Feed
 	FeedEnabled         bool // Enable RSS/Atom feed endpoints
@@ -438,6 +439,9 @@ func Load() (*Config, error) {
 	}
 	if havenImporterRelays := os.Getenv("HAVEN_IMPORTER_RELAYS"); havenImporterRelays != "" {
 		cfg.HavenImporterRelays = parseCommaSeparated(havenImporterRelays)
+	}
+	if havenImporterRealtime := os.Getenv("HAVEN_IMPORTER_REALTIME"); havenImporterRealtime == "true" || havenImporterRealtime == "1" {
+		cfg.HavenImporterRealtimeEnabled = true
 	}
 
 	// RSS/Atom Feed (enabled by default when HAVEN is enabled)

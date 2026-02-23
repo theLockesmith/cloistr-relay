@@ -178,6 +178,7 @@ Set via environment variables:
 - `HAVEN_BLASTR_RETRY_INTERVAL` - Retry worker interval in seconds (default: 30)
 - `HAVEN_IMPORTER_ENABLED` - Enable inbox event fetching (default: false)
 - `HAVEN_IMPORTER_RELAYS` - Relays to fetch inbox events from (comma-separated)
+- `HAVEN_IMPORTER_REALTIME` - Enable real-time WebSocket subscriptions (default: false, uses polling)
 
 ### RSS/Atom Feeds
 - `FEED_ENABLED` - Enable RSS/Atom feeds (default: auto-enabled when HAVEN is enabled)
@@ -257,7 +258,8 @@ HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay type
 | **Auth Policies** | ✅ Complete | Per-box authentication requirements |
 | **Filter Routing** | ✅ Complete | Query routing to correct boxes |
 | **WoT Integration** | ✅ Ready | Chat box uses existing WoT |
-| **Inbox Importer** | ✅ Complete | Pull tagged events from other relays |
+| **Inbox Importer** | ✅ Complete | Pull tagged events from other relays (polling) |
+| **Inbox Subscriber** | ✅ Complete | Real-time WebSocket subscriptions for instant updates |
 | **Outbox Blastr** | ✅ Complete | Broadcast outbox events to other relays |
 | **Prometheus Metrics** | ✅ Complete | Full metrics for box routing, Blastr, Importer |
 | **Admin UI** | ✅ Complete | HAVEN dashboard in relay admin panel |
@@ -285,6 +287,7 @@ HAVEN_BLASTR_RELAYS=wss://relay1.example.com,wss://relay2.example.com
 # Inbox Importer (fetch events tagged to owner from other relays)
 HAVEN_IMPORTER_ENABLED=true
 HAVEN_IMPORTER_RELAYS=wss://relay1.example.com,wss://relay2.example.com
+HAVEN_IMPORTER_REALTIME=true  # Enable real-time WebSocket subscriptions (vs 5-min polling)
 ```
 
 ### Architecture
@@ -510,14 +513,17 @@ ALGO_RECENCY_WEIGHT=0.3
 
 ## Future Roadmap
 
-| Item | Description | Priority |
-|------|-------------|----------|
-| **NIP-0A CRDTs** | Contact list conflict resolution | Medium |
-| **Geographic Distribution** | Multi-region deployment | Low |
+| Item | Description | Priority | Status |
+|------|-------------|----------|--------|
+| **NIP-29 Groups** | Relay-based chat groups (kind 9, 10, 11, 12) | High | Next |
+| **NIP-17 Private DMs** | Modern encrypted DMs replacing NIP-04 | Medium | Planned |
+| **Admin UI Improvements** | Event browser, connection stats, WoT visualization | Medium | Planned |
+| **NIP-0A CRDTs** | Contact list conflict resolution (watching PR #1630) | Medium | Watching |
+| **Geographic Distribution** | Multi-region deployment | Low | Planned |
 
-### Potential Enhancements
-- **Blastr Retry Logic**: Persistent retry queue for failed broadcasts
-- **Importer Webhooks**: Real-time inbox updates via WebSocket subscriptions
+### Completed Enhancements
+- ~~**Importer Webhooks**~~: Real-time WebSocket subscriptions for instant inbox updates
+- ~~**Blastr Retry Logic**~~: Persistent retry queue for failed broadcasts (commit 924cd29)
 
 ## Resources
 

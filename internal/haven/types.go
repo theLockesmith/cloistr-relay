@@ -134,8 +134,9 @@ type Config struct {
 	BlastrRetryInterval int    // Retry worker interval in seconds (default: 30)
 
 	// Importer settings (incoming event fetching)
-	ImporterEnabled bool     // Enable fetching inbox events from other relays
-	ImporterRelays  []string // Relays to fetch inbox events from
+	ImporterEnabled         bool     // Enable fetching inbox events from other relays
+	ImporterRelays          []string // Relays to fetch inbox events from
+	ImporterRealtimeEnabled bool     // Enable real-time WebSocket subscriptions (vs polling)
 }
 
 // DefaultConfig returns sensible defaults for HAVEN

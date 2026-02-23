@@ -328,8 +328,9 @@ func main() {
 			BlastrRetryEnabled:    cfg.HavenBlastrRetryEnabled && cacheClient != nil,
 			BlastrMaxRetries:      cfg.HavenBlastrMaxRetries,
 			BlastrRetryInterval:   cfg.HavenBlastrRetryInterval,
-			ImporterEnabled:       cfg.HavenImporterEnabled,
-			ImporterRelays:        cfg.HavenImporterRelays,
+			ImporterEnabled:         cfg.HavenImporterEnabled,
+			ImporterRelays:          cfg.HavenImporterRelays,
+			ImporterRealtimeEnabled: cfg.HavenImporterRealtimeEnabled,
 		}
 		// Use RegisterFullSystem to enable Blastr and Importer
 		havenSystem = haven.RegisterFullSystem(r, havenCfg, db.SaveEvent)

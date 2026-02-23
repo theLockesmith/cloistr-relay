@@ -253,9 +253,10 @@ func RegisterHandlers(relay *khatru.Relay, cfg *Config) *Handler {
 
 // HavenSystem holds all HAVEN components
 type HavenSystem struct {
-	Handler  *Handler
-	Blastr   *Blastr
-	Importer *Importer
+	Handler    *Handler
+	Blastr     *Blastr
+	Importer   *Importer
+	Subscriber *Subscriber
 }
 
 // RegisterFullSystem registers HAVEN handlers plus Blastr and Importer
@@ -288,7 +289,7 @@ func RegisterFullSystem(relay *khatru.Relay, cfg *Config, storeFunc func(context
 		metrics.SetBlastrEnabled(false)
 	}
 
-	// Initialize Importer (fetches inbox events)
+	// Initialize Importer (fetches inbox events via polling)
 	if cfg.ImporterEnabled && len(cfg.ImporterRelays) > 0 && storeFunc != nil {
 		system.Importer = NewImporter(cfg, storeFunc)
 		system.Importer.Start()
@@ -298,10 +299,17 @@ func RegisterFullSystem(relay *khatru.Relay, cfg *Config, storeFunc func(context
 		metrics.SetImporterEnabled(false)
 	}
 
+	// Initialize Subscriber (real-time WebSocket subscriptions)
+	if cfg.ImporterRealtimeEnabled && len(cfg.ImporterRelays) > 0 && storeFunc != nil {
+		system.Subscriber = NewSubscriber(cfg, storeFunc)
+		system.Subscriber.Start()
+		log.Printf("HAVEN Subscriber: real-time subscriptions to %d relays", len(cfg.ImporterRelays))
+	}
+
 	return system
 }
 
-// Stop gracefully shuts down Blastr and Importer
+// Stop gracefully shuts down Blastr, Importer, and Subscriber
 func (s *HavenSystem) Stop() {
 	if s == nil {
 		return
@@ -311,6 +319,9 @@ func (s *HavenSystem) Stop() {
 	}
 	if s.Importer != nil {
 		s.Importer.Stop()
+	}
+	if s.Subscriber != nil {
+		s.Subscriber.Stop()
 	}
 }
 
@@ -331,6 +342,9 @@ func (s *HavenSystem) Stats() map[string]interface{} {
 	}
 	if s.Importer != nil {
 		stats["importer"] = s.Importer.Stats()
+	}
+	if s.Subscriber != nil {
+		stats["subscriber"] = s.Subscriber.Stats()
 	}
 	return stats
 }
