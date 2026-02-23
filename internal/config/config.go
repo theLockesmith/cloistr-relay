@@ -22,8 +22,9 @@ type Config struct {
 	DBPassword   string
 
 	// Authentication settings
-	AuthPolicy     string   // "open", "auth-read", "auth-write", "auth-all"
-	AllowedPubkeys []string // Whitelist of pubkeys allowed to write (if set)
+	AuthPolicy      string   // "open", "auth-read", "auth-write", "auth-all"
+	AllowedPubkeys  []string // Whitelist of pubkeys allowed to write (if set)
+	AuthExemptKinds []int    // Kinds exempt from auth requirement (e.g., 24133 for NIP-46)
 
 	// NIP-22 Timestamp limits (in seconds)
 	MaxCreatedAtFuture int64 // Max seconds into future for created_at (default: 300 = 5 min)
@@ -199,6 +200,11 @@ func Load() (*Config, error) {
 	if allowedPubkeys := os.Getenv("ALLOWED_PUBKEYS"); allowedPubkeys != "" {
 		// Parse comma-separated list of pubkeys
 		cfg.AllowedPubkeys = parseCommaSeparated(allowedPubkeys)
+	}
+
+	// Auth exempt kinds (comma-separated, e.g., "24133" for NIP-46)
+	if authExemptKinds := os.Getenv("AUTH_EXEMPT_KINDS"); authExemptKinds != "" {
+		cfg.AuthExemptKinds = parseIntList(authExemptKinds)
 	}
 
 	// NIP-22 timestamp limits

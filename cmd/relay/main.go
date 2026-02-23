@@ -478,6 +478,7 @@ func parseAuthConfig(cfg *config.Config) *auth.Config {
 	authCfg := &auth.Config{
 		Policy:         auth.PolicyOpen,
 		AllowedPubkeys: cfg.AllowedPubkeys,
+		ExemptKinds:    cfg.AuthExemptKinds,
 	}
 
 	switch cfg.AuthPolicy {

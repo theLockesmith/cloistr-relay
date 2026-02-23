@@ -42,6 +42,7 @@ func (p Policy) String() string {
 type Config struct {
 	Policy         Policy
 	AllowedPubkeys []string // If set, only these pubkeys can write (whitelist mode)
+	ExemptKinds    []int    // Event kinds exempt from auth (e.g., 24133 for NIP-46)
 }
 
 // RegisterAuthHandlers adds NIP-42 authentication handlers to the relay
@@ -76,10 +77,22 @@ func requireAuthForRead(ctx context.Context, filter nostr.Filter) (reject bool, 
 
 // requireAuthForWrite returns a handler that rejects events from unauthenticated clients
 func requireAuthForWrite(cfg *Config) func(context.Context, *nostr.Event) (bool, string) {
+	// Build exempt kinds set for O(1) lookup
+	exemptKinds := make(map[int]bool)
+	for _, kind := range cfg.ExemptKinds {
+		exemptKinds[kind] = true
+	}
+
 	return func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
 		// Allow AUTH events (kind 22242) through without authentication
 		// These are handled specially by khatru for NIP-42
 		if event.Kind == 22242 {
+			return false, ""
+		}
+
+		// Allow exempt kinds (e.g., 24133 for NIP-46) without authentication
+		if exemptKinds[event.Kind] {
+			log.Printf("Allowing auth-exempt kind %d from %s", event.Kind, event.PubKey[:16])
 			return false, ""
 		}
 
