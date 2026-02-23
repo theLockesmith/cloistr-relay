@@ -37,9 +37,25 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 
 	// Rate limiting for events (per IP) - skip if using distributed rate limiter
 	if !useDistributedRateLimit && cfg.RateLimitEventsPerSec > 0 {
-		relay.RejectEvent = append(relay.RejectEvent,
-			policies.EventIPRateLimiter(cfg.RateLimitEventsPerSec, time.Second, cfg.RateLimitEventsPerSec*5))
-		log.Printf("Rate limit (in-memory): %d events/sec per IP", cfg.RateLimitEventsPerSec)
+		baseLimiter := policies.EventIPRateLimiter(cfg.RateLimitEventsPerSec, time.Second, cfg.RateLimitEventsPerSec*5)
+
+		// Wrap rate limiter to exempt certain kinds (e.g., 24133 for NIP-46)
+		if len(cfg.RateLimitExemptKinds) > 0 {
+			exemptKinds := make(map[int]bool)
+			for _, k := range cfg.RateLimitExemptKinds {
+				exemptKinds[k] = true
+			}
+			relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
+				if exemptKinds[event.Kind] {
+					return false, "" // Allow event without rate limiting
+				}
+				return baseLimiter(ctx, event)
+			})
+			log.Printf("Rate limit (in-memory): %d events/sec per IP (exempt kinds: %v)", cfg.RateLimitEventsPerSec, cfg.RateLimitExemptKinds)
+		} else {
+			relay.RejectEvent = append(relay.RejectEvent, baseLimiter)
+			log.Printf("Rate limit (in-memory): %d events/sec per IP", cfg.RateLimitEventsPerSec)
+		}
 	}
 
 	// Reject filters based on custom policies
