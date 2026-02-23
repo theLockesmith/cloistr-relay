@@ -32,19 +32,22 @@ async function getPublicKey() {
 // Initialize NIP-46 bunker connection
 async function initBunkerConnection() {
     const bunkerUrl = sessionStorage.getItem('nip46_bunker_url');
-    const clientSk = sessionStorage.getItem('nip46_client_sk');
+    const clientSkHex = sessionStorage.getItem('nip46_client_sk');
 
-    if (!bunkerUrl || !clientSk || !window.nostrTools) {
+    if (!bunkerUrl || !clientSkHex || !window.nostrTools) {
         return false;
     }
 
     try {
-        const { BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
+        const { BunkerSigner, parseBunkerInput, SimplePool, hexToBytes } = window.nostrTools;
 
         const bunkerPointer = await parseBunkerInput(bunkerUrl);
         if (!bunkerPointer) {
             return false;
         }
+
+        // Convert hex string to Uint8Array
+        const clientSk = hexToBytes(clientSkHex);
 
         bunkerPool = new SimplePool();
         bunkerSigner = BunkerSigner.fromBunker(

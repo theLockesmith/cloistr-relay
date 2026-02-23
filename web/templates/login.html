@@ -188,13 +188,13 @@
                 const pubkey = await window.nostr.getPublicKey();
                 status.textContent = 'Creating auth signature...';
 
-                // Create NIP-98 auth event
+                // Create NIP-98 auth event for /login/verify endpoint
                 const event = {
                     kind: 27235,
                     created_at: Math.floor(Date.now() / 1000),
                     tags: [
-                        ['u', window.location.origin + '/'],
-                        ['method', 'GET']
+                        ['u', window.location.origin + '/login/verify'],
+                        ['method', 'POST']
                     ],
                     content: ''
                 };
@@ -202,39 +202,43 @@
                 const signedEvent = await window.nostr.signEvent(event);
                 const authHeader = 'Nostr ' + btoa(JSON.stringify(signedEvent));
 
-                // Try to access dashboard with auth header
-                const response = await fetch('/', {
-                    method: 'GET',
+                status.textContent = 'Verifying with server...';
+
+                // Verify auth and get session cookie
+                const response = await fetch('/login/verify', {
+                    method: 'POST',
                     headers: {
                         'Authorization': authHeader
                     }
                 });
 
                 if (response.ok) {
-                    // Store auth for future requests
+                    // Store pubkey in sessionStorage for UI display
                     sessionStorage.setItem('nostr_pubkey', pubkey);
                     sessionStorage.setItem('nostr_auth_method', 'nip07');
                     showToast('success', 'Login successful! Redirecting...');
 
-                    // Redirect to dashboard
+                    // Redirect to dashboard (cookie is now set)
                     setTimeout(() => {
                         window.location.href = '/';
                     }, 500);
                 } else {
                     const text = await response.text();
-                    if (text.includes('not in admin list') || text.includes('not authorized')) {
+                    if (text.includes('not authorized') || text.includes('NotAdmin')) {
                         showToast('error', 'Your pubkey is not authorized. Contact the relay admin.');
                     } else {
-                        showToast('error', 'Authentication failed. Please try again.');
+                        showToast('error', 'Authentication failed: ' + text);
                     }
                     btn.disabled = false;
                     btn.textContent = 'Login with Extension';
+                    status.textContent = '';
                 }
             } catch (err) {
                 console.error('Login failed:', err);
                 showToast('error', err.message || 'Login failed');
                 btn.disabled = false;
                 btn.textContent = 'Login with Extension';
+                status.textContent = '';
             }
         }
 
@@ -268,7 +272,7 @@
             status.textContent = 'Parsing bunker URL...';
 
             try {
-                const { generateSecretKey, getPublicKey, bytesToHex, BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
+                const { generateSecretKey, hexToBytes, bytesToHex, BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
 
                 // Parse bunker input (bunker:// URL)
                 const bunkerPointer = await parseBunkerInput(bunkerUrl);
@@ -279,19 +283,23 @@
                 status.textContent = 'Generating session key...';
 
                 // Generate ephemeral client keypair for this session
-                let clientSecretKey = sessionStorage.getItem('nip46_client_sk');
-                if (!clientSecretKey) {
+                // Store as hex string in sessionStorage, convert to Uint8Array for use
+                let clientSecretKeyHex = sessionStorage.getItem('nip46_client_sk');
+                if (!clientSecretKeyHex) {
                     const sk = generateSecretKey();
-                    clientSecretKey = bytesToHex(sk);
-                    sessionStorage.setItem('nip46_client_sk', clientSecretKey);
+                    clientSecretKeyHex = bytesToHex(sk);
+                    sessionStorage.setItem('nip46_client_sk', clientSecretKeyHex);
                 }
+
+                // Convert hex string to Uint8Array for BunkerSigner
+                const clientSecretKey = hexToBytes(clientSecretKeyHex);
 
                 status.textContent = 'Connecting to bunker...';
 
                 // Create pool for relay connections
                 const pool = new SimplePool();
 
-                // Create bunker signer
+                // Create bunker signer (requires Uint8Array for secret key)
                 const bunker = BunkerSigner.fromBunker(
                     clientSecretKey,
                     bunkerPointer,
@@ -308,13 +316,13 @@
 
                 status.textContent = 'Creating auth signature...';
 
-                // Create NIP-98 auth event
+                // Create NIP-98 auth event for /login/verify endpoint
                 const unsignedEvent = {
                     kind: 27235,
                     created_at: Math.floor(Date.now() / 1000),
                     tags: [
-                        ['u', window.location.origin + '/'],
-                        ['method', 'GET']
+                        ['u', window.location.origin + '/login/verify'],
+                        ['method', 'POST']
                     ],
                     content: '',
                     pubkey: pubkey
@@ -324,11 +332,11 @@
                 const signedEvent = await bunker.signEvent(unsignedEvent);
                 const authHeader = 'Nostr ' + btoa(JSON.stringify(signedEvent));
 
-                status.textContent = 'Verifying authorization...';
+                status.textContent = 'Verifying with server...';
 
-                // Try to access dashboard with auth header
-                const response = await fetch('/', {
-                    method: 'GET',
+                // Verify auth and get session cookie
+                const response = await fetch('/login/verify', {
+                    method: 'POST',
                     headers: {
                         'Authorization': authHeader
                     }
@@ -342,16 +350,16 @@
 
                     showToast('success', 'Login successful! Redirecting...');
 
-                    // Redirect to dashboard
+                    // Redirect to dashboard (cookie is now set)
                     setTimeout(() => {
                         window.location.href = '/';
                     }, 500);
                 } else {
                     const text = await response.text();
-                    if (text.includes('not in admin list') || text.includes('not authorized')) {
+                    if (text.includes('not authorized') || text.includes('NotAdmin')) {
                         showToast('error', 'Your pubkey is not authorized. Contact the relay admin.');
                     } else {
-                        showToast('error', 'Authentication failed. Please try again.');
+                        showToast('error', 'Authentication failed: ' + text);
                     }
                     btn.disabled = false;
                     btn.textContent = 'Connect to Signer';
@@ -359,6 +367,7 @@
                 }
 
                 // Clean up pool
+                await bunker.close();
                 pool.close(bunkerPointer.relays);
 
             } catch (err) {
