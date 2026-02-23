@@ -1,0 +1,375 @@
+{{define "login.html"}}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Cloistr Relay Admin</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        nostr: {
+                            purple: '#8B5CF6',
+                            dark: '#1E1E2E',
+                            darker: '#181825',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- nostr-tools for NIP-46 -->
+    <script type="module">
+        import { generateSecretKey, getPublicKey } from 'https://esm.sh/nostr-tools@2.10.4/pure';
+        import { hexToBytes, bytesToHex } from 'https://esm.sh/@noble/hashes@1.4.0/utils';
+        import { BunkerSigner, parseBunkerInput } from 'https://esm.sh/nostr-tools@2.10.4/nip46';
+        import { SimplePool } from 'https://esm.sh/nostr-tools@2.10.4/pool';
+
+        // Make available globally
+        window.nostrTools = {
+            generateSecretKey,
+            getPublicKey,
+            hexToBytes,
+            bytesToHex,
+            BunkerSigner,
+            parseBunkerInput,
+            SimplePool
+        };
+        window.nostrToolsLoaded = true;
+        document.dispatchEvent(new Event('nostr-tools-loaded'));
+    </script>
+
+    <!-- NIP-07/NIP-46 auth helper -->
+    <script src="/static/js/nostr-auth.js"></script>
+
+    <style>
+        /* Toast animations */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        .toast-enter { animation: slideIn 0.3s ease-out; }
+        .toast-exit { animation: slideOut 0.3s ease-in forwards; }
+    </style>
+</head>
+<body class="h-full bg-gray-900 text-gray-100">
+    <div class="min-h-full flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-8">
+            <!-- Header -->
+            <div class="text-center">
+                <h1 class="text-4xl font-bold text-nostr-purple">Cloistr</h1>
+                <h2 class="mt-2 text-xl text-gray-400">Relay Admin</h2>
+                <p class="mt-4 text-sm text-gray-500">
+                    Sign in with your Nostr identity to manage this relay.
+                </p>
+            </div>
+
+            <!-- Login Options -->
+            <div class="mt-8 space-y-4">
+                <!-- NIP-07 Browser Extension -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 class="text-lg font-medium text-white mb-2">Browser Extension</h3>
+                    <p class="text-sm text-gray-400 mb-4">
+                        Use a NIP-07 compatible extension like nos2x, Alby, or Amber.
+                    </p>
+                    <button id="nip07-login-btn" onclick="loginWithNIP07()"
+                            class="w-full bg-nostr-purple hover:bg-purple-600 text-white px-4 py-3 rounded-md text-sm font-medium transition-colors">
+                        Login with Extension
+                    </button>
+                    <p id="nip07-status" class="mt-2 text-xs text-gray-500 text-center"></p>
+                </div>
+
+                <!-- Divider -->
+                <div class="relative">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-700"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-gray-900 text-gray-500">or</span>
+                    </div>
+                </div>
+
+                <!-- NIP-46 Bunker/Remote Signer -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 class="text-lg font-medium text-white mb-2">Remote Signer (NIP-46)</h3>
+                    <p class="text-sm text-gray-400 mb-4">
+                        Connect to a bunker or remote signer like nsec.app or your own NIP-46 service.
+                    </p>
+                    <div class="space-y-3">
+                        <input type="text" id="bunker-url" placeholder="bunker://... or npub..."
+                               class="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-nostr-purple focus:border-transparent">
+                        <button id="nip46-login-btn" onclick="loginWithNIP46()"
+                                class="w-full bg-gray-700 hover:bg-gray-600 text-white px-4 py-3 rounded-md text-sm font-medium transition-colors border border-gray-600">
+                            Connect to Signer
+                        </button>
+                    </div>
+                    <p id="nip46-status" class="mt-2 text-xs text-gray-500 text-center"></p>
+                </div>
+            </div>
+
+            <!-- Info -->
+            <div class="text-center">
+                <p class="text-xs text-gray-500">
+                    Your pubkey must be in the relay's <code class="text-gray-400">ADMIN_PUBKEYS</code> list to access the admin panel.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <script>
+        // Show toast notification
+        function showToast(type, message) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast-enter p-4 rounded-lg shadow-lg ${type === 'error' ? 'bg-red-600' : 'bg-green-600'} text-white text-sm`;
+            toast.innerHTML = `
+                <div class="flex items-center">
+                    ${type === 'error'
+                        ? '<svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                        : '<svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                    }
+                    <span>${message}</span>
+                </div>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('toast-enter');
+                toast.classList.add('toast-exit');
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        // Check NIP-07 availability on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const status = document.getElementById('nip07-status');
+            if (typeof window.nostr !== 'undefined') {
+                status.textContent = 'Extension detected';
+                status.classList.add('text-green-500');
+            } else {
+                status.textContent = 'No extension found';
+                status.classList.add('text-yellow-500');
+            }
+        });
+
+        // NIP-07 login
+        async function loginWithNIP07() {
+            const btn = document.getElementById('nip07-login-btn');
+            const status = document.getElementById('nip07-status');
+
+            if (typeof window.nostr === 'undefined') {
+                showToast('error', 'No Nostr browser extension found. Install nos2x, Alby, or Amber.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Signing...';
+
+            try {
+                const pubkey = await window.nostr.getPublicKey();
+                status.textContent = 'Creating auth signature...';
+
+                // Create NIP-98 auth event
+                const event = {
+                    kind: 27235,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: [
+                        ['u', window.location.origin + '/'],
+                        ['method', 'GET']
+                    ],
+                    content: ''
+                };
+
+                const signedEvent = await window.nostr.signEvent(event);
+                const authHeader = 'Nostr ' + btoa(JSON.stringify(signedEvent));
+
+                // Try to access dashboard with auth header
+                const response = await fetch('/', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': authHeader
+                    }
+                });
+
+                if (response.ok) {
+                    // Store auth for future requests
+                    sessionStorage.setItem('nostr_pubkey', pubkey);
+                    sessionStorage.setItem('nostr_auth_method', 'nip07');
+                    showToast('success', 'Login successful! Redirecting...');
+
+                    // Redirect to dashboard
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 500);
+                } else {
+                    const text = await response.text();
+                    if (text.includes('not in admin list') || text.includes('not authorized')) {
+                        showToast('error', 'Your pubkey is not authorized. Contact the relay admin.');
+                    } else {
+                        showToast('error', 'Authentication failed. Please try again.');
+                    }
+                    btn.disabled = false;
+                    btn.textContent = 'Login with Extension';
+                }
+            } catch (err) {
+                console.error('Login failed:', err);
+                showToast('error', err.message || 'Login failed');
+                btn.disabled = false;
+                btn.textContent = 'Login with Extension';
+            }
+        }
+
+        // NIP-46 login with nostr-tools
+        async function loginWithNIP46() {
+            const bunkerUrl = document.getElementById('bunker-url').value.trim();
+            const btn = document.getElementById('nip46-login-btn');
+            const status = document.getElementById('nip46-status');
+
+            if (!bunkerUrl) {
+                showToast('error', 'Please enter a bunker URL');
+                return;
+            }
+
+            // Wait for nostr-tools to load if needed
+            if (!window.nostrToolsLoaded) {
+                status.textContent = 'Loading libraries...';
+                await new Promise(resolve => {
+                    document.addEventListener('nostr-tools-loaded', resolve, { once: true });
+                    setTimeout(resolve, 3000); // Timeout after 3s
+                });
+            }
+
+            if (!window.nostrTools) {
+                showToast('error', 'Failed to load NIP-46 libraries. Try a browser extension instead.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Connecting...';
+            status.textContent = 'Parsing bunker URL...';
+
+            try {
+                const { generateSecretKey, getPublicKey, bytesToHex, BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
+
+                // Parse bunker input (bunker:// URL)
+                const bunkerPointer = parseBunkerInput(bunkerUrl);
+                if (!bunkerPointer) {
+                    throw new Error('Invalid bunker URL format. Expected: bunker://pubkey?relay=wss://...');
+                }
+
+                status.textContent = 'Generating session key...';
+
+                // Generate ephemeral client keypair for this session
+                let clientSecretKey = sessionStorage.getItem('nip46_client_sk');
+                if (!clientSecretKey) {
+                    const sk = generateSecretKey();
+                    clientSecretKey = bytesToHex(sk);
+                    sessionStorage.setItem('nip46_client_sk', clientSecretKey);
+                }
+
+                status.textContent = 'Connecting to bunker...';
+
+                // Create pool for relay connections
+                const pool = new SimplePool();
+
+                // Create bunker signer
+                const bunker = BunkerSigner.fromBunkerPointer(
+                    clientSecretKey,
+                    bunkerPointer,
+                    { pool }
+                );
+
+                // Connect to the bunker (this may trigger a permission prompt in the signer)
+                status.textContent = 'Waiting for authorization...';
+                await bunker.connect();
+
+                // Get pubkey from bunker
+                status.textContent = 'Getting public key...';
+                const pubkey = await bunker.getPublicKey();
+
+                status.textContent = 'Creating auth signature...';
+
+                // Create NIP-98 auth event
+                const unsignedEvent = {
+                    kind: 27235,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: [
+                        ['u', window.location.origin + '/'],
+                        ['method', 'GET']
+                    ],
+                    content: '',
+                    pubkey: pubkey
+                };
+
+                // Sign with bunker
+                const signedEvent = await bunker.signEvent(unsignedEvent);
+                const authHeader = 'Nostr ' + btoa(JSON.stringify(signedEvent));
+
+                status.textContent = 'Verifying authorization...';
+
+                // Try to access dashboard with auth header
+                const response = await fetch('/', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': authHeader
+                    }
+                });
+
+                if (response.ok) {
+                    // Store connection info for future requests
+                    sessionStorage.setItem('nostr_pubkey', pubkey);
+                    sessionStorage.setItem('nostr_auth_method', 'nip46');
+                    sessionStorage.setItem('nip46_bunker_url', bunkerUrl);
+
+                    showToast('success', 'Login successful! Redirecting...');
+
+                    // Redirect to dashboard
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 500);
+                } else {
+                    const text = await response.text();
+                    if (text.includes('not in admin list') || text.includes('not authorized')) {
+                        showToast('error', 'Your pubkey is not authorized. Contact the relay admin.');
+                    } else {
+                        showToast('error', 'Authentication failed. Please try again.');
+                    }
+                    btn.disabled = false;
+                    btn.textContent = 'Connect to Signer';
+                    status.textContent = '';
+                }
+
+                // Clean up pool
+                pool.close(bunkerPointer.relays);
+
+            } catch (err) {
+                console.error('NIP-46 login failed:', err);
+                showToast('error', err.message || 'Connection failed');
+                btn.disabled = false;
+                btn.textContent = 'Connect to Signer';
+                status.textContent = 'Connection failed';
+            }
+        }
+    </script>
+</body>
+</html>
+{{end}}

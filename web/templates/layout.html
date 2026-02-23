@@ -32,7 +32,26 @@
         }
     </script>
 
-    <!-- NIP-07 auth helper -->
+    <!-- nostr-tools for NIP-46 support -->
+    <script type="module">
+        import { generateSecretKey, getPublicKey } from 'https://esm.sh/nostr-tools@2.10.4/pure';
+        import { hexToBytes, bytesToHex } from 'https://esm.sh/@noble/hashes@1.4.0/utils';
+        import { BunkerSigner, parseBunkerInput } from 'https://esm.sh/nostr-tools@2.10.4/nip46';
+        import { SimplePool } from 'https://esm.sh/nostr-tools@2.10.4/pool';
+
+        window.nostrTools = {
+            generateSecretKey,
+            getPublicKey,
+            hexToBytes,
+            bytesToHex,
+            BunkerSigner,
+            parseBunkerInput,
+            SimplePool
+        };
+        window.nostrToolsLoaded = true;
+    </script>
+
+    <!-- NIP-07/NIP-46 auth helper -->
     <script src="/static/js/nostr-auth.js"></script>
 
     <style>

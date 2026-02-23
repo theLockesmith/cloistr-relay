@@ -1,23 +1,69 @@
-// nostr-auth.js - NIP-07 authentication helper for Cloistr Relay Admin
+// nostr-auth.js - NIP-07 and NIP-46 authentication helper for Cloistr Relay Admin
+
+// Global bunker signer instance (for NIP-46)
+let bunkerSigner = null;
+let bunkerPool = null;
 
 // Check if NIP-07 extension is available
 function hasNostrExtension() {
     return typeof window.nostr !== 'undefined';
 }
 
-// Get the user's public key from NIP-07 extension
+// Get the current auth method
+function getAuthMethod() {
+    return sessionStorage.getItem('nostr_auth_method') || 'nip07';
+}
+
+// Get the user's public key
 async function getPublicKey() {
-    if (!hasNostrExtension()) {
-        throw new Error('No Nostr browser extension found. Install nos2x, Alby, or similar.');
+    const method = getAuthMethod();
+
+    if (method === 'nip46' && bunkerSigner) {
+        return await bunkerSigner.getPublicKey();
     }
-    return await window.nostr.getPublicKey();
+
+    if (hasNostrExtension()) {
+        return await window.nostr.getPublicKey();
+    }
+
+    throw new Error('No signer available. Please log in again.');
+}
+
+// Initialize NIP-46 bunker connection
+async function initBunkerConnection() {
+    const bunkerUrl = sessionStorage.getItem('nip46_bunker_url');
+    const clientSk = sessionStorage.getItem('nip46_client_sk');
+
+    if (!bunkerUrl || !clientSk || !window.nostrTools) {
+        return false;
+    }
+
+    try {
+        const { BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
+
+        const bunkerPointer = parseBunkerInput(bunkerUrl);
+        if (!bunkerPointer) {
+            return false;
+        }
+
+        bunkerPool = new SimplePool();
+        bunkerSigner = BunkerSigner.fromBunkerPointer(
+            clientSk,
+            bunkerPointer,
+            { pool: bunkerPool }
+        );
+
+        await bunkerSigner.connect();
+        return true;
+    } catch (err) {
+        console.error('Failed to init bunker connection:', err);
+        return false;
+    }
 }
 
 // Create a NIP-98 HTTP Auth event and sign it
 async function createAuthHeader(method, url) {
-    if (!hasNostrExtension()) {
-        throw new Error('No Nostr browser extension found. Install nos2x, Alby, or similar.');
-    }
+    const authMethod = getAuthMethod();
 
     // Create unsigned event (kind 27235 = NIP-98 HTTP Auth)
     const event = {
@@ -30,8 +76,27 @@ async function createAuthHeader(method, url) {
         content: ''
     };
 
-    // Sign with NIP-07 extension
-    const signedEvent = await window.nostr.signEvent(event);
+    let signedEvent;
+
+    if (authMethod === 'nip46') {
+        // Ensure bunker is connected
+        if (!bunkerSigner) {
+            const connected = await initBunkerConnection();
+            if (!connected) {
+                throw new Error('Failed to connect to bunker. Please log in again.');
+            }
+        }
+
+        // Add pubkey and sign with bunker
+        event.pubkey = await bunkerSigner.getPublicKey();
+        signedEvent = await bunkerSigner.signEvent(event);
+    } else {
+        // NIP-07 extension
+        if (!hasNostrExtension()) {
+            throw new Error('No Nostr browser extension found. Install nos2x, Alby, or similar.');
+        }
+        signedEvent = await window.nostr.signEvent(event);
+    }
 
     // Base64 encode for Authorization header
     return 'Nostr ' + btoa(JSON.stringify(signedEvent));
@@ -81,6 +146,14 @@ async function signedRequest(method, path, formData) {
         return response;
     } catch (err) {
         console.error('Signed request failed:', err);
+
+        // If auth failed, redirect to login
+        if (err.message.includes('log in again') || err.message.includes('signer')) {
+            sessionStorage.clear();
+            window.location.href = '/login';
+            return;
+        }
+
         throw err;
     }
 }
@@ -88,6 +161,8 @@ async function signedRequest(method, path, formData) {
 // Show a toast notification
 function showToast(type, message) {
     const container = document.getElementById('toast-container');
+    if (!container) return;
+
     const toast = document.createElement('div');
     toast.className = `toast-enter p-4 rounded-lg shadow-lg ${type === 'error' ? 'bg-red-600' : 'bg-green-600'} text-white text-sm`;
     toast.innerHTML = `
@@ -109,7 +184,7 @@ function showToast(type, message) {
     }, 5000);
 }
 
-// Login with Nostr extension
+// Login with Nostr extension (NIP-07)
 async function loginWithNostr() {
     try {
         if (!hasNostrExtension()) {
@@ -117,7 +192,7 @@ async function loginWithNostr() {
             return;
         }
 
-        const pubkey = await getPublicKey();
+        const pubkey = await window.nostr.getPublicKey();
 
         // Update UI to show logged in state
         const authPubkey = document.getElementById('auth-pubkey');
@@ -131,8 +206,9 @@ async function loginWithNostr() {
             loginBtn.classList.add('bg-gray-600', 'cursor-default');
         }
 
-        // Store pubkey in session storage for reference
+        // Store pubkey and auth method
         sessionStorage.setItem('nostr_pubkey', pubkey);
+        sessionStorage.setItem('nostr_auth_method', 'nip07');
 
         showToast('success', 'Logged in with Nostr');
 
@@ -147,25 +223,59 @@ async function loginWithNostr() {
     }
 }
 
+// Logout
+function logout() {
+    // Clean up bunker connection
+    if (bunkerPool && bunkerSigner) {
+        const bunkerUrl = sessionStorage.getItem('nip46_bunker_url');
+        if (bunkerUrl && window.nostrTools) {
+            const { parseBunkerInput } = window.nostrTools;
+            const pointer = parseBunkerInput(bunkerUrl);
+            if (pointer && pointer.relays) {
+                bunkerPool.close(pointer.relays);
+            }
+        }
+    }
+    bunkerSigner = null;
+    bunkerPool = null;
+
+    // Clear session
+    sessionStorage.removeItem('nostr_pubkey');
+    sessionStorage.removeItem('nostr_auth_method');
+    sessionStorage.removeItem('nip46_bunker_url');
+    sessionStorage.removeItem('nip46_client_sk');
+
+    // Redirect to login
+    window.location.href = '/login';
+}
+
 // Check login state on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if we have a stored pubkey
     const storedPubkey = sessionStorage.getItem('nostr_pubkey');
+    const authMethod = getAuthMethod();
+
     if (storedPubkey) {
         const authPubkey = document.getElementById('auth-pubkey');
         const loginBtn = document.getElementById('login-btn');
 
         if (authPubkey && loginBtn) {
-            authPubkey.textContent = storedPubkey.substring(0, 8) + '...' + storedPubkey.substring(storedPubkey.length - 8);
-            loginBtn.textContent = 'Logged in';
-            loginBtn.disabled = true;
+            const methodLabel = authMethod === 'nip46' ? ' (NIP-46)' : '';
+            authPubkey.textContent = storedPubkey.substring(0, 8) + '...' + storedPubkey.substring(storedPubkey.length - 8) + methodLabel;
+            loginBtn.textContent = 'Logout';
+            loginBtn.disabled = false;
+            loginBtn.onclick = logout;
             loginBtn.classList.remove('bg-nostr-purple', 'hover:bg-purple-600');
-            loginBtn.classList.add('bg-gray-600', 'cursor-default');
+            loginBtn.classList.add('bg-gray-600', 'hover:bg-gray-500');
+        }
+
+        // Init bunker connection if using NIP-46
+        if (authMethod === 'nip46' && window.nostrTools) {
+            initBunkerConnection().catch(console.error);
         }
     }
 
-    // Check if extension is available
-    if (!hasNostrExtension()) {
+    // Check if extension is available for NIP-07
+    if (!hasNostrExtension() && authMethod !== 'nip46') {
         const authNotice = document.getElementById('auth-notice');
         if (authNotice) {
             authNotice.classList.remove('hidden');
@@ -180,3 +290,5 @@ window.createAuthHeader = createAuthHeader;
 window.signedRequest = signedRequest;
 window.showToast = showToast;
 window.loginWithNostr = loginWithNostr;
+window.logout = logout;
+window.getAuthMethod = getAuthMethod;

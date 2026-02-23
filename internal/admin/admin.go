@@ -49,7 +49,7 @@ func (h *Handler) SetHavenSystem(system *haven.HavenSystem, config *haven.Config
 
 // RegisterRoutes registers all admin UI routes on the given mux
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	// Static files - serve from embedded web.Static filesystem
+	// Static files - serve from embedded web.Static filesystem (public)
 	staticFS, err := fs.Sub(web.Static, "static")
 	if err != nil {
 		log.Printf("Warning: failed to create static sub-filesystem: %v", err)
@@ -57,49 +57,52 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	}
 
-	// Dashboard
-	mux.HandleFunc("/", h.handleDashboard)
+	// Login page (public - no auth required)
+	mux.HandleFunc("/login", h.handleLoginPage)
 
-	// Pubkeys
-	mux.HandleFunc("/pubkeys", h.handlePubkeysPage)
-	mux.HandleFunc("/pubkeys/banned", h.handleListBannedPubkeys)
-	mux.HandleFunc("/pubkeys/allowed", h.handleListAllowedPubkeys)
+	// Dashboard (auth required)
+	mux.HandleFunc("/", h.requireAuth(h.handleDashboard))
+
+	// Pubkeys (all auth required)
+	mux.HandleFunc("/pubkeys", h.requireAuth(h.handlePubkeysPage))
+	mux.HandleFunc("/pubkeys/banned", h.requireAuth(h.handleListBannedPubkeys))
+	mux.HandleFunc("/pubkeys/allowed", h.requireAuth(h.handleListAllowedPubkeys))
 	mux.HandleFunc("/pubkeys/ban", h.requireAuth(h.handleBanPubkey))
 	mux.HandleFunc("/pubkeys/unban", h.requireAuth(h.handleUnbanPubkey))
 	mux.HandleFunc("/pubkeys/allow", h.requireAuth(h.handleAllowPubkey))
 	mux.HandleFunc("/pubkeys/disallow", h.requireAuth(h.handleDisallowPubkey))
 
-	// Events
-	mux.HandleFunc("/events", h.handleEventsPage)
-	mux.HandleFunc("/events/banned", h.handleListBannedEvents)
+	// Events (all auth required)
+	mux.HandleFunc("/events", h.requireAuth(h.handleEventsPage))
+	mux.HandleFunc("/events/banned", h.requireAuth(h.handleListBannedEvents))
 	mux.HandleFunc("/events/ban", h.requireAuth(h.handleBanEvent))
 	mux.HandleFunc("/events/unban", h.requireAuth(h.handleUnbanEvent))
 
-	// Moderation
-	mux.HandleFunc("/moderation", h.handleModerationPage)
-	mux.HandleFunc("/moderation/queue", h.handleListModerationQueue)
+	// Moderation (all auth required)
+	mux.HandleFunc("/moderation", h.requireAuth(h.handleModerationPage))
+	mux.HandleFunc("/moderation/queue", h.requireAuth(h.handleListModerationQueue))
 	mux.HandleFunc("/moderation/approve", h.requireAuth(h.handleApproveEvent))
 	mux.HandleFunc("/moderation/reject", h.requireAuth(h.handleRejectEvent))
 
-	// IPs
-	mux.HandleFunc("/ips", h.handleIPsPage)
-	mux.HandleFunc("/ips/blocked", h.handleListBlockedIPs)
+	// IPs (all auth required)
+	mux.HandleFunc("/ips", h.requireAuth(h.handleIPsPage))
+	mux.HandleFunc("/ips/blocked", h.requireAuth(h.handleListBlockedIPs))
 	mux.HandleFunc("/ips/block", h.requireAuth(h.handleBlockIP))
 	mux.HandleFunc("/ips/unblock", h.requireAuth(h.handleUnblockIP))
 
-	// Kinds
-	mux.HandleFunc("/kinds", h.handleKindsPage)
-	mux.HandleFunc("/kinds/allowed", h.handleListAllowedKinds)
+	// Kinds (all auth required)
+	mux.HandleFunc("/kinds", h.requireAuth(h.handleKindsPage))
+	mux.HandleFunc("/kinds/allowed", h.requireAuth(h.handleListAllowedKinds))
 	mux.HandleFunc("/kinds/allow", h.requireAuth(h.handleAllowKind))
 	mux.HandleFunc("/kinds/disallow", h.requireAuth(h.handleDisallowKind))
 
-	// Settings
-	mux.HandleFunc("/settings", h.handleSettingsPage)
+	// Settings (all auth required)
+	mux.HandleFunc("/settings", h.requireAuth(h.handleSettingsPage))
 	mux.HandleFunc("/settings/update", h.requireAuth(h.handleUpdateSettings))
 
-	// HAVEN
-	mux.HandleFunc("/haven", h.handleHavenPage)
-	mux.HandleFunc("/haven/stats", h.handleHavenStats)
+	// HAVEN (all auth required)
+	mux.HandleFunc("/haven", h.requireAuth(h.handleHavenPage))
+	mux.HandleFunc("/haven/stats", h.requireAuth(h.handleHavenStats))
 
 	log.Println("Admin UI enabled at /")
 }
@@ -109,13 +112,33 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pubkey, err := management.ValidateNIP98Auth(r, h.adminPubkeys)
 		if err != nil {
-			h.renderError(w, r, "Authentication required: "+err.Error(), http.StatusUnauthorized)
+			// For HTMX requests, return error message
+			if isHtmxRequest(r) {
+				h.renderError(w, r, "Authentication required: "+err.Error(), http.StatusUnauthorized)
+				return
+			}
+			// For regular page requests, redirect to login
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
 		// Store pubkey in context
 		ctx := context.WithValue(r.Context(), PubkeyContextKey, pubkey)
 		next(w, r.WithContext(ctx))
 	}
+}
+
+// handleLoginPage renders the login page
+func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	// If already authenticated, redirect to dashboard
+	if pubkey, err := management.ValidateNIP98Auth(r, h.adminPubkeys); err == nil && pubkey != "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	h.renderPage(w, r, "login.html", PageData{
+		Title:     "Login",
+		ActiveNav: "",
+	})
 }
 
 // parseListParams extracts limit and offset from query params
