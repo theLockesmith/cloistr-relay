@@ -271,7 +271,7 @@
                 const { generateSecretKey, getPublicKey, bytesToHex, BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
 
                 // Parse bunker input (bunker:// URL)
-                const bunkerPointer = parseBunkerInput(bunkerUrl);
+                const bunkerPointer = await parseBunkerInput(bunkerUrl);
                 if (!bunkerPointer) {
                     throw new Error('Invalid bunker URL format. Expected: bunker://pubkey?relay=wss://...');
                 }
@@ -292,7 +292,7 @@
                 const pool = new SimplePool();
 
                 // Create bunker signer
-                const bunker = BunkerSigner.fromBunkerPointer(
+                const bunker = BunkerSigner.fromBunker(
                     clientSecretKey,
                     bunkerPointer,
                     { pool }

@@ -41,13 +41,13 @@ async function initBunkerConnection() {
     try {
         const { BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
 
-        const bunkerPointer = parseBunkerInput(bunkerUrl);
+        const bunkerPointer = await parseBunkerInput(bunkerUrl);
         if (!bunkerPointer) {
             return false;
         }
 
         bunkerPool = new SimplePool();
-        bunkerSigner = BunkerSigner.fromBunkerPointer(
+        bunkerSigner = BunkerSigner.fromBunker(
             clientSk,
             bunkerPointer,
             { pool: bunkerPool }
@@ -224,13 +224,13 @@ async function loginWithNostr() {
 }
 
 // Logout
-function logout() {
+async function logout() {
     // Clean up bunker connection
     if (bunkerPool && bunkerSigner) {
         const bunkerUrl = sessionStorage.getItem('nip46_bunker_url');
         if (bunkerUrl && window.nostrTools) {
             const { parseBunkerInput } = window.nostrTools;
-            const pointer = parseBunkerInput(bunkerUrl);
+            const pointer = await parseBunkerInput(bunkerUrl);
             if (pointer && pointer.relays) {
                 bunkerPool.close(pointer.relays);
             }
