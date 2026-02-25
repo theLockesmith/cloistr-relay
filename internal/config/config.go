@@ -120,6 +120,15 @@ type Config struct {
 	AlgoWoTWeight        float64 // Weight for WoT score (0-1, default: 0.3)
 	AlgoEngagementWeight float64 // Weight for engagement score (0-1, default: 0.4)
 	AlgoRecencyWeight    float64 // Weight for recency score (0-1, default: 0.3)
+
+	// NIP-29 Relay-based Groups
+	GroupsEnabled               bool     // Enable NIP-29 groups support
+	GroupsRelayURL              string   // Relay URL for groups (defaults to RelayURL)
+	GroupsAdminPubkeys          []string // Pubkeys that can always create groups
+	GroupsAllowPublicCreation   bool     // Allow any authenticated user to create groups
+	GroupsMaxGroupsPerUser      int      // Maximum groups a user can create (0 = unlimited)
+	GroupsDefaultPrivacy        string   // Default privacy: open, restricted, private, hidden, closed
+	GroupsInviteCodeExpiryHours int      // Default invite code expiry in hours (default: 168 = 1 week)
 }
 
 // Load reads configuration from environment variables
@@ -501,6 +510,42 @@ func Load() (*Config, error) {
 	if recencyWeight := os.Getenv("ALGO_RECENCY_WEIGHT"); recencyWeight != "" {
 		if v, err := strconv.ParseFloat(recencyWeight, 64); err == nil && v >= 0 && v <= 1 {
 			cfg.AlgoRecencyWeight = v
+		}
+	}
+
+	// NIP-29 Relay-based Groups (disabled by default)
+	cfg.GroupsMaxGroupsPerUser = 10
+	cfg.GroupsDefaultPrivacy = "restricted"
+	cfg.GroupsInviteCodeExpiryHours = 168 // 1 week
+
+	if groupsEnabled := os.Getenv("GROUPS_ENABLED"); groupsEnabled == "true" || groupsEnabled == "1" {
+		cfg.GroupsEnabled = true
+	}
+	if groupsRelayURL := os.Getenv("GROUPS_RELAY_URL"); groupsRelayURL != "" {
+		cfg.GroupsRelayURL = groupsRelayURL
+	} else {
+		cfg.GroupsRelayURL = cfg.RelayURL // Default to main relay URL
+	}
+	if groupsAdmins := os.Getenv("GROUPS_ADMIN_PUBKEYS"); groupsAdmins != "" {
+		cfg.GroupsAdminPubkeys = parseCommaSeparated(groupsAdmins)
+	} else {
+		// Fall back to main admin pubkeys
+		cfg.GroupsAdminPubkeys = cfg.AdminPubkeys
+	}
+	if groupsPublic := os.Getenv("GROUPS_ALLOW_PUBLIC_CREATION"); groupsPublic == "true" || groupsPublic == "1" {
+		cfg.GroupsAllowPublicCreation = true
+	}
+	if groupsMax := os.Getenv("GROUPS_MAX_PER_USER"); groupsMax != "" {
+		if v, err := strconv.Atoi(groupsMax); err == nil && v >= 0 {
+			cfg.GroupsMaxGroupsPerUser = v
+		}
+	}
+	if groupsPrivacy := os.Getenv("GROUPS_DEFAULT_PRIVACY"); groupsPrivacy != "" {
+		cfg.GroupsDefaultPrivacy = groupsPrivacy
+	}
+	if groupsExpiry := os.Getenv("GROUPS_INVITE_EXPIRY_HOURS"); groupsExpiry != "" {
+		if v, err := strconv.Atoi(groupsExpiry); err == nil && v > 0 {
+			cfg.GroupsInviteCodeExpiryHours = v
 		}
 	}
 

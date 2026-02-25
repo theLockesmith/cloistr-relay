@@ -21,6 +21,7 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/eventcache"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/giftwrap"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/groups"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
@@ -345,6 +346,27 @@ func main() {
 				havenSystem.Blastr.SetRedisClient(cacheClient.RedisClient())
 				log.Println("HAVEN Blastr retry queue enabled")
 			}
+		}
+	}
+
+	// Initialize NIP-29 relay-based groups (if enabled)
+	if cfg.GroupsEnabled {
+		groupsCfg := &groups.Config{
+			Enabled:                  true,
+			RelayURL:                 cfg.GroupsRelayURL,
+			AdminPubkeys:             cfg.GroupsAdminPubkeys,
+			AllowPublicGroupCreation: cfg.GroupsAllowPublicCreation,
+			MaxGroupsPerUser:         cfg.GroupsMaxGroupsPerUser,
+			DefaultPrivacy:           groups.Privacy(cfg.GroupsDefaultPrivacy),
+			InviteCodeExpiry:         time.Duration(cfg.GroupsInviteCodeExpiryHours) * time.Hour,
+		}
+		groupsStore, err := groups.NewStore(rawDB, groupsCfg)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize NIP-29 groups store: %v", err)
+		} else {
+			groupsHandler := groups.NewHandler(groupsStore, groupsCfg)
+			groupsHandler.RegisterHandlers(r)
+			log.Printf("NIP-29 relay-based groups enabled (max %d per user)", cfg.GroupsMaxGroupsPerUser)
 		}
 	}
 

@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 18 NIPs implemented (1, 9, 11, 13, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
+**Status:** Working - 19 NIPs implemented (1, 9, 11, 13, 22, 29, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (integrated via host-based routing)
@@ -87,6 +87,7 @@ docker compose logs -f relay
 │   ├── eventcache/     # Hot event caching (Dragonfly)
 │   ├── feeds/          # RSS/Atom feed generation (Nostr-to-RSS bridge)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
+│   ├── groups/         # NIP-29 relay-based groups (kinds 9000-9022, 39000-39003)
 │   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── haven/          # HAVEN-style box routing (inbox/outbox/chat/private)
 │   ├── logging/        # Structured JSON logging
@@ -194,6 +195,15 @@ Set via environment variables:
 - `ALGO_ENGAGEMENT_WEIGHT` - Weight for engagement score (0-1, default: 0.4)
 - `ALGO_RECENCY_WEIGHT` - Weight for recency score (0-1, default: 0.3)
 
+### NIP-29 Relay-based Groups
+- `GROUPS_ENABLED` - Enable NIP-29 groups support (default: false)
+- `GROUPS_RELAY_URL` - Relay URL for groups (defaults to RELAY_URL)
+- `GROUPS_ADMIN_PUBKEYS` - Pubkeys that can always create groups (defaults to ADMIN_PUBKEYS)
+- `GROUPS_ALLOW_PUBLIC_CREATION` - Allow any authenticated user to create groups (default: false)
+- `GROUPS_MAX_PER_USER` - Maximum groups a user can create (default: 10, 0 = unlimited)
+- `GROUPS_DEFAULT_PRIVACY` - Default privacy: open, restricted, private, hidden, closed (default: restricted)
+- `GROUPS_INVITE_EXPIRY_HOURS` - Default invite code expiry in hours (default: 168 = 1 week)
+
 ## Monitoring Endpoints (Relay)
 
 - `/metrics` - Prometheus metrics (includes DB pool stats)
@@ -233,6 +243,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | Algorithmic Feeds | Opt-in ranked feeds (WoT, engagement, trending) | ✅ Complete |
 | HAVEN E-tag Routing | Route reactions/reposts via event lookup | ✅ Complete |
 | Blastr Retry Queue | Persistent retry for failed broadcasts | ✅ Complete |
+| NIP-29 Groups | Relay-based closed-membership groups | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -511,17 +522,83 @@ ALGO_ENGAGEMENT_WEIGHT=0.4
 ALGO_RECENCY_WEIGHT=0.3
 ```
 
+## NIP-29 Relay-based Groups
+
+The relay implements NIP-29 for closed-membership group communication hosted on the relay.
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 9000 | Add User | Add user to group with optional role |
+| 9001 | Remove User | Remove user from group |
+| 9002 | Edit Metadata | Update group name, picture, about |
+| 9005 | Delete Event | Delete an event from group |
+| 9007 | Create Group | Create a new group |
+| 9008 | Delete Group | Delete a group |
+| 9009 | Create Invite | Create an invite code |
+| 9021 | Join Request | Request to join a group |
+| 9022 | Leave Request | Request to leave a group |
+| 39000 | Group Metadata | Relay-published group info |
+| 39001 | Group Admins | Admin list with roles |
+| 39002 | Group Members | Member list |
+| 39003 | Group Roles | Supported roles |
+
+### Privacy Levels
+
+| Privacy | Can Read | Can Write | Can Join | Show Metadata |
+|---------|----------|-----------|----------|---------------|
+| `open` | Anyone | Anyone | Yes | Yes |
+| `restricted` | Anyone | Members only | Yes | Yes |
+| `private` | Members only | Members only | Yes | Yes |
+| `hidden` | Members only | Members only | Yes | Members only |
+| `closed` | Members only | Members only | No | Yes |
+
+### Architecture
+
+```
+internal/groups/
+├── types.go         # Event kinds, Privacy, Role, Group, Config
+├── store.go         # PostgreSQL storage with in-memory cache
+├── handler.go       # Khatru RejectEvent/RejectFilter/OnEventSaved handlers
+├── types_test.go    # Privacy method tests, kind helpers
+└── handler_test.go  # Event routing, tag extraction tests
+```
+
+### Database Schema
+
+The groups implementation creates these tables:
+- `nip29_groups` - Group metadata (id, name, picture, about, privacy, created_by)
+- `nip29_members` - Group memberships (group_id, pubkey, role, joined_at, added_by)
+- `nip29_invites` - Invite codes (code, group_id, expires_at, max_uses, uses)
+
+### Configuration
+
+```bash
+# Enable NIP-29 groups
+GROUPS_ENABLED=true
+
+# Admin configuration
+GROUPS_ADMIN_PUBKEYS=<pubkey1,pubkey2>  # Can always create groups
+GROUPS_ALLOW_PUBLIC_CREATION=false      # Allow anyone to create (requires auth)
+
+# Limits
+GROUPS_MAX_PER_USER=10                  # Max groups per user (0 = unlimited)
+GROUPS_DEFAULT_PRIVACY=restricted       # Default privacy for new groups
+GROUPS_INVITE_EXPIRY_HOURS=168          # Invite code expiry (default: 1 week)
+```
+
 ## Future Roadmap
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| **NIP-29 Groups** | Relay-based chat groups (kind 9, 10, 11, 12) | High | Next |
 | **NIP-17 Private DMs** | Modern encrypted DMs replacing NIP-04 | Medium | Planned |
 | **Admin UI Improvements** | Event browser, connection stats, WoT visualization | Medium | Planned |
 | **NIP-0A CRDTs** | Contact list conflict resolution (watching PR #1630) | Medium | Watching |
 | **Geographic Distribution** | Multi-region deployment | Low | Planned |
 
 ### Completed Enhancements
+- ~~**NIP-29 Groups**~~: Relay-based chat groups with membership and moderation
 - ~~**Importer Webhooks**~~: Real-time WebSocket subscriptions for instant inbox updates
 - ~~**Blastr Retry Logic**~~: Persistent retry queue for failed broadcasts (commit 924cd29)
 
