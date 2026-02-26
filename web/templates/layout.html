@@ -128,11 +128,18 @@
                     </div>
                     <div class="hidden md:block">
                         <div id="auth-status" class="flex items-center">
-                            <span id="auth-pubkey" class="text-sm text-gray-400"></span>
-                            <button id="login-btn" onclick="loginWithNostr()"
-                                    class="ml-4 bg-nostr-purple hover:bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
-                                Login with Nostr
-                            </button>
+                            {{if .AdminPubkey}}
+                            <span class="text-sm text-gray-400 font-mono">{{.AdminPubkey}}</span>
+                            <a href="/logout" onclick="sessionStorage.clear();"
+                               class="ml-4 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                                Logout
+                            </a>
+                            {{else}}
+                            <a href="/login"
+                               class="ml-4 bg-nostr-purple hover:bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                                Login
+                            </a>
+                            {{end}}
                         </div>
                     </div>
                 </div>
@@ -170,6 +177,12 @@
 
         // Global error handling
         document.body.addEventListener('htmx:responseError', function(event) {
+            // Redirect to login on 401 Unauthorized
+            if (event.detail.xhr.status === 401) {
+                sessionStorage.clear();
+                window.location.href = '/login';
+                return;
+            }
             showToast('error', 'Request failed: ' + event.detail.xhr.status);
         });
 
