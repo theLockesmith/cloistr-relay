@@ -34,8 +34,14 @@
     <script type="module">
         import { generateSecretKey, getPublicKey } from 'https://esm.sh/nostr-tools@2.10.4/pure';
         import { hexToBytes, bytesToHex } from 'https://esm.sh/@noble/hashes@1.4.0/utils';
-        import { BunkerSigner, parseBunkerInput } from 'https://esm.sh/nostr-tools@2.10.4/nip46';
         import { SimplePool } from 'https://esm.sh/nostr-tools@2.10.4/pool';
+
+        // Import all of nip46 to see what's available
+        import * as nip46 from 'https://esm.sh/nostr-tools@2.10.4/nip46';
+
+        console.log('NIP-46 module exports:', Object.keys(nip46));
+        console.log('BunkerSigner:', nip46.BunkerSigner);
+        console.log('BunkerSigner.fromBunker:', nip46.BunkerSigner?.fromBunker);
 
         // Make available globally
         window.nostrTools = {
@@ -43,9 +49,10 @@
             getPublicKey,
             hexToBytes,
             bytesToHex,
-            BunkerSigner,
-            parseBunkerInput,
-            SimplePool
+            BunkerSigner: nip46.BunkerSigner,
+            parseBunkerInput: nip46.parseBunkerInput,
+            SimplePool,
+            nip46 // Also expose the full module for debugging
         };
         window.nostrToolsLoaded = true;
         document.dispatchEvent(new Event('nostr-tools-loaded'));
@@ -272,7 +279,23 @@
             status.textContent = 'Parsing bunker URL...';
 
             try {
-                const { generateSecretKey, hexToBytes, bytesToHex, BunkerSigner, parseBunkerInput, SimplePool } = window.nostrTools;
+                const { generateSecretKey, hexToBytes, bytesToHex, BunkerSigner, parseBunkerInput, SimplePool, nip46 } = window.nostrTools;
+
+                // Debug: check what's available
+                console.log('BunkerSigner:', BunkerSigner);
+                console.log('BunkerSigner methods:', BunkerSigner ? Object.getOwnPropertyNames(BunkerSigner) : 'undefined');
+                console.log('BunkerSigner prototype:', BunkerSigner ? Object.getOwnPropertyNames(BunkerSigner.prototype || {}) : 'undefined');
+
+                if (!BunkerSigner) {
+                    throw new Error('BunkerSigner not available. NIP-46 module may not have loaded correctly.');
+                }
+
+                if (typeof BunkerSigner.fromBunker !== 'function') {
+                    // Try to find the method
+                    console.log('Available on BunkerSigner:', Object.keys(BunkerSigner));
+                    console.log('Full nip46 module:', nip46 ? Object.keys(nip46) : 'undefined');
+                    throw new Error('BunkerSigner.fromBunker not available. Check console for available methods.');
+                }
 
                 // Parse bunker input (bunker:// URL)
                 const bunkerPointer = await parseBunkerInput(bunkerUrl);
