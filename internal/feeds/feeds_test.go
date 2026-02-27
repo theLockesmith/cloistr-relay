@@ -434,10 +434,10 @@ func TestLinkifyURLsSafe(t *testing.T) {
 func TestExtractHashtags(t *testing.T) {
 	event := &nostr.Event{
 		Tags: nostr.Tags{
-			{"t", "nostr"},
-			{"t", "bitcoin"},
-			{"e", "someevent"}, // not a hashtag
-			{"p", "somepubkey"}, // not a hashtag
+			nostr.Tag{"t", "nostr"},
+			nostr.Tag{"t", "bitcoin"},
+			nostr.Tag{"e", "someevent"},  // not a hashtag
+			nostr.Tag{"p", "somepubkey"}, // not a hashtag
 		},
 	}
 

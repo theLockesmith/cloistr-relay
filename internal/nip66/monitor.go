@@ -218,8 +218,8 @@ func (m *SelfMonitor) probeRelay(ctx context.Context) *RelayHealth {
 // buildDiscoveryEvent creates a kind 30166 event from health data
 func (m *SelfMonitor) buildDiscoveryEvent(health *RelayHealth) *nostr.Event {
 	tags := nostr.Tags{
-		{"d", m.relayURL},
-		{"n", health.Network},
+		nostr.Tag{"d", m.relayURL},
+		nostr.Tag{"n", health.Network},
 	}
 
 	// Add RTT tags
