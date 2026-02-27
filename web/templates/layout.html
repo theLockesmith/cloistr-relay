@@ -34,19 +34,22 @@
 
     <!-- nostr-tools for NIP-46 support -->
     <script type="module">
-        import { generateSecretKey, getPublicKey } from 'https://esm.sh/nostr-tools@2.10.4/pure';
-        import { hexToBytes, bytesToHex } from 'https://esm.sh/@noble/hashes@1.4.0/utils';
-        import { BunkerSigner, parseBunkerInput } from 'https://esm.sh/nostr-tools@2.10.4/nip46';
-        import { SimplePool } from 'https://esm.sh/nostr-tools@2.10.4/pool';
+        // Use esm.sh with ?bundle for proper static method support
+        const [pure, nip46, pool, utils] = await Promise.all([
+            import('https://esm.sh/nostr-tools@2.10.4?bundle'),
+            import('https://esm.sh/nostr-tools@2.10.4/nip46?bundle'),
+            import('https://esm.sh/nostr-tools@2.10.4/pool?bundle'),
+            import('https://esm.sh/@noble/hashes@1.4.0/utils?bundle')
+        ]);
 
         window.nostrTools = {
-            generateSecretKey,
-            getPublicKey,
-            hexToBytes,
-            bytesToHex,
-            BunkerSigner,
-            parseBunkerInput,
-            SimplePool
+            generateSecretKey: pure.generateSecretKey,
+            getPublicKey: pure.getPublicKey,
+            hexToBytes: utils.hexToBytes,
+            bytesToHex: utils.bytesToHex,
+            BunkerSigner: nip46.BunkerSigner,
+            parseBunkerInput: nip46.parseBunkerInput,
+            SimplePool: pool.SimplePool
         };
         window.nostrToolsLoaded = true;
     </script>

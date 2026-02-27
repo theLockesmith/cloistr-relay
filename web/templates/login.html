@@ -31,64 +31,43 @@
     </script>
 
     <!-- nostr-tools for NIP-46 -->
-    <!-- Using jsdelivr which handles ESM submodules better -->
+    <!-- Using esm.sh with bundle mode for proper static method support -->
     <script type="module">
-        // Try jsdelivr which handles ESM submodules correctly
         let nostrTools = {};
         let loadError = null;
 
         try {
-            // Use jsdelivr for better ESM support
+            // Use esm.sh with ?bundle to get a properly bundled version
+            // This ensures static methods like BunkerSigner.fromBunker are available
             const [pure, nip46, pool, utils] = await Promise.all([
-                import('https://cdn.jsdelivr.net/npm/nostr-tools@2.10.4/+esm'),
-                import('https://cdn.jsdelivr.net/npm/nostr-tools@2.10.4/lib/esm/nip46.js'),
-                import('https://cdn.jsdelivr.net/npm/nostr-tools@2.10.4/lib/esm/pool.js'),
-                import('https://cdn.jsdelivr.net/npm/@noble/hashes@1.4.0/+esm')
+                import('https://esm.sh/nostr-tools@2.10.4?bundle'),
+                import('https://esm.sh/nostr-tools@2.10.4/nip46?bundle'),
+                import('https://esm.sh/nostr-tools@2.10.4/pool?bundle'),
+                import('https://esm.sh/@noble/hashes@1.4.0/utils?bundle')
             ]);
 
-            console.log('nostr-tools main exports:', Object.keys(pure));
+            console.log('nostr-tools pure exports:', Object.keys(pure));
             console.log('nostr-tools NIP-46 exports:', Object.keys(nip46));
             console.log('BunkerSigner:', nip46.BunkerSigner);
-            console.log('BunkerSigner.fromBunker:', nip46.BunkerSigner?.fromBunker);
+            console.log('BunkerSigner type:', typeof nip46.BunkerSigner);
+            if (nip46.BunkerSigner) {
+                console.log('BunkerSigner.fromBunker:', nip46.BunkerSigner.fromBunker);
+                console.log('BunkerSigner static methods:', Object.getOwnPropertyNames(nip46.BunkerSigner));
+            }
 
             nostrTools = {
                 generateSecretKey: pure.generateSecretKey,
                 getPublicKey: pure.getPublicKey,
-                hexToBytes: utils.hexToBytes || utils.utils?.hexToBytes,
-                bytesToHex: utils.bytesToHex || utils.utils?.bytesToHex,
+                hexToBytes: utils.hexToBytes,
+                bytesToHex: utils.bytesToHex,
                 BunkerSigner: nip46.BunkerSigner,
                 parseBunkerInput: nip46.parseBunkerInput,
                 SimplePool: pool.SimplePool,
                 nip46
             };
         } catch (e) {
-            console.error('Failed to load nostr-tools from jsdelivr:', e);
+            console.error('Failed to load nostr-tools:', e);
             loadError = e;
-
-            // Fallback: try esm.sh
-            try {
-                const pure = await import('https://esm.sh/nostr-tools@2.10.4');
-                const nip46 = await import('https://esm.sh/nostr-tools@2.10.4/nip46');
-                const pool = await import('https://esm.sh/nostr-tools@2.10.4/pool');
-                const utils = await import('https://esm.sh/@noble/hashes@1.4.0/utils');
-
-                console.log('esm.sh NIP-46 exports:', Object.keys(nip46));
-                console.log('esm.sh BunkerSigner:', nip46.BunkerSigner);
-
-                nostrTools = {
-                    generateSecretKey: pure.generateSecretKey,
-                    getPublicKey: pure.getPublicKey,
-                    hexToBytes: utils.hexToBytes,
-                    bytesToHex: utils.bytesToHex,
-                    BunkerSigner: nip46.BunkerSigner,
-                    parseBunkerInput: nip46.parseBunkerInput,
-                    SimplePool: pool.SimplePool,
-                    nip46
-                };
-            } catch (e2) {
-                console.error('Failed to load from esm.sh as well:', e2);
-                loadError = e2;
-            }
         }
 
         // Make available globally
