@@ -284,18 +284,11 @@ func TestLoad_AllowedPubkeysWithSpaces(t *testing.T) {
 // TestLoad_MultipleOverrides tests multiple environment variables at once
 func TestLoad_MultipleOverrides(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("RELAY_PORT", "9000")
-	os.Setenv("RELAY_NAME", "multi-test")
-	os.Setenv("DB_HOST", "db.example.com")
-	os.Setenv("DB_PORT", "5433")
-	os.Setenv("AUTH_POLICY", "auth-write")
-	defer func() {
-		os.Unsetenv("RELAY_PORT")
-		os.Unsetenv("RELAY_NAME")
-		os.Unsetenv("DB_HOST")
-		os.Unsetenv("DB_PORT")
-		os.Unsetenv("AUTH_POLICY")
-	}()
+	t.Setenv("RELAY_PORT", "9000")
+	t.Setenv("RELAY_NAME", "multi-test")
+	t.Setenv("DB_HOST", "db.example.com")
+	t.Setenv("DB_PORT", "5433")
+	t.Setenv("AUTH_POLICY", "auth-write")
 
 	cfg, err := Load()
 	if err != nil {
@@ -392,6 +385,6 @@ func clearEnv(t *testing.T) {
 		"AUTH_POLICY", "ALLOWED_PUBKEYS",
 	}
 	for _, env := range envVars {
-		os.Unsetenv(env)
+		_ = os.Unsetenv(env)
 	}
 }
