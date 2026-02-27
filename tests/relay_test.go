@@ -38,12 +38,8 @@ func TestConfigLoadIntegration(t *testing.T) {
 
 	t.Run("environment overrides", func(t *testing.T) {
 		clearTestEnv(t)
-		os.Setenv("RELAY_PORT", "9999")
-		os.Setenv("RELAY_NAME", "test-relay")
-		defer func() {
-			os.Unsetenv("RELAY_PORT")
-			os.Unsetenv("RELAY_NAME")
-		}()
+		t.Setenv("RELAY_PORT", "9999")
+		t.Setenv("RELAY_NAME", "test-relay")
 
 		cfg, err := config.Load()
 		if err != nil {
@@ -167,7 +163,7 @@ func clearTestEnv(t *testing.T) {
 		"AUTH_POLICY", "ALLOWED_PUBKEYS",
 	}
 	for _, env := range envVars {
-		os.Unsetenv(env)
+		_ = os.Unsetenv(env)
 	}
 }
 
