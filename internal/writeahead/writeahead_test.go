@@ -1,6 +1,7 @@
 package writeahead
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -34,10 +35,10 @@ func TestDefaultConfig(t *testing.T) {
 func TestWAL_New(t *testing.T) {
 	wal := New(nil, nil, nil)
 	if wal == nil {
-		t.Error("Expected non-nil WAL")
+		t.Fatal("Expected non-nil WAL")
 	}
 	if wal.config == nil {
-		t.Error("Expected non-nil config")
+		t.Fatal("Expected non-nil config")
 	}
 	if wal.config.BatchSize != 100 {
 		t.Errorf("Expected default BatchSize, got %d", wal.config.BatchSize)
@@ -77,7 +78,7 @@ func TestWAL_NewWithConfig(t *testing.T) {
 func TestWAL_QueueLengthWithoutRedis(t *testing.T) {
 	wal := New(nil, nil, DefaultConfig())
 
-	length, err := wal.QueueLength(nil)
+	length, err := wal.QueueLength(context.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestWAL_QueueLengthWithoutRedis(t *testing.T) {
 func TestWAL_GetStatsWithoutRedis(t *testing.T) {
 	wal := New(nil, nil, DefaultConfig())
 
-	stats := wal.GetStats(nil)
+	stats := wal.GetStats(context.TODO())
 	if stats == nil {
 		t.Fatal("Expected non-nil stats")
 	}
@@ -112,7 +113,7 @@ func TestWAL_IsHealthyWithoutRedis(t *testing.T) {
 
 	// Without Redis, QueueLength returns 0, nil - so healthy would be true
 	// Since w.rdb is nil, QueueLength returns 0 with nil rdb
-	healthy := wal.IsHealthy(nil)
+	healthy := wal.IsHealthy(context.TODO())
 	// With nil Redis client, this should still work (returns healthy=true)
 	_ = healthy
 }

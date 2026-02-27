@@ -223,8 +223,7 @@ func TestLoad_AuthPolicyOverride(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc, func(t *testing.T) {
 			clearEnv(t)
-			os.Setenv("AUTH_POLICY", tc)
-			defer os.Unsetenv("AUTH_POLICY")
+			t.Setenv("AUTH_POLICY", tc)
 
 			cfg, err := Load()
 			if err != nil {
@@ -241,8 +240,7 @@ func TestLoad_AuthPolicyOverride(t *testing.T) {
 // TestLoad_AllowedPubkeysOverride tests ALLOWED_PUBKEYS environment variable
 func TestLoad_AllowedPubkeysOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("ALLOWED_PUBKEYS", "pubkey1,pubkey2,pubkey3")
-	defer os.Unsetenv("ALLOWED_PUBKEYS")
+	t.Setenv("ALLOWED_PUBKEYS", "pubkey1,pubkey2,pubkey3")
 
 	cfg, err := Load()
 	if err != nil {
@@ -264,8 +262,7 @@ func TestLoad_AllowedPubkeysOverride(t *testing.T) {
 // TestLoad_AllowedPubkeysWithSpaces tests ALLOWED_PUBKEYS with extra whitespace
 func TestLoad_AllowedPubkeysWithSpaces(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("ALLOWED_PUBKEYS", " pubkey1 , pubkey2 , pubkey3 ")
-	defer os.Unsetenv("ALLOWED_PUBKEYS")
+	t.Setenv("ALLOWED_PUBKEYS", " pubkey1 , pubkey2 , pubkey3 ")
 
 	cfg, err := Load()
 	if err != nil {
