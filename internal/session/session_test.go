@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -22,10 +23,10 @@ func TestDefaultConfig(t *testing.T) {
 func TestStore_New(t *testing.T) {
 	store := New(nil, nil)
 	if store == nil {
-		t.Error("Expected non-nil store")
+		t.Fatal("Expected non-nil store")
 	}
 	if store.config == nil {
-		t.Error("Expected non-nil config")
+		t.Fatal("Expected non-nil config")
 	}
 	if store.config.SessionTTL != 30*time.Minute {
 		t.Errorf("Expected default SessionTTL, got %v", store.config.SessionTTL)
@@ -45,7 +46,7 @@ func TestStore_Key(t *testing.T) {
 func TestStore_CreateWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	state, err := store.Create(nil, "test-session", "192.168.1.1")
+	state, err := store.Create(context.TODO(), "test-session", "192.168.1.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestStore_CreateDisabled(t *testing.T) {
 	cfg.Enabled = false
 	store := New(nil, cfg)
 
-	state, err := store.Create(nil, "test-session", "192.168.1.1")
+	state, err := store.Create(context.TODO(), "test-session", "192.168.1.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestStore_CreateDisabled(t *testing.T) {
 func TestStore_GetWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	state, err := store.Get(nil, "nonexistent")
+	state, err := store.Get(context.TODO(), "nonexistent")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestStore_SetAuthPubkeyWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
 	// Should not error without Redis (fail open)
-	err := store.SetAuthPubkey(nil, "test-session", "abc123pubkey")
+	err := store.SetAuthPubkey(context.TODO(), "test-session", "abc123pubkey")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestStore_SetAuthPubkeyWithoutRedis(t *testing.T) {
 func TestStore_GetAuthPubkeyWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	pubkey := store.GetAuthPubkey(nil, "nonexistent")
+	pubkey := store.GetAuthPubkey(context.TODO(), "nonexistent")
 	if pubkey != "" {
 		t.Errorf("Expected empty pubkey without Redis, got %s", pubkey)
 	}
@@ -114,7 +115,7 @@ func TestStore_GetAuthPubkeyWithoutRedis(t *testing.T) {
 func TestStore_AddSubscriptionWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	err := store.AddSubscription(nil, "test-session", "sub-1")
+	err := store.AddSubscription(context.TODO(), "test-session", "sub-1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestStore_AddSubscriptionWithoutRedis(t *testing.T) {
 func TestStore_RemoveSubscriptionWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	err := store.RemoveSubscription(nil, "test-session", "sub-1")
+	err := store.RemoveSubscription(context.TODO(), "test-session", "sub-1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestStore_RemoveSubscriptionWithoutRedis(t *testing.T) {
 func TestStore_DeleteWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	err := store.Delete(nil, "test-session")
+	err := store.Delete(context.TODO(), "test-session")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -141,7 +142,7 @@ func TestStore_DeleteWithoutRedis(t *testing.T) {
 func TestStore_TouchWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	err := store.Touch(nil, "test-session")
+	err := store.Touch(context.TODO(), "test-session")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestStore_TouchWithoutRedis(t *testing.T) {
 func TestStore_ListSessionsWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	sessions, err := store.ListSessions(nil)
+	sessions, err := store.ListSessions(context.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestStore_ListSessionsWithoutRedis(t *testing.T) {
 func TestStore_CountSessionsWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	count, err := store.CountSessions(nil)
+	count, err := store.CountSessions(context.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestStore_CountSessionsWithoutRedis(t *testing.T) {
 func TestStore_IsAuthenticatedWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	auth := store.IsAuthenticated(nil, "nonexistent")
+	auth := store.IsAuthenticated(context.TODO(), "nonexistent")
 	if auth {
 		t.Error("Expected false for IsAuthenticated without Redis")
 	}
@@ -183,7 +184,7 @@ func TestStore_IsAuthenticatedWithoutRedis(t *testing.T) {
 func TestStore_GetSessionsByPubkeyWithoutRedis(t *testing.T) {
 	store := New(nil, DefaultConfig())
 
-	sessions, err := store.GetSessionsByPubkey(nil, "somepubkey")
+	sessions, err := store.GetSessionsByPubkey(context.TODO(), "somepubkey")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}

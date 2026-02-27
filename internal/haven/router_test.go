@@ -1148,7 +1148,7 @@ func TestIsAddressedToOwner_EmptyOwner(t *testing.T) {
 func TestNewRouter_NilConfig(t *testing.T) {
 	router := NewRouter(nil)
 	if router == nil {
-		t.Error("NewRouter(nil) should return a valid router")
+		t.Fatal("NewRouter(nil) should return a valid router")
 	}
 	if router.config == nil {
 		t.Error("NewRouter(nil) should use DefaultConfig")

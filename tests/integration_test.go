@@ -56,7 +56,7 @@ func TestRelayInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to relay: %v", err)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// The relay info should be populated
 	if relay.URL != relayURL {
@@ -72,7 +72,7 @@ func TestPublishAndQuery(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Create and sign a test event
 	event := &nostr.Event{
@@ -82,7 +82,7 @@ func TestPublishAndQuery(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   fmt.Sprintf("Integration test message %d", time.Now().UnixNano()),
 	}
-	event.Sign(testPrivKey)
+	_ = event.Sign(testPrivKey)
 
 	// Publish the event
 	if err := relay.Publish(ctx, *event); err != nil {
@@ -121,7 +121,7 @@ func TestQueryByAuthor(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Publish a test event
 	event := &nostr.Event{
@@ -131,8 +131,8 @@ func TestQueryByAuthor(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   "Author query test",
 	}
-	event.Sign(testPrivKey)
-	relay.Publish(ctx, *event)
+	_ = event.Sign(testPrivKey)
+	_ = relay.Publish(ctx, *event)
 
 	// Query by author
 	filter := nostr.Filter{
@@ -165,7 +165,7 @@ func TestQueryByKind(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Publish events of different kinds
 	kinds := []int{1, 4, 7}
@@ -177,8 +177,8 @@ func TestQueryByKind(t *testing.T) {
 			Tags:      nostr.Tags{},
 			Content:   fmt.Sprintf("Kind %d test", kind),
 		}
-		event.Sign(testPrivKey)
-		relay.Publish(ctx, *event)
+		_ = event.Sign(testPrivKey)
+		_ = relay.Publish(ctx, *event)
 	}
 
 	// Query for kind 1 only
@@ -208,7 +208,7 @@ func TestSubscription(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Use a unique tag to filter only our test event
 	uniqueTag := fmt.Sprintf("subtest-%d", time.Now().UnixNano())
@@ -243,12 +243,12 @@ func TestSubscription(t *testing.T) {
 		},
 		Content: "Subscription test",
 	}
-	event.Sign(testPrivKey)
+	_ = event.Sign(testPrivKey)
 
 	// Publish in goroutine
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		relay.Publish(ctx, *event)
+		_ = relay.Publish(ctx, *event)
 	}()
 
 	// Wait for the event
@@ -278,7 +278,7 @@ func TestNIP40Expiration(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Create an event that expires in the past (should be rejected)
 	expiredEvent := &nostr.Event{
@@ -290,7 +290,7 @@ func TestNIP40Expiration(t *testing.T) {
 		},
 		Content: "Expired event test",
 	}
-	expiredEvent.Sign(testPrivKey)
+	_ = expiredEvent.Sign(testPrivKey)
 
 	// Publishing should fail or the event should not be queryable
 	err := relay.Publish(ctx, *expiredEvent)
@@ -314,7 +314,7 @@ func TestNIP40Expiration(t *testing.T) {
 		},
 		Content: "Future expiration test",
 	}
-	futureEvent.Sign(testPrivKey)
+	_ = futureEvent.Sign(testPrivKey)
 
 	err = relay.Publish(ctx, *futureEvent)
 	if err != nil {
@@ -340,7 +340,7 @@ func TestNIP50Search(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Publish events with searchable content
 	uniqueWord := fmt.Sprintf("searchtest%d", time.Now().UnixNano())
@@ -351,7 +351,7 @@ func TestNIP50Search(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   fmt.Sprintf("This is a test with unique word %s for searching", uniqueWord),
 	}
-	event.Sign(testPrivKey)
+	_ = event.Sign(testPrivKey)
 
 	err := relay.Publish(ctx, *event)
 	if err != nil {
@@ -397,7 +397,7 @@ func TestNIP22TimestampLimits(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Create an event far in the future (should be rejected)
 	futureEvent := &nostr.Event{
@@ -407,7 +407,7 @@ func TestNIP22TimestampLimits(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   "Future timestamp test",
 	}
-	futureEvent.Sign(testPrivKey)
+	_ = futureEvent.Sign(testPrivKey)
 
 	err := relay.Publish(ctx, *futureEvent)
 	if err == nil {
@@ -427,7 +427,7 @@ func TestNIP22TimestampLimits(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   "Normal timestamp test",
 	}
-	normalEvent.Sign(testPrivKey)
+	_ = normalEvent.Sign(testPrivKey)
 
 	err = relay.Publish(ctx, *normalEvent)
 	if err != nil {
@@ -443,7 +443,7 @@ func TestEventDeletion(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Publish an event to delete
 	event := &nostr.Event{
@@ -453,7 +453,7 @@ func TestEventDeletion(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   "Event to be deleted",
 	}
-	event.Sign(testPrivKey)
+	_ = event.Sign(testPrivKey)
 
 	err := relay.Publish(ctx, *event)
 	if err != nil {
@@ -477,7 +477,7 @@ func TestEventDeletion(t *testing.T) {
 		},
 		Content: "",
 	}
-	deleteEvent.Sign(testPrivKey)
+	_ = deleteEvent.Sign(testPrivKey)
 
 	err = relay.Publish(ctx, *deleteEvent)
 	if err != nil {
@@ -502,7 +502,7 @@ func TestReplaceableEvent(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	dtag := fmt.Sprintf("test-%d", time.Now().UnixNano())
 
@@ -516,7 +516,7 @@ func TestReplaceableEvent(t *testing.T) {
 		},
 		Content: "First version",
 	}
-	event1.Sign(testPrivKey)
+	_ = event1.Sign(testPrivKey)
 
 	err := relay.Publish(ctx, *event1)
 	if err != nil {
@@ -536,7 +536,7 @@ func TestReplaceableEvent(t *testing.T) {
 		},
 		Content: "Second version (replacement)",
 	}
-	event2.Sign(testPrivKey)
+	_ = event2.Sign(testPrivKey)
 
 	err = relay.Publish(ctx, *event2)
 	if err != nil {
@@ -578,7 +578,7 @@ func TestInvalidSignature(t *testing.T) {
 	defer cancel()
 
 	relay := connectRelay(ctx, t)
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Create a valid event and then corrupt the signature
 	event := &nostr.Event{
@@ -588,7 +588,7 @@ func TestInvalidSignature(t *testing.T) {
 		Tags:      nostr.Tags{},
 		Content:   "Invalid signature test",
 	}
-	event.Sign(testPrivKey)
+	_ = event.Sign(testPrivKey)
 
 	// Corrupt the signature
 	if len(event.Sig) > 0 {
@@ -625,7 +625,7 @@ func TestNIP11Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to relay: %v", err)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Verify connection worked (basic NIP-11 test)
 	if relay.URL != relayURL {
@@ -646,6 +646,8 @@ func TestMetricsEndpoint(t *testing.T) {
 }
 
 // Helper to pretty print events for debugging
+var _ = debugEvent // Silence unused warning - useful for debugging tests
+
 func debugEvent(e *nostr.Event) string {
 	b, _ := json.MarshalIndent(e, "", "  ")
 	return string(b)

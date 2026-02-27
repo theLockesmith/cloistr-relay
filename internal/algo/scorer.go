@@ -310,21 +310,21 @@ func (s *Scorer) queryEngagementStats(ctx context.Context, eventID string) *Enga
 		SELECT COUNT(*) FROM event
 		WHERE kind = 7 AND tags @> $1::jsonb
 	`, `[["e", "`+eventID+`"]]`)
-	row.Scan(&stats.Reactions)
+	_ = row.Scan(&stats.Reactions)
 
 	// Query reposts (kind 6)
 	row = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM event
 		WHERE kind = 6 AND tags @> $1::jsonb
 	`, `[["e", "`+eventID+`"]]`)
-	row.Scan(&stats.Reposts)
+	_ = row.Scan(&stats.Reposts)
 
 	// Query replies (kind 1 with e-tag)
 	row = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM event
 		WHERE kind = 1 AND tags @> $1::jsonb
 	`, `[["e", "`+eventID+`"]]`)
-	row.Scan(&stats.Replies)
+	_ = row.Scan(&stats.Replies)
 
 	// Query zaps (kind 9735) - count and sum amounts
 	row = s.db.QueryRowContext(ctx, `
@@ -338,7 +338,7 @@ func (s *Scorer) queryEngagementStats(ctx context.Context, eventID string) *Enga
 		FROM event
 		WHERE kind = 9735 AND tags @> $1::jsonb
 	`, `[["e", "`+eventID+`"]]`)
-	row.Scan(&stats.Zaps, &stats.ZapAmount)
+	_ = row.Scan(&stats.Zaps, &stats.ZapAmount)
 
 	return stats
 }

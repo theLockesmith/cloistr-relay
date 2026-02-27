@@ -292,7 +292,7 @@ func (h *Handler) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
 	// Return success JSON
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"success": true, "pubkey": "` + pubkey + `"}`))
+	_, _ = w.Write([]byte(`{"success": true, "pubkey": "` + pubkey + `"}`))
 }
 
 // handleLogout clears the session cookie
@@ -368,7 +368,10 @@ func isValidHexPubkey(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		isDigit := c >= '0' && c <= '9'
+		isLowerHex := c >= 'a' && c <= 'f'
+		isUpperHex := c >= 'A' && c <= 'F'
+		if !isDigit && !isLowerHex && !isUpperHex {
 			return false
 		}
 	}

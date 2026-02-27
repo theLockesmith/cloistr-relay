@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -34,10 +35,10 @@ func TestDefaultConfig(t *testing.T) {
 func TestLimiter_New(t *testing.T) {
 	limiter := New(nil, nil)
 	if limiter == nil {
-		t.Error("Expected non-nil limiter")
+		t.Fatal("Expected non-nil limiter")
 	}
 	if limiter.config == nil {
-		t.Error("Expected non-nil config")
+		t.Fatal("Expected non-nil config")
 	}
 	// With nil Redis client, should use defaults
 	if limiter.config.EventsPerSecond != 10 {
@@ -71,7 +72,7 @@ func TestLimiter_AllowWithoutRedis(t *testing.T) {
 	// Without Redis, should always allow (fail open)
 	limiter := New(nil, DefaultConfig())
 
-	allowed, err := limiter.Allow(nil, "events", "192.168.1.1", 10)
+	allowed, err := limiter.Allow(context.TODO(), "events", "192.168.1.1", 10)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestLimiter_AllowDisabled(t *testing.T) {
 	cfg.Enabled = false
 	limiter := New(nil, cfg)
 
-	allowed, err := limiter.Allow(nil, "events", "192.168.1.1", 10)
+	allowed, err := limiter.Allow(context.TODO(), "events", "192.168.1.1", 10)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}

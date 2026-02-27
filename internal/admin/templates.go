@@ -84,7 +84,7 @@ func (h *Handler) renderPage(w http.ResponseWriter, r *http.Request, name string
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
+	_, _ = buf.WriteTo(w)
 }
 
 // renderPartial renders a partial template (for htmx responses)
@@ -98,7 +98,7 @@ func (h *Handler) renderPartial(w http.ResponseWriter, name string, data interfa
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		buf.WriteTo(w)
+		_, _ = buf.WriteTo(w)
 		return
 	}
 	log.Printf("No template sets available for partial: %s", name)

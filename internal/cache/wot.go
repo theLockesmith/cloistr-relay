@@ -100,7 +100,7 @@ func (w *WoTCache) SetFollows(ctx context.Context, pubkey string, follows []stri
 	key := prefixWoTFollows + pubkey
 
 	// Delete existing set first
-	w.client.Delete(ctx, key)
+	_ = w.client.Delete(ctx, key)
 
 	// Add all follows
 	members := make([]interface{}, len(follows))

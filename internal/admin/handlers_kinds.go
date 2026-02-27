@@ -106,6 +106,9 @@ func (h *Handler) handleDisallowKind(w http.ResponseWriter, r *http.Request) {
 }
 
 // getKindDescription returns a human-readable description of a Nostr event kind
+// TODO: Wire this into the kinds list template for user-friendly display
+var _ = getKindDescription // Silence unused warning until integrated
+
 func getKindDescription(kind int) string {
 	descriptions := map[int]string{
 		0:     "Metadata",

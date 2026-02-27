@@ -77,7 +77,7 @@ func (h *MethodHandler) BanPubkey(params []json.RawMessage) (interface{}, error)
 
 	reason := ""
 	if len(params) > 1 {
-		json.Unmarshal(params[1], &reason)
+		_ = json.Unmarshal(params[1], &reason)
 	}
 
 	if err := h.store.BanPubkey(pubkey, reason); err != nil {
@@ -154,7 +154,7 @@ func (h *MethodHandler) BanEvent(params []json.RawMessage) (interface{}, error) 
 
 	reason := ""
 	if len(params) > 1 {
-		json.Unmarshal(params[1], &reason)
+		_ = json.Unmarshal(params[1], &reason)
 	}
 
 	if err := h.store.BanEvent(eventID, reason); err != nil {
@@ -162,7 +162,7 @@ func (h *MethodHandler) BanEvent(params []json.RawMessage) (interface{}, error) 
 	}
 
 	// Also update moderation queue if present
-	h.store.UpdateModerationStatus(eventID, "rejected")
+	_ = h.store.UpdateModerationStatus(eventID, "rejected")
 
 	return true, nil
 }
@@ -245,7 +245,7 @@ func (h *MethodHandler) BlockIP(params []json.RawMessage) (interface{}, error) {
 
 	reason := ""
 	if len(params) > 1 {
-		json.Unmarshal(params[1], &reason)
+		_ = json.Unmarshal(params[1], &reason)
 	}
 
 	if err := h.store.BlockIP(ip, reason); err != nil {
@@ -285,10 +285,10 @@ func parseListParams(params []json.RawMessage) (limit, offset int) {
 	offset = 0
 
 	if len(params) > 0 {
-		json.Unmarshal(params[0], &limit)
+		_ = json.Unmarshal(params[0], &limit)
 	}
 	if len(params) > 1 {
-		json.Unmarshal(params[1], &offset)
+		_ = json.Unmarshal(params[1], &offset)
 	}
 
 	return limit, offset

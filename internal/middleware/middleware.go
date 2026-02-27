@@ -23,7 +23,7 @@ func GenerateConnectionID() string {
 	// Incrementing counter + random suffix for uniqueness across restarts
 	count := atomic.AddUint64(&connectionCounter, 1)
 	b := make([]byte, 4)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString([]byte{
 		byte(count >> 24), byte(count >> 16), byte(count >> 8), byte(count),
 	}) + hex.EncodeToString(b)
@@ -139,7 +139,7 @@ func RegisterObservability(relay *khatru.Relay) {
 
 		for _, handler := range originalRejectConnection {
 			if handler(r) {
-				logger.Warn(nil, "connection rejected", map[string]interface{}{
+				logger.Warn(context.Background(), "connection rejected", map[string]interface{}{
 					"remote_ip":  ip,
 					"user_agent": userAgent,
 				})

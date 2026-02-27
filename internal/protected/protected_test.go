@@ -21,10 +21,10 @@ func TestDefaultConfig(t *testing.T) {
 func TestHandler_New(t *testing.T) {
 	handler := NewHandler(nil)
 	if handler == nil {
-		t.Error("Expected non-nil handler")
+		t.Fatal("Expected non-nil handler")
 	}
 	if handler.config == nil {
-		t.Error("Expected non-nil config")
+		t.Fatal("Expected non-nil config")
 	}
 	if !handler.config.AllowProtectedEvents {
 		t.Error("Expected AllowProtectedEvents to be true by default")

@@ -72,7 +72,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // writeSuccess writes a successful JSON-RPC response
 func writeSuccess(w http.ResponseWriter, result interface{}) {
 	w.Header().Set("Content-Type", "application/nostr+json+rpc")
-	json.NewEncoder(w).Encode(JSONRPCResponse{
+	_ = json.NewEncoder(w).Encode(JSONRPCResponse{
 		Result: result,
 	})
 }
@@ -81,7 +81,7 @@ func writeSuccess(w http.ResponseWriter, result interface{}) {
 func writeError(w http.ResponseWriter, errType, message string) {
 	w.Header().Set("Content-Type", "application/nostr+json+rpc")
 	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(JSONRPCResponse{
+	_ = json.NewEncoder(w).Encode(JSONRPCResponse{
 		Error: message,
 	})
 }
@@ -92,7 +92,7 @@ func writeAuthError(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusUnauthorized)
 
 	errMsg := "auth-required: " + err.Error()
-	json.NewEncoder(w).Encode(JSONRPCResponse{
+	_ = json.NewEncoder(w).Encode(JSONRPCResponse{
 		Error: errMsg,
 	})
 }

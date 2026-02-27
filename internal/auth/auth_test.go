@@ -173,9 +173,14 @@ func TestRegisterAuthHandlers_PolicyAuthAll(t *testing.T) {
 	t.Skip("Requires relay instance - test in integration tests")
 }
 
+// testContextKey is a type for test-specific context keys
+type testContextKey string
+
 // createAuthenticatedContext creates a mock authenticated context for testing
 // Note: In real khatru usage, authentication is managed via context values
 // This is a simplified version for testing purposes
+var _ = createAuthenticatedContext // Silence unused warning - reserved for future integration tests
+
 func createAuthenticatedContext(pubkey string) context.Context {
 	// In actual khatru implementation, we would use their context key
 	// For unit tests, we need to understand that khatru.GetAuthed(ctx) returns ""
@@ -188,7 +193,7 @@ func createAuthenticatedContext(pubkey string) context.Context {
 
 	// For now, these tests verify the handler logic itself
 	// Integration tests should verify the full authentication flow
-	return context.WithValue(context.Background(), "test-authed", pubkey)
+	return context.WithValue(context.Background(), testContextKey("test-authed"), pubkey)
 }
 
 // Note: The tests above for requireAuthForRead and requireAuthForWrite

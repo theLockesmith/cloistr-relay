@@ -163,7 +163,7 @@ func (m *SelfMonitor) probeRelay(ctx context.Context) *RelayHealth {
 		health.Error = fmt.Sprintf("NIP-11 probe failed: %v", err)
 		return health
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	health.RTTNIP11 = int(time.Since(start).Milliseconds())
 	health.RTTOpen = health.RTTNIP11 // Use NIP-11 RTT as open RTT approximation
@@ -297,7 +297,7 @@ func GenerateMonitorKey() (string, error) {
 	// Generate 32 random bytes
 	var privkey [32]byte
 	h := sha256.New()
-	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	_, _ = fmt.Fprintf(h, "%d", time.Now().UnixNano())
 	copy(privkey[:], h.Sum(nil))
 	return hex.EncodeToString(privkey[:]), nil
 }

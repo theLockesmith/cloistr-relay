@@ -45,9 +45,6 @@ func (h *Handler) SetEventLookup(lookup EventLookup) {
 	h.router.SetEventLookup(lookup)
 }
 
-// boxContextKey is used to store the determined box in context
-type boxContextKey struct{}
-
 // RejectEvent validates events against box access policies
 // Returns (reject, reason) - if reject is true, event is rejected
 func (h *Handler) RejectEvent() func(context.Context, *nostr.Event) (bool, string) {

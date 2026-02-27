@@ -202,6 +202,10 @@ func (h *Handler) handleDisallowPubkey(w http.ResponseWriter, r *http.Request) {
 }
 
 // Helper to format banned pubkeys for templates
+// TODO: Wire these helpers into pubkey list templates
+var _ = formatBannedPubkeys  // Silence unused warning
+var _ = formatAllowedPubkeys // Silence unused warning
+
 func formatBannedPubkeys(pubkeys []management.BannedPubkey) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(pubkeys))
 	for i, p := range pubkeys {

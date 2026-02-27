@@ -176,11 +176,11 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, fields map[st
 
 	if l.useJSON {
 		data, _ := json.Marshal(entry)
-		l.output.Write(data)
-		l.output.Write([]byte("\n"))
+		_, _ = l.output.Write(data)
+		_, _ = l.output.Write([]byte("\n"))
 	} else {
 		// Human-readable format for development
-		l.output.Write([]byte(formatPlaintext(entry)))
+		_, _ = l.output.Write([]byte(formatPlaintext(entry)))
 	}
 }
 

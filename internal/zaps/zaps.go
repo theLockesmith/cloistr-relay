@@ -131,7 +131,7 @@ func parseAmountFromDescription(desc string) int64 {
 	for _, tag := range zapRequest.Tags {
 		if len(tag) >= 2 && tag[0] == "amount" {
 			var amount int64
-			fmt.Sscanf(tag[1], "%d", &amount)
+			_, _ = fmt.Sscanf(tag[1], "%d", &amount)
 			return amount
 		}
 	}

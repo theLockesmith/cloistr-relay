@@ -112,7 +112,7 @@ func (s *Store) loadCache() error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,7 +140,7 @@ func (s *Store) loadCache() error {
 			var pubkey string
 			var role sql.NullString
 			if err := memberRows.Scan(&pubkey, &role); err != nil {
-				memberRows.Close()
+				_ = memberRows.Close()
 				return err
 			}
 			g.Members[pubkey] = true
@@ -148,7 +148,7 @@ func (s *Store) loadCache() error {
 				g.Admins[pubkey] = role.String
 			}
 		}
-		memberRows.Close()
+		_ = memberRows.Close()
 
 		s.cache[g.ID] = &g
 	}
@@ -159,14 +159,14 @@ func (s *Store) loadCache() error {
 // generateID creates a random group ID
 func generateID() string {
 	bytes := make([]byte, 16)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 
 // generateInviteCode creates a random invite code
 func generateInviteCode() string {
 	bytes := make([]byte, 12)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 
@@ -448,7 +448,7 @@ func (s *Store) ListMembers(ctx context.Context, groupID string) ([]Member, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []Member
 	for rows.Next() {

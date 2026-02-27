@@ -66,7 +66,7 @@ func TestRejectTimestampOutOfRange_FutureTimestamp(t *testing.T) {
 
 	// Set timestamp far in the future (6 minutes ahead, limit is 5 minutes / 300 seconds)
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() + 360)
-	event.Sign(testPrivateKey)
+	_ = event.Sign(testPrivateKey)
 
 	cfg := &config.Config{
 		MaxCreatedAtFuture: 300, // 5 minutes
@@ -90,7 +90,7 @@ func TestRejectTimestampOutOfRange_RecentFutureTimestamp(t *testing.T) {
 
 	// Set timestamp slightly in the future (2 minutes, within 5 minute tolerance)
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() + 120)
-	event.Sign(testPrivateKey)
+	_ = event.Sign(testPrivateKey)
 
 	cfg := &config.Config{
 		MaxCreatedAtFuture: 300, // 5 minutes
@@ -111,7 +111,7 @@ func TestRejectTimestampOutOfRange_PastTimestamp(t *testing.T) {
 
 	// Set timestamp in the past (1 hour)
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() - 3600)
-	event.Sign(testPrivateKey)
+	_ = event.Sign(testPrivateKey)
 
 	cfg := &config.Config{
 		MaxCreatedAtFuture: 300, // 5 minutes
@@ -132,7 +132,7 @@ func TestRejectTimestampOutOfRange_PastTimestampWithLimit(t *testing.T) {
 
 	// Set timestamp too far in the past (2 hours, limit is 1 hour)
 	event.CreatedAt = nostr.Timestamp(time.Now().Unix() - 7200)
-	event.Sign(testPrivateKey)
+	_ = event.Sign(testPrivateKey)
 
 	cfg := &config.Config{
 		MaxCreatedAtFuture: 300,  // 5 minutes
@@ -384,6 +384,6 @@ func corruptHex(hexStr string) string {
 // generateRandomHex generates a random hex string of specified length
 func generateRandomHex(length int) string {
 	bytes := make([]byte, length/2)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }

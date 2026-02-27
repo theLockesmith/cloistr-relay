@@ -148,7 +148,7 @@ func TraceID(ctx context.Context) string {
 // generateID generates a random hex ID
 func generateID(bytes int) string {
 	b := make([]byte, bytes)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 

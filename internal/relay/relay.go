@@ -162,7 +162,7 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 
 				// Cache cacheable events
 				if evtCache != nil && eventcache.IsCacheable(event.Kind) {
-					evtCache.Set(ctx, event)
+					_ = evtCache.Set(ctx, event)
 				}
 
 				select {

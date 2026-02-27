@@ -60,7 +60,7 @@ func (s *Store) UpdateFollows(follower string, followees []string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing follows for this follower
 	_, err = tx.Exec(`DELETE FROM wot_follows WHERE follower = $1`, follower)
@@ -102,7 +102,7 @@ func (s *Store) GetFollows(pubkey string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var follows []string
 	for rows.Next() {
@@ -134,7 +134,7 @@ func (s *Store) GetFollowersOf(pubkey string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var followers []string
 	for rows.Next() {
@@ -181,7 +181,7 @@ func (s *Store) GetCachedTrust(pubkey string) (CachedTrust, bool) {
 func (s *Store) SetCachedTrust(pubkey string, level TrustLevel) {
 	// Store in external cache if available
 	if s.extCache != nil && s.extCache.IsEnabled() {
-		s.extCache.SetTrustLevel(context.Background(), pubkey, int(level))
+		_ = s.extCache.SetTrustLevel(context.Background(), pubkey, int(level))
 	}
 
 	// Also store in memory cache
@@ -199,8 +199,8 @@ func (s *Store) SetCachedTrust(pubkey string, level TrustLevel) {
 func (s *Store) invalidateCache(pubkey string) {
 	// Invalidate external cache
 	if s.extCache != nil && s.extCache.IsEnabled() {
-		s.extCache.InvalidateTrustLevel(context.Background(), pubkey)
-		s.extCache.InvalidateFollows(context.Background(), pubkey)
+		_ = s.extCache.InvalidateTrustLevel(context.Background(), pubkey)
+		_ = s.extCache.InvalidateFollows(context.Background(), pubkey)
 	}
 
 	// Invalidate in-memory cache
@@ -213,7 +213,7 @@ func (s *Store) invalidateCache(pubkey string) {
 func (s *Store) ClearCache() {
 	// Clear external cache
 	if s.extCache != nil && s.extCache.IsEnabled() {
-		s.extCache.ClearWoTCache(context.Background())
+		_ = s.extCache.ClearWoTCache(context.Background())
 	}
 
 	// Clear in-memory cache
@@ -249,7 +249,7 @@ func (s *Store) GetAllFollows() ([]FollowRelation, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var follows []FollowRelation
 	for rows.Next() {

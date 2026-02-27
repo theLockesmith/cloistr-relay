@@ -432,7 +432,7 @@ func (h *Handler) processCreateInvite(ctx context.Context, event *nostr.Event, g
 		if len(tag) >= 2 {
 			switch tag[0] {
 			case "max_uses":
-				fmt.Sscanf(tag[1], "%d", &maxUses)
+				_, _ = fmt.Sscanf(tag[1], "%d", &maxUses)
 			case "expires":
 				// Parse ISO timestamp
 				expiresAt, _ = time.Parse(time.RFC3339, tag[1])
@@ -480,10 +480,11 @@ func (h *Handler) publishMemberList(ctx context.Context, groupID string) {
 		return
 	}
 
-	var tags []string
+	tags := make([]string, 0, len(members))
 	for _, m := range members {
 		tags = append(tags, m.Pubkey)
 	}
+	_ = tags // Used for future publishing
 
 	log.Printf("NIP-29: would publish member list for group %s: %d members", groupID[:8], len(members))
 }

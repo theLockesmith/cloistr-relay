@@ -117,7 +117,7 @@ func (s *Store) ListBannedPubkeys(limit, offset int) ([]BannedPubkey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []BannedPubkey
 	for rows.Next() {
@@ -171,7 +171,7 @@ func (s *Store) ListAllowedPubkeys(limit, offset int) ([]AllowedPubkey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []AllowedPubkey
 	for rows.Next() {
@@ -227,7 +227,7 @@ func (s *Store) ListBannedEvents(limit, offset int) ([]BannedEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []BannedEvent
 	for rows.Next() {
@@ -268,7 +268,7 @@ func (s *Store) ListModerationQueue(limit, offset int) ([]ModerationItem, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []ModerationItem
 	for rows.Next() {
@@ -335,7 +335,7 @@ func (s *Store) ListAllowedKinds() ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []int
 	for rows.Next() {
@@ -391,7 +391,7 @@ func (s *Store) ListBlockedIPs(limit, offset int) ([]BlockedIP, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []BlockedIP
 	for rows.Next() {

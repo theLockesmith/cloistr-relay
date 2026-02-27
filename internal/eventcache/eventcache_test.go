@@ -1,6 +1,7 @@
 package eventcache
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -31,10 +32,10 @@ func TestDefaultConfig(t *testing.T) {
 func TestCache_New(t *testing.T) {
 	cache := New(nil, nil)
 	if cache == nil {
-		t.Error("Expected non-nil cache")
+		t.Fatal("Expected non-nil cache")
 	}
 	if cache.config == nil {
-		t.Error("Expected non-nil config")
+		t.Fatal("Expected non-nil config")
 	}
 	if cache.config.DefaultTTL != 5*time.Minute {
 		t.Errorf("Expected default DefaultTTL, got %v", cache.config.DefaultTTL)
@@ -90,7 +91,7 @@ func TestCache_SetWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
 	// Should not error without Redis
-	err := cache.Set(nil, nil)
+	err := cache.Set(context.TODO(), nil)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestCache_SetWithoutRedis(t *testing.T) {
 func TestCache_GetWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	event, err := cache.Get(nil, "nonexistent")
+	event, err := cache.Get(context.TODO(), "nonexistent")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestCache_GetWithoutRedis(t *testing.T) {
 func TestCache_GetByPubkeyKindWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	event, err := cache.GetByPubkeyKind(nil, "pubkey", 0)
+	event, err := cache.GetByPubkeyKind(context.TODO(), "pubkey", 0)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestCache_GetByPubkeyKindWithoutRedis(t *testing.T) {
 func TestCache_GetProfileWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	event, err := cache.GetProfile(nil, "pubkey")
+	event, err := cache.GetProfile(context.TODO(), "pubkey")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -135,7 +136,7 @@ func TestCache_GetProfileWithoutRedis(t *testing.T) {
 func TestCache_GetContactsWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	event, err := cache.GetContacts(nil, "pubkey")
+	event, err := cache.GetContacts(context.TODO(), "pubkey")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestCache_GetContactsWithoutRedis(t *testing.T) {
 func TestCache_DeleteWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	err := cache.Delete(nil, "eventid")
+	err := cache.Delete(context.TODO(), "eventid")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestCache_DeleteWithoutRedis(t *testing.T) {
 func TestCache_MultiGetWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	events, err := cache.MultiGet(nil, []string{"id1", "id2"})
+	events, err := cache.MultiGet(context.TODO(), []string{"id1", "id2"})
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestCache_MultiGetWithoutRedis(t *testing.T) {
 func TestCache_InvalidateWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	err := cache.Invalidate(nil, "pubkey", 0)
+	err := cache.Invalidate(context.TODO(), "pubkey", 0)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -177,12 +178,12 @@ func TestCache_InvalidateWithoutRedis(t *testing.T) {
 func TestCache_GetStatsWithoutRedis(t *testing.T) {
 	cache := New(nil, DefaultConfig())
 
-	stats, err := cache.GetStats(nil)
+	stats, err := cache.GetStats(context.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 	if stats == nil {
-		t.Error("Expected non-nil stats")
+		t.Fatal("Expected non-nil stats")
 	}
 	if stats.EventCount != 0 {
 		t.Errorf("Expected 0 events without Redis, got %d", stats.EventCount)

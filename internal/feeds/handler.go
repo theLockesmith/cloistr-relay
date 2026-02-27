@@ -370,7 +370,7 @@ func linkifyURLsSafe(text string) string {
 			// It's a URL - escape the URL for href and display, then construct the link
 			escapedURL := html.EscapeString(cleanWord)
 			escapedSuffix := html.EscapeString(suffix)
-			result.WriteString(fmt.Sprintf(`<a href="%s">%s</a>%s`, escapedURL, escapedURL, escapedSuffix))
+			_, _ = fmt.Fprintf(&result, `<a href="%s">%s</a>%s`, escapedURL, escapedURL, escapedSuffix)
 		} else {
 			// Not a URL - just escape the content
 			result.WriteString(html.EscapeString(word))

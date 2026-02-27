@@ -56,7 +56,7 @@ func (s *SearchBackend) QueryEvents(ctx context.Context, filter nostr.Filter) (c
 			log.Printf("Search query error: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var (

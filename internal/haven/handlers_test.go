@@ -480,7 +480,7 @@ func TestOnEventSaved_DisabledHaven(t *testing.T) {
 func TestNewHandler_NilConfig(t *testing.T) {
 	handler := NewHandler(nil)
 	if handler == nil {
-		t.Error("NewHandler(nil) should return a valid handler")
+		t.Fatal("NewHandler(nil) should return a valid handler")
 	}
 	if handler.config == nil {
 		t.Error("NewHandler(nil) should use DefaultConfig")

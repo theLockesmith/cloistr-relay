@@ -101,7 +101,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize search database: %v", err)
 	}
-	defer rawDB.Close()
+	defer func() { _ = rawDB.Close() }()
 
 	searchBackend := search.NewSearchBackend(rawDB)
 	if err := searchBackend.InitSchema(); err != nil {
@@ -129,7 +129,7 @@ func main() {
 			log.Printf("Warning: Failed to connect to cache: %v", err)
 			// Continue without cache
 		} else {
-			defer cacheClient.Close()
+			defer func() { _ = cacheClient.Close() }()
 			log.Println("Cache connected (Dragonfly/Redis)")
 		}
 	}
@@ -391,7 +391,7 @@ func main() {
 	// Health check endpoint (simple, for Kubernetes probes)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	// Serve favicon from embedded static files

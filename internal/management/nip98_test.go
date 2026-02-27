@@ -54,7 +54,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "POST"},
 			},
 		}
-		event.Sign(sk)
+		_ = event.Sign(sk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)
@@ -77,7 +77,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "POST"},
 			},
 		}
-		event.Sign(sk)
+		_ = event.Sign(sk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)
@@ -99,7 +99,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "POST"},
 			},
 		}
-		event.Sign(sk)
+		_ = event.Sign(sk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)
@@ -122,7 +122,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "POST"},
 			},
 		}
-		event.Sign(sk)
+		_ = event.Sign(sk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)
@@ -145,7 +145,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "GET"}, // Should be POST
 			},
 		}
-		event.Sign(sk)
+		_ = event.Sign(sk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)
@@ -171,7 +171,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "POST"},
 			},
 		}
-		event.Sign(otherSk)
+		_ = event.Sign(otherSk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)
@@ -194,7 +194,7 @@ func TestValidateNIP98Auth(t *testing.T) {
 				{"method", "POST"},
 			},
 		}
-		event.Sign(sk)
+		_ = event.Sign(sk)
 
 		eventJSON, _ := json.Marshal(event)
 		encoded := base64.StdEncoding.EncodeToString(eventJSON)

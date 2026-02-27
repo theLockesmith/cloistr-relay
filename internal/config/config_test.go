@@ -46,8 +46,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 // TestLoad_RelayPortOverride tests RELAY_PORT environment variable
 func TestLoad_RelayPortOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("RELAY_PORT", "8080")
-	defer os.Unsetenv("RELAY_PORT")
+	t.Setenv("RELAY_PORT", "8080")
 
 	cfg, err := Load()
 	if err != nil {
@@ -62,8 +61,7 @@ func TestLoad_RelayPortOverride(t *testing.T) {
 // TestLoad_RelayPortInvalid tests invalid RELAY_PORT value
 func TestLoad_RelayPortInvalid(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("RELAY_PORT", "not-a-number")
-	defer os.Unsetenv("RELAY_PORT")
+	t.Setenv("RELAY_PORT", "not-a-number")
 
 	_, err := Load()
 	if err == nil {
@@ -74,8 +72,7 @@ func TestLoad_RelayPortInvalid(t *testing.T) {
 // TestLoad_RelayNameOverride tests RELAY_NAME environment variable
 func TestLoad_RelayNameOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("RELAY_NAME", "test-relay")
-	defer os.Unsetenv("RELAY_NAME")
+	t.Setenv("RELAY_NAME", "test-relay")
 
 	cfg, err := Load()
 	if err != nil {
@@ -90,8 +87,7 @@ func TestLoad_RelayNameOverride(t *testing.T) {
 // TestLoad_RelayURLOverride tests RELAY_URL environment variable
 func TestLoad_RelayURLOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("RELAY_URL", "wss://relay.example.com")
-	defer os.Unsetenv("RELAY_URL")
+	t.Setenv("RELAY_URL", "wss://relay.example.com")
 
 	cfg, err := Load()
 	if err != nil {
@@ -107,8 +103,7 @@ func TestLoad_RelayURLOverride(t *testing.T) {
 func TestLoad_RelayPubkeyOverride(t *testing.T) {
 	clearEnv(t)
 	testPubkey := "npub1test1234567890abcdefghijklmnopqrstuvwxyz"
-	os.Setenv("RELAY_PUBKEY", testPubkey)
-	defer os.Unsetenv("RELAY_PUBKEY")
+	t.Setenv("RELAY_PUBKEY", testPubkey)
 
 	cfg, err := Load()
 	if err != nil {
@@ -123,8 +118,7 @@ func TestLoad_RelayPubkeyOverride(t *testing.T) {
 // TestLoad_RelayContactOverride tests RELAY_CONTACT environment variable
 func TestLoad_RelayContactOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("RELAY_CONTACT", "admin@example.com")
-	defer os.Unsetenv("RELAY_CONTACT")
+	t.Setenv("RELAY_CONTACT", "admin@example.com")
 
 	cfg, err := Load()
 	if err != nil {
@@ -139,8 +133,7 @@ func TestLoad_RelayContactOverride(t *testing.T) {
 // TestLoad_DBHostOverride tests DB_HOST environment variable
 func TestLoad_DBHostOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("DB_HOST", "postgres.example.com")
-	defer os.Unsetenv("DB_HOST")
+	t.Setenv("DB_HOST", "postgres.example.com")
 
 	cfg, err := Load()
 	if err != nil {
@@ -155,8 +148,7 @@ func TestLoad_DBHostOverride(t *testing.T) {
 // TestLoad_DBPortOverride tests DB_PORT environment variable
 func TestLoad_DBPortOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("DB_PORT", "5433")
-	defer os.Unsetenv("DB_PORT")
+	t.Setenv("DB_PORT", "5433")
 
 	cfg, err := Load()
 	if err != nil {
@@ -171,8 +163,7 @@ func TestLoad_DBPortOverride(t *testing.T) {
 // TestLoad_DBPortInvalid tests invalid DB_PORT value
 func TestLoad_DBPortInvalid(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("DB_PORT", "invalid")
-	defer os.Unsetenv("DB_PORT")
+	t.Setenv("DB_PORT", "invalid")
 
 	_, err := Load()
 	if err == nil {
@@ -183,8 +174,7 @@ func TestLoad_DBPortInvalid(t *testing.T) {
 // TestLoad_DBNameOverride tests DB_NAME environment variable
 func TestLoad_DBNameOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("DB_NAME", "test_db")
-	defer os.Unsetenv("DB_NAME")
+	t.Setenv("DB_NAME", "test_db")
 
 	cfg, err := Load()
 	if err != nil {
@@ -199,8 +189,7 @@ func TestLoad_DBNameOverride(t *testing.T) {
 // TestLoad_DBUserOverride tests DB_USER environment variable
 func TestLoad_DBUserOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("DB_USER", "testuser")
-	defer os.Unsetenv("DB_USER")
+	t.Setenv("DB_USER", "testuser")
 
 	cfg, err := Load()
 	if err != nil {
@@ -215,8 +204,7 @@ func TestLoad_DBUserOverride(t *testing.T) {
 // TestLoad_DBPasswordOverride tests DB_PASSWORD environment variable
 func TestLoad_DBPasswordOverride(t *testing.T) {
 	clearEnv(t)
-	os.Setenv("DB_PASSWORD", "secretpassword")
-	defer os.Unsetenv("DB_PASSWORD")
+	t.Setenv("DB_PASSWORD", "secretpassword")
 
 	cfg, err := Load()
 	if err != nil {

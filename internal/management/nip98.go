@@ -69,21 +69,21 @@ func ValidateNIP98Auth(r *http.Request, adminPubkeys []string) (string, error) {
 	}
 
 	// Validate "u" tag (URL must match)
-	uTag := event.Tags.GetFirst([]string{"u"})
-	if uTag == nil || len(*uTag) < 2 {
+	uTag := event.Tags.Find("u")
+	if len(uTag) < 2 {
 		return "", ErrInvalidURL
 	}
 	requestURL := getRequestURL(r)
-	if (*uTag)[1] != requestURL {
+	if uTag[1] != requestURL {
 		return "", ErrInvalidURL
 	}
 
 	// Validate "method" tag (HTTP method must match)
-	methodTag := event.Tags.GetFirst([]string{"method"})
-	if methodTag == nil || len(*methodTag) < 2 {
+	methodTag := event.Tags.Find("method")
+	if len(methodTag) < 2 {
 		return "", ErrInvalidMethod
 	}
-	if strings.ToUpper((*methodTag)[1]) != r.Method {
+	if strings.ToUpper(methodTag[1]) != r.Method {
 		return "", ErrInvalidMethod
 	}
 

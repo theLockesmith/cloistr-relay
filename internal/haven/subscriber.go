@@ -124,7 +124,7 @@ func (s *Subscriber) Stop() {
 			rs.sub.Close()
 		}
 		if rs.relay != nil {
-			rs.relay.Close()
+			_ = rs.relay.Close()
 		}
 		rs.mu.Unlock()
 	}
@@ -239,7 +239,7 @@ func (s *Subscriber) connectAndSubscribe(url string, rs *relaySubscription) erro
 	// Subscribe
 	sub, err := relay.Subscribe(s.ctx, filters)
 	if err != nil {
-		relay.Close()
+		_ = relay.Close()
 		rs.mu.Lock()
 		rs.errors++
 		rs.mu.Unlock()

@@ -110,12 +110,11 @@ func TestWAL_GetStatsWithoutRedis(t *testing.T) {
 func TestWAL_IsHealthyWithoutRedis(t *testing.T) {
 	wal := New(nil, nil, DefaultConfig())
 
-	// Without Redis, QueueLength returns an error, so IsHealthy returns false
+	// Without Redis, QueueLength returns 0, nil - so healthy would be true
+	// Since w.rdb is nil, QueueLength returns 0 with nil rdb
 	healthy := wal.IsHealthy(nil)
-	// Since w.rdb is nil, QueueLength returns 0, nil - so healthy would be true
-	if !healthy {
-		// Actually it returns true because QueueLength returns 0 with nil rdb
-	}
+	// With nil Redis client, this should still work (returns healthy=true)
+	_ = healthy
 }
 
 func TestWAL_CreateSaveEventHandler(t *testing.T) {

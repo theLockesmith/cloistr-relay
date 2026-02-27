@@ -118,7 +118,7 @@ func (p *RelayPool) Close() {
 	defer p.mu.Unlock()
 
 	for url, relay := range p.relays {
-		relay.Close()
+		_ = relay.Close()
 		delete(p.relays, url)
 	}
 }
