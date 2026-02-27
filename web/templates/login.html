@@ -30,45 +30,50 @@
         }
     </script>
 
-    <!-- nostr-tools for NIP-46 (using @nostr/tools - the renamed package) -->
+    <!-- nostr-tools for NIP-46 -->
+    <!-- Using jsdelivr which handles ESM submodules better -->
     <script type="module">
-        // Try the new @nostr/tools package first, fall back to old nostr-tools
+        // Try jsdelivr which handles ESM submodules correctly
         let nostrTools = {};
         let loadError = null;
 
         try {
-            // New package name
-            const pure = await import('https://esm.sh/@nostr/tools@2.10.4/pure');
-            const nip46 = await import('https://esm.sh/@nostr/tools@2.10.4/nip46');
-            const pool = await import('https://esm.sh/@nostr/tools@2.10.4/pool');
-            const utils = await import('https://esm.sh/@noble/hashes@1.4.0/utils');
+            // Use jsdelivr for better ESM support
+            const [pure, nip46, pool, utils] = await Promise.all([
+                import('https://cdn.jsdelivr.net/npm/nostr-tools@2.10.4/+esm'),
+                import('https://cdn.jsdelivr.net/npm/nostr-tools@2.10.4/lib/esm/nip46.js'),
+                import('https://cdn.jsdelivr.net/npm/nostr-tools@2.10.4/lib/esm/pool.js'),
+                import('https://cdn.jsdelivr.net/npm/@noble/hashes@1.4.0/+esm')
+            ]);
 
-            console.log('@nostr/tools NIP-46 exports:', Object.keys(nip46));
-            console.log('@nostr/tools BunkerSigner:', nip46.BunkerSigner);
+            console.log('nostr-tools main exports:', Object.keys(pure));
+            console.log('nostr-tools NIP-46 exports:', Object.keys(nip46));
+            console.log('BunkerSigner:', nip46.BunkerSigner);
+            console.log('BunkerSigner.fromBunker:', nip46.BunkerSigner?.fromBunker);
 
             nostrTools = {
                 generateSecretKey: pure.generateSecretKey,
                 getPublicKey: pure.getPublicKey,
-                hexToBytes: utils.hexToBytes,
-                bytesToHex: utils.bytesToHex,
+                hexToBytes: utils.hexToBytes || utils.utils?.hexToBytes,
+                bytesToHex: utils.bytesToHex || utils.utils?.bytesToHex,
                 BunkerSigner: nip46.BunkerSigner,
                 parseBunkerInput: nip46.parseBunkerInput,
                 SimplePool: pool.SimplePool,
                 nip46
             };
         } catch (e) {
-            console.log('Failed to load @nostr/tools, trying nostr-tools:', e);
+            console.error('Failed to load nostr-tools from jsdelivr:', e);
             loadError = e;
 
+            // Fallback: try esm.sh
             try {
-                // Fall back to old package name
-                const pure = await import('https://esm.sh/nostr-tools@2.10.4/pure');
+                const pure = await import('https://esm.sh/nostr-tools@2.10.4');
                 const nip46 = await import('https://esm.sh/nostr-tools@2.10.4/nip46');
                 const pool = await import('https://esm.sh/nostr-tools@2.10.4/pool');
                 const utils = await import('https://esm.sh/@noble/hashes@1.4.0/utils');
 
-                console.log('nostr-tools NIP-46 exports:', Object.keys(nip46));
-                console.log('nostr-tools BunkerSigner:', nip46.BunkerSigner);
+                console.log('esm.sh NIP-46 exports:', Object.keys(nip46));
+                console.log('esm.sh BunkerSigner:', nip46.BunkerSigner);
 
                 nostrTools = {
                     generateSecretKey: pure.generateSecretKey,
@@ -81,7 +86,7 @@
                     nip46
                 };
             } catch (e2) {
-                console.error('Failed to load both @nostr/tools and nostr-tools:', e2);
+                console.error('Failed to load from esm.sh as well:', e2);
                 loadError = e2;
             }
         }
@@ -90,6 +95,7 @@
         window.nostrTools = nostrTools;
         window.nostrToolsLoaded = Object.keys(nostrTools).length > 0;
         window.nostrToolsError = loadError;
+        console.log('nostrTools loaded:', window.nostrToolsLoaded, Object.keys(nostrTools));
         document.dispatchEvent(new Event('nostr-tools-loaded'));
     </script>
 
