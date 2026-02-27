@@ -39,22 +39,35 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 	if !useDistributedRateLimit && cfg.RateLimitEventsPerSec > 0 {
 		baseLimiter := policies.EventIPRateLimiter(cfg.RateLimitEventsPerSec, time.Second, cfg.RateLimitEventsPerSec*5)
 
-		// Wrap rate limiter to exempt certain kinds (e.g., 24133 for NIP-46)
-		if len(cfg.RateLimitExemptKinds) > 0 {
-			exemptKinds := make(map[int]bool)
-			for _, k := range cfg.RateLimitExemptKinds {
-				exemptKinds[k] = true
+		// Build exempt sets for O(1) lookup
+		exemptKinds := make(map[int]bool)
+		for _, k := range cfg.RateLimitExemptKinds {
+			exemptKinds[k] = true
+		}
+		exemptPubkeys := make(map[string]bool)
+		for _, pk := range cfg.RateLimitExemptPubkeys {
+			exemptPubkeys[pk] = true
+		}
+
+		// Wrap rate limiter to exempt certain kinds and pubkeys
+		relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
+			// Exempt specific pubkeys from rate limiting
+			if exemptPubkeys[event.PubKey] {
+				return false, ""
 			}
-			relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
-				if exemptKinds[event.Kind] {
-					return false, "" // Allow event without rate limiting
-				}
-				return baseLimiter(ctx, event)
-			})
-			log.Printf("Rate limit (in-memory): %d events/sec per IP (exempt kinds: %v)", cfg.RateLimitEventsPerSec, cfg.RateLimitExemptKinds)
+			// Exempt specific kinds from rate limiting
+			if exemptKinds[event.Kind] {
+				return false, ""
+			}
+			return baseLimiter(ctx, event)
+		})
+
+		if len(cfg.RateLimitExemptPubkeys) > 0 {
+			log.Printf("Rate limit (in-memory): %d events/sec per IP (exempt kinds: %v, exempt pubkeys: %d)",
+				cfg.RateLimitEventsPerSec, cfg.RateLimitExemptKinds, len(cfg.RateLimitExemptPubkeys))
 		} else {
-			relay.RejectEvent = append(relay.RejectEvent, baseLimiter)
-			log.Printf("Rate limit (in-memory): %d events/sec per IP", cfg.RateLimitEventsPerSec)
+			log.Printf("Rate limit (in-memory): %d events/sec per IP (exempt kinds: %v)",
+				cfg.RateLimitEventsPerSec, cfg.RateLimitExemptKinds)
 		}
 	}
 

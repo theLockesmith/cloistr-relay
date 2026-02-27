@@ -127,6 +127,8 @@ Set via environment variables:
 - `RATE_LIMIT_EVENTS_PER_SEC` - Events per second per IP (default: 10)
 - `RATE_LIMIT_FILTERS_PER_SEC` - Queries per second per IP (default: 20)
 - `RATE_LIMIT_CONNECTIONS_PER_SEC` - Connections per second per IP (default: 5)
+- `RATE_LIMIT_EXEMPT_KINDS` - Comma-separated kinds exempt from event rate limiting (e.g., 24133 for NIP-46)
+- `RATE_LIMIT_EXEMPT_PUBKEYS` - Comma-separated hex pubkeys exempt from all rate limiting
 - `ADMIN_PUBKEYS` - NIP-86: Comma-separated pubkeys for management API access
 - `WOT_ENABLED` - Enable Web of Trust filtering (true/1)
 - `WOT_OWNER_PUBKEY` - Relay owner pubkey (trust level 0)

@@ -34,11 +34,12 @@ type Config struct {
 	MinPoWDifficulty int // Minimum PoW difficulty required (0 = disabled, default)
 
 	// Rate Limiting
-	RateLimitEventsPerSec      int   // Events per second per IP (0 = disabled)
-	RateLimitFiltersPerSec     int   // Filter queries per second per IP (0 = disabled)
-	RateLimitConnectionsPerSec int   // New connections per second per IP (0 = disabled)
-	RateLimitDistributed       bool  // Use distributed rate limiting via Redis/Dragonfly
-	RateLimitExemptKinds       []int // Kinds exempt from event rate limiting (e.g., 24133 for NIP-46)
+	RateLimitEventsPerSec      int      // Events per second per IP (0 = disabled)
+	RateLimitFiltersPerSec     int      // Filter queries per second per IP (0 = disabled)
+	RateLimitConnectionsPerSec int      // New connections per second per IP (0 = disabled)
+	RateLimitDistributed       bool     // Use distributed rate limiting via Redis/Dragonfly
+	RateLimitExemptKinds       []int    // Kinds exempt from event rate limiting (e.g., 24133 for NIP-46)
+	RateLimitExemptPubkeys     []string // Pubkeys exempt from all rate limiting
 
 	// NIP-86 Management API
 	AdminPubkeys []string // Pubkeys authorized to use management API
@@ -267,6 +268,11 @@ func Load() (*Config, error) {
 				cfg.RateLimitExemptKinds = append(cfg.RateLimitExemptKinds, kind)
 			}
 		}
+	}
+
+	// Rate limit exempt pubkeys (comma-separated hex pubkeys)
+	if exemptPubkeys := os.Getenv("RATE_LIMIT_EXEMPT_PUBKEYS"); exemptPubkeys != "" {
+		cfg.RateLimitExemptPubkeys = parseCommaSeparated(exemptPubkeys)
 	}
 
 	// NIP-86 Management API
