@@ -34,6 +34,13 @@ func (h *Handler) loadTemplates() {
 		"truncateEventID": truncateEventID,
 		"add":             func(a, b int) int { return a + b },
 		"sub":             func(a, b int) int { return a - b },
+		"mulf":            func(a, b float64) float64 { return a * b },
+		"divf": func(a, b float64) float64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
 	}
 
 	// Parse shared templates (layout + partials) as a base

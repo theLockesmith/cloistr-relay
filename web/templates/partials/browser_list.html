@@ -1,0 +1,89 @@
+{{define "browser_list.html"}}
+<div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+    {{if .Events}}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-700">
+            <thead class="bg-gray-700/50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">ID</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Kind</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Pubkey</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Content</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Created</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700">
+                {{range .Events}}
+                <tr class="hover:bg-gray-700/50 {{if .IsBanned}}bg-red-900/20{{end}}">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <button onclick="showEventModal('{{.ID}}')" class="text-nostr-purple hover:text-purple-400 font-mono text-xs">
+                            {{truncateEventID .ID}}
+                        </button>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <span class="inline-flex items-center rounded-full bg-gray-700 px-2 py-1 text-xs font-medium text-gray-300">
+                            {{.Kind}}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <span class="font-mono text-xs text-gray-400">{{truncatePubkey .Pubkey}}</span>
+                    </td>
+                    <td class="px-4 py-3 max-w-md">
+                        <p class="text-sm text-gray-300 truncate">{{.Content}}</p>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-400">
+                        {{formatTime .CreatedAt}}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {{if .IsBanned}}
+                        <form hx-post="/events/unban" hx-target="#event-list" hx-swap="innerHTML" class="inline">
+                            <input type="hidden" name="event_id" value="{{.ID}}">
+                            <button type="submit" class="text-green-400 hover:text-green-300 text-xs">Unban</button>
+                        </form>
+                        {{else}}
+                        <form hx-post="/events/ban" hx-target="#event-list" hx-swap="innerHTML" class="inline">
+                            <input type="hidden" name="event_id" value="{{.ID}}">
+                            <button type="submit" class="text-red-400 hover:text-red-300 text-xs">Ban</button>
+                        </form>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="px-4 py-3 border-t border-gray-700 flex items-center justify-between">
+        <div class="text-sm text-gray-400">
+            Showing {{add .Offset 1}} - {{add .Offset (len .Events)}} of {{.TotalCount}} events
+        </div>
+        <div class="flex space-x-2">
+            {{if gt .Offset 0}}
+            <button hx-get="/browser/list?offset={{sub .Offset .Limit}}&limit={{.Limit}}&pubkey={{.Filters.Pubkey}}&kind={{.Filters.Kind}}&search={{.Filters.Search}}&start={{.Filters.StartDate}}&end={{.Filters.EndDate}}"
+                    hx-target="#event-list"
+                    class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded">
+                Previous
+            </button>
+            {{end}}
+            {{if .HasMore}}
+            <button hx-get="/browser/list?offset={{add .Offset .Limit}}&limit={{.Limit}}&pubkey={{.Filters.Pubkey}}&kind={{.Filters.Kind}}&search={{.Filters.Search}}&start={{.Filters.StartDate}}&end={{.Filters.EndDate}}"
+                    hx-target="#event-list"
+                    class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded">
+                Next
+            </button>
+            {{end}}
+        </div>
+    </div>
+    {{else}}
+    <div class="px-4 py-8 text-center text-gray-400">
+        <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        <p class="mt-2">No events found</p>
+        <p class="text-sm">Try adjusting your filters</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

@@ -1,0 +1,142 @@
+{{define "wot_stats.html"}}
+<!-- Owner Info -->
+{{if .Enabled}}
+<div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-6">
+    <h2 class="text-lg font-medium text-white mb-4">Trust Anchor</h2>
+    <div class="flex items-center space-x-3">
+        <div class="flex-shrink-0 h-10 w-10 rounded-full bg-yellow-500 flex items-center justify-center">
+            <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
+            </svg>
+        </div>
+        <div>
+            <p class="text-sm font-medium text-white">Owner (Trust Level 0)</p>
+            <p class="text-xs text-gray-500 font-mono">{{.OwnerPubkey}}</p>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<!-- Overview Stats -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div class="flex items-center">
+            <div class="flex-shrink-0 h-12 w-12 rounded-lg bg-nostr-purple/20 flex items-center justify-center">
+                <svg class="h-6 w-6 text-nostr-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-400">Total Follows</p>
+                <p class="text-2xl font-bold text-white">{{.TotalFollows}}</p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div class="flex items-center">
+            <div class="flex-shrink-0 h-12 w-12 rounded-lg bg-green-500/20 flex items-center justify-center">
+                <svg class="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                </svg>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-400">Unique Pubkeys</p>
+                <p class="text-2xl font-bold text-white">{{.UniquePubkeys}}</p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div class="flex items-center">
+            <div class="flex-shrink-0 h-12 w-12 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                <svg class="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-400">Avg Follows/User</p>
+                <p class="text-2xl font-bold text-white">
+                    {{if gt .UniquePubkeys 0}}{{printf "%.1f" (divf (mulf .TotalFollows 1.0) .UniquePubkeys)}}{{else}}0{{end}}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Followed & Top Followers -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <!-- Top Followed -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-medium text-white mb-4">Most Followed</h2>
+        {{if .TopFollowed}}
+        <div class="space-y-3">
+            {{range .TopFollowed}}
+            <div class="flex items-center justify-between">
+                <span class="font-mono text-sm text-gray-300">{{.Display}}</span>
+                <span class="inline-flex items-center rounded-full bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400">
+                    {{.FollowerCount}} followers
+                </span>
+            </div>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="text-gray-400 text-sm">No follow data available</p>
+        {{end}}
+    </div>
+
+    <!-- Top Followers -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-medium text-white mb-4">Most Active (Following)</h2>
+        {{if .TopFollowers}}
+        <div class="space-y-3">
+            {{range .TopFollowers}}
+            <div class="flex items-center justify-between">
+                <span class="font-mono text-sm text-gray-300">{{.Display}}</span>
+                <span class="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-1 text-xs font-medium text-blue-400">
+                    {{.FollowCount}} following
+                </span>
+            </div>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="text-gray-400 text-sm">No follow data available</p>
+        {{end}}
+    </div>
+</div>
+
+<!-- Recent Follows -->
+<div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <h2 class="text-lg font-medium text-white mb-4">Recent Follow Updates</h2>
+    {{if .RecentFollows}}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-700">
+            <thead class="bg-gray-700/50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">Follower</th>
+                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase"></th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">Followee</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700">
+                {{range .RecentFollows}}
+                <tr class="hover:bg-gray-700/50">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <span class="font-mono text-sm text-gray-300">{{.FollowerDisplay}}</span>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap text-center">
+                        <svg class="h-4 w-4 text-nostr-purple inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                        </svg>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <span class="font-mono text-sm text-gray-300">{{.FolloweeDisplay}}</span>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-gray-400 text-sm text-center py-4">No follow relationships recorded yet</p>
+    {{end}}
+</div>
+{{end}}

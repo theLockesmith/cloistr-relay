@@ -206,6 +206,20 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/haven", h.requireAuth(h.handleHavenPage))
 	mux.HandleFunc("/haven/stats", h.requireAuth(h.handleHavenStats))
 
+	// Event Browser (all auth required)
+	mux.HandleFunc("/browser", h.requireAuth(h.handleEventBrowserPage))
+	mux.HandleFunc("/browser/list", h.requireAuth(h.handleEventBrowserList))
+	mux.HandleFunc("/browser/event", h.requireAuth(h.handleEventDetail))
+
+	// Connection Stats (all auth required)
+	mux.HandleFunc("/stats", h.requireAuth(h.handleConnectionStatsPage))
+	mux.HandleFunc("/stats/refresh", h.requireAuth(h.handleConnectionStatsRefresh))
+
+	// WoT Visualization (all auth required)
+	mux.HandleFunc("/wot", h.requireAuth(h.handleWoTPage))
+	mux.HandleFunc("/wot/stats", h.requireAuth(h.handleWoTStats))
+	mux.HandleFunc("/wot/graph", h.requireAuth(h.handleWoTGraphData))
+
 	log.Println("Admin UI enabled at /")
 }
 

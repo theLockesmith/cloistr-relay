@@ -106,7 +106,7 @@ docker compose logs -f relay
 │   └── zaps/           # NIP-57 Lightning zaps
 ├── dashboards/         # Grafana dashboard JSON files
 ├── web/
-│   ├── templates/      # HTML templates (layout + 8 pages + 7 partials)
+│   ├── templates/      # HTML templates (layout + 11 pages + 10 partials)
 │   └── static/js/      # NIP-07/NIP-98 auth helper
 ├── tests/              # Test documentation
 ├── Dockerfile          # Relay multi-stage build (includes admin UI)
@@ -223,8 +223,11 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 - **Routing:** Host-based routing in `cmd/relay/main.go` - requests to `relay-admin.*` hostnames are routed to the admin UI mux
 - **URL:** `https://relay-admin.cloistr.xyz/` (via Cloudflare Tunnel, LAN DNS points to internal IP)
 - **Auth:** NIP-07 browser extension + NIP-98 HTTP signatures
-- **Features:** Pubkey ban/allow, event ban, moderation queue, IP blocking, kind allowlist, relay settings, HAVEN dashboard
+- **Features:** Pubkey ban/allow, event ban, moderation queue, IP blocking, kind allowlist, relay settings, HAVEN dashboard, event browser, connection stats, WoT visualization
 - **HAVEN Page:** Shows box routing status, owner info, Blastr/Importer stats (auto-refreshes every 30s)
+- **Event Browser:** Search/filter/view stored events with pagination, ban/unban actions
+- **Connection Stats:** Database pool stats, event distribution by kind, server uptime
+- **WoT Visualization:** Interactive D3.js trust network graph, follow statistics, trust level distribution
 - **Requirements:** `ADMIN_PUBKEYS` must be set, `mgmtStore` initialized (happens when admin pubkeys configured)
 
 ## Completed Phases
@@ -247,6 +250,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | Blastr Retry Queue | Persistent retry for failed broadcasts | ✅ Complete |
 | NIP-29 Groups | Relay-based closed-membership groups | ✅ Complete |
 | NIP-17 Private DMs | Modern encrypted DMs (gift-wrapped) | ✅ Complete |
+| Admin UI Improvements | Event browser, stats dashboard, WoT visualization | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -663,11 +667,11 @@ NIP-17 events are tracked with specific labels:
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| **Admin UI Improvements** | Event browser, connection stats, WoT visualization | Medium | Planned |
 | **NIP-0A CRDTs** | Contact list conflict resolution (watching PR #1630) | Medium | Watching |
 | **Geographic Distribution** | Multi-region deployment | Low | Planned |
 
 ### Completed Enhancements
+- ~~**Admin UI Improvements**~~: Event browser with filters, connection stats dashboard, interactive WoT visualization
 - ~~**NIP-17 Private DMs**~~: Modern encrypted DMs with NIP-44 encryption and NIP-59 gift wrapping
 - ~~**NIP-29 Groups**~~: Relay-based chat groups with membership and moderation
 - ~~**Importer Webhooks**~~: Real-time WebSocket subscriptions for instant inbox updates

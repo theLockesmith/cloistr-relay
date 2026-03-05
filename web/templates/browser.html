@@ -1,0 +1,111 @@
+{{template "layout.html" .}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">Event Browser</h1>
+        <span class="text-sm text-gray-400">
+            {{if .Content}}{{.Content.TotalCount}} events{{end}}
+        </span>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-medium text-white mb-4">Filters</h2>
+        <form hx-get="/browser/list" hx-target="#event-list" hx-trigger="submit, change delay:500ms from:input" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div>
+                <label for="pubkey" class="block text-sm font-medium text-gray-300 mb-1">Pubkey</label>
+                <input type="text" name="pubkey" id="pubkey" placeholder="hex pubkey"
+                       value="{{if .Content}}{{.Content.Filters.Pubkey}}{{end}}"
+                       class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white text-sm placeholder-gray-400 focus:ring-nostr-purple focus:border-nostr-purple">
+            </div>
+            <div>
+                <label for="kind" class="block text-sm font-medium text-gray-300 mb-1">Kind</label>
+                <input type="number" name="kind" id="kind" placeholder="e.g. 1"
+                       value="{{if .Content}}{{.Content.Filters.Kind}}{{end}}"
+                       class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white text-sm placeholder-gray-400 focus:ring-nostr-purple focus:border-nostr-purple">
+            </div>
+            <div>
+                <label for="search" class="block text-sm font-medium text-gray-300 mb-1">Content Search</label>
+                <input type="text" name="search" id="search" placeholder="search text"
+                       value="{{if .Content}}{{.Content.Filters.Search}}{{end}}"
+                       class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white text-sm placeholder-gray-400 focus:ring-nostr-purple focus:border-nostr-purple">
+            </div>
+            <div>
+                <label for="start" class="block text-sm font-medium text-gray-300 mb-1">Start Date</label>
+                <input type="date" name="start" id="start"
+                       value="{{if .Content}}{{.Content.Filters.StartDate}}{{end}}"
+                       class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white text-sm focus:ring-nostr-purple focus:border-nostr-purple">
+            </div>
+            <div>
+                <label for="end" class="block text-sm font-medium text-gray-300 mb-1">End Date</label>
+                <input type="date" name="end" id="end"
+                       value="{{if .Content}}{{.Content.Filters.EndDate}}{{end}}"
+                       class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white text-sm focus:ring-nostr-purple focus:border-nostr-purple">
+            </div>
+        </form>
+    </div>
+
+    <!-- Event List -->
+    <div id="event-list" hx-get="/browser/list" hx-trigger="load">
+        <div class="flex justify-center py-8">
+            <svg class="animate-spin h-8 w-8 text-nostr-purple" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+    </div>
+</div>
+
+<!-- Event Detail Modal -->
+<div id="event-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-lg border border-gray-700 max-w-4xl w-full mx-4 max-h-[80vh] overflow-auto">
+        <div class="flex items-center justify-between p-4 border-b border-gray-700">
+            <h3 class="text-lg font-medium text-white">Event Details</h3>
+            <button onclick="closeEventModal()" class="text-gray-400 hover:text-white">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div id="event-modal-content" class="p-4">
+            <pre class="bg-gray-900 rounded p-4 text-sm text-gray-300 overflow-x-auto"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+function showEventModal(eventId) {
+    fetch('/browser/event?id=' + eventId)
+        .then(r => {
+            if (!r.ok) throw new Error('Event not found');
+            return r.json();
+        })
+        .then(data => {
+            document.querySelector('#event-modal-content pre').textContent = JSON.stringify(data, null, 2);
+            document.getElementById('event-modal').classList.remove('hidden');
+            document.getElementById('event-modal').classList.add('flex');
+        })
+        .catch(err => {
+            document.querySelector('#event-modal-content pre').textContent = 'Error loading event: ' + err.message;
+            document.getElementById('event-modal').classList.remove('hidden');
+            document.getElementById('event-modal').classList.add('flex');
+        });
+}
+
+function closeEventModal() {
+    document.getElementById('event-modal').classList.add('hidden');
+    document.getElementById('event-modal').classList.remove('flex');
+}
+
+// Close modal on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeEventModal();
+});
+
+// Close modal on backdrop click
+document.getElementById('event-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeEventModal();
+});
+</script>
+{{end}}

@@ -427,3 +427,8 @@ func (s *Store) SetSetting(key, value string) error {
 	)
 	return err
 }
+
+// DB returns the underlying database connection for advanced queries
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
