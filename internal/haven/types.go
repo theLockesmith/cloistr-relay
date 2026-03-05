@@ -78,7 +78,9 @@ var DefaultPrivateKinds = []int{
 var DefaultChatKinds = []int{
 	4,    // Encrypted direct message (NIP-04, deprecated but still used)
 	13,   // Seal (NIP-59)
-	1059, // Gift wrap (NIP-59)
+	14,   // Chat message (NIP-17) - unwrapped content kind
+	15,   // File message (NIP-17) - encrypted file metadata
+	1059, // Gift wrap (NIP-59/NIP-17)
 	1060, // Gift wrap (alternative)
 }
 
@@ -102,6 +104,7 @@ var DefaultOutboxKinds = []int{
 	6,     // Repost
 	7,     // Reaction
 	10002, // Relay list metadata (NIP-65)
+	10050, // DM relay list (NIP-17) - advertises preferred relays for receiving DMs
 	30023, // Long-form content
 }
 

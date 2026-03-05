@@ -222,8 +222,22 @@ func kindToString(kind int) string {
 		return "repost"
 	case 7:
 		return "reaction"
+	case 13:
+		return "seal"
+	case 14:
+		return "nip17_chat"
+	case 15:
+		return "nip17_file"
+	case 1059:
+		return "gift_wrap"
+	case 9735:
+		return "zap_receipt"
+	case 10050:
+		return "nip17_relay_list"
 	case 22242:
 		return "auth"
+	case 24133:
+		return "nip46"
 	default:
 		if kind >= 10000 && kind < 20000 {
 			return "replaceable"

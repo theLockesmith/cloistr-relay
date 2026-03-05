@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 19 NIPs implemented (1, 9, 11, 13, 22, 29, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
+**Status:** Working - 21 NIPs implemented (1, 9, 11, 13, 17, 22, 29, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (integrated via host-based routing)
@@ -246,6 +246,7 @@ Htmx-based web interface for NIP-86 relay management, integrated into the main r
 | HAVEN E-tag Routing | Route reactions/reposts via event lookup | ✅ Complete |
 | Blastr Retry Queue | Persistent retry for failed broadcasts | ✅ Complete |
 | NIP-29 Groups | Relay-based closed-membership groups | ✅ Complete |
+| NIP-17 Private DMs | Modern encrypted DMs (gift-wrapped) | ✅ Complete |
 
 ## HAVEN-Style Relay Separation
 
@@ -258,9 +259,9 @@ HAVEN implements the Outbox Model (proposed by Mike Dilger) with four relay type
 | Box | Purpose | Access | Event Kinds |
 |-----|---------|--------|-------------|
 | **Private** | Drafts, eCash, personal notes | Owner only (auth required) | 30024, 31234, 7375, 7376, 30078, 10003, 30003 |
-| **Chat** | DMs and group chats | WoT-filtered (auth required) | 4, 13, 1059, 1060 |
+| **Chat** | DMs and group chats | WoT-filtered (auth required) | 4, 13, 14, 15, 1059, 1060 (NIP-04, NIP-17, NIP-59) |
 | **Inbox** | Events addressed to owner | Public write, owner read | 1, 6, 7, 9735, 1111, 30023 (when tagged) |
-| **Outbox** | Owner's public notes | Owner write, public read | 0, 1, 3, 6, 7, 10002, 30023 |
+| **Outbox** | Owner's public notes | Owner write, public read | 0, 1, 3, 6, 7, 10002, 10050, 30023 |
 
 ### Implementation Status
 
@@ -590,16 +591,84 @@ GROUPS_DEFAULT_PRIVACY=restricted       # Default privacy for new groups
 GROUPS_INVITE_EXPIRY_HOURS=168          # Invite code expiry (default: 1 week)
 ```
 
+## NIP-17 Private Direct Messages
+
+The relay implements NIP-17 for modern encrypted direct messaging, replacing the deprecated NIP-04. NIP-17 provides superior privacy through NIP-44 encryption and NIP-59 gift wrapping.
+
+### How NIP-17 Works
+
+NIP-17 uses a three-layer encryption model for maximum privacy:
+
+1. **Rumor (kind 14)**: The unsigned chat message with content and recipient p-tags
+2. **Seal (kind 13)**: Wraps the rumor, signed with sender's key
+3. **Gift Wrap (kind 1059)**: Wraps the seal with an ephemeral key, hiding all metadata
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 14 | Chat Message | Plain text DM with p-tags identifying recipients |
+| 15 | File Message | Encrypted file metadata and URLs |
+| 10050 | DM Relay List | User's preferred relays for receiving DMs (replaceable) |
+
+### Privacy Features
+
+| Feature | NIP-04 | NIP-17 |
+|---------|--------|--------|
+| Sender visible | Yes | No (ephemeral key) |
+| Recipient visible | Yes | No (auth required) |
+| Timestamp visible | Yes | Randomized |
+| Encryption | AES-256-CBC | NIP-44 (ChaCha20) |
+| Deniability | No | Yes (unsigned rumors) |
+
+### Relay Behavior
+
+The relay handles NIP-17 as follows:
+
+- **Kind 14/15 → Chat Box**: NIP-17 message kinds route to the chat box
+- **Kind 10050 → Outbox**: DM relay lists are public configuration events
+- **Authentication**: Gift wrap queries require NIP-42 auth (via existing NIP-59 support)
+- **Filter Restriction**: Users can only query kind 1059 events where they're the p-tagged recipient
+
+### Configuration
+
+NIP-17 is automatically enabled when NIP-59 gift wrap is enabled (default: true).
+
+```bash
+# NIP-59 gift wrap enables NIP-17 support
+GIFTWRAP_ENABLED=true              # Enable gift wrap (default: true)
+GIFTWRAP_REQUIRE_AUTH=true         # Require auth for gift wrap queries (default: true)
+
+# HAVEN chat box routes NIP-17 kinds
+HAVEN_ENABLED=true
+HAVEN_REQUIRE_AUTH_FOR_CHAT=true   # DMs require authentication (default: true)
+```
+
+### Database Indexes
+
+Optimized indexes are created automatically:
+- `event_nip17_chat_idx` - Partial index for kind 14 events
+- `event_nip17_relay_list_idx` - Partial index for kind 10050 events
+
+### Prometheus Metrics
+
+NIP-17 events are tracked with specific labels:
+- `nostr_relay_events_received_total{kind="nip17_chat"}` - Kind 14 events
+- `nostr_relay_events_received_total{kind="nip17_file"}` - Kind 15 events
+- `nostr_relay_events_received_total{kind="nip17_relay_list"}` - Kind 10050 events
+- `nostr_relay_events_received_total{kind="gift_wrap"}` - Kind 1059 events
+- `nostr_relay_events_received_total{kind="seal"}` - Kind 13 events
+
 ## Future Roadmap
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| **NIP-17 Private DMs** | Modern encrypted DMs replacing NIP-04 | Medium | Planned |
 | **Admin UI Improvements** | Event browser, connection stats, WoT visualization | Medium | Planned |
 | **NIP-0A CRDTs** | Contact list conflict resolution (watching PR #1630) | Medium | Watching |
 | **Geographic Distribution** | Multi-region deployment | Low | Planned |
 
 ### Completed Enhancements
+- ~~**NIP-17 Private DMs**~~: Modern encrypted DMs with NIP-44 encryption and NIP-59 gift wrapping
 - ~~**NIP-29 Groups**~~: Relay-based chat groups with membership and moderation
 - ~~**Importer Webhooks**~~: Real-time WebSocket subscriptions for instant inbox updates
 - ~~**Blastr Retry Logic**~~: Persistent retry queue for failed broadcasts (commit 924cd29)

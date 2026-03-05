@@ -57,6 +57,16 @@ func OptimizeIndexes(db *sql.DB) error {
 			name: "event_dms_idx",
 			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_dms_idx ON event (pubkey, created_at DESC) WHERE kind = 4`,
 		},
+		// Partial index for NIP-17 chat messages (kind 14)
+		{
+			name: "event_nip17_chat_idx",
+			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_nip17_chat_idx ON event (pubkey, created_at DESC) WHERE kind = 14`,
+		},
+		// Partial index for NIP-17 DM relay lists (kind 10050)
+		{
+			name: "event_nip17_relay_list_idx",
+			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_nip17_relay_list_idx ON event (pubkey) WHERE kind = 10050`,
+		},
 		// Partial index for gift wraps (kind 1059) - NIP-59
 		{
 			name: "event_giftwrap_idx",

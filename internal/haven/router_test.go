@@ -119,6 +119,16 @@ func TestRouteEvent_ChatKinds(t *testing.T) {
 			author: bobPubkey,
 		},
 		{
+			name:   "NIP-17 chat message (kind 14) goes to chat",
+			kind:   14,
+			author: alicePubkey,
+		},
+		{
+			name:   "NIP-17 file message (kind 15) goes to chat",
+			kind:   15,
+			author: bobPubkey,
+		},
+		{
 			name:   "gift wrap (kind 1059) goes to chat",
 			kind:   1059,
 			author: charliePubkey,
@@ -169,6 +179,7 @@ func TestRouteEvent_OutboxKinds(t *testing.T) {
 		{"repost", 6},
 		{"reaction", 7},
 		{"relay list", 10002},
+		{"NIP-17 DM relay list", 10050},
 		{"long-form", 30023},
 		{"custom kind", 12345},
 	}
@@ -1223,9 +1234,11 @@ func TestDefaultKindConstants(t *testing.T) {
 
 	// Test chat kinds
 	chatKinds := map[int]bool{
-		4:    true, // Encrypted DM
-		13:   true, // Seal
-		1059: true, // Gift wrap
+		4:    true, // Encrypted DM (NIP-04)
+		13:   true, // Seal (NIP-59)
+		14:   true, // Chat message (NIP-17)
+		15:   true, // File message (NIP-17)
+		1059: true, // Gift wrap (NIP-59/NIP-17)
 		1060: true, // Gift wrap alt
 	}
 
