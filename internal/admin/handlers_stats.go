@@ -160,6 +160,7 @@ func kindToName(kind int) string {
 		15:    "File (NIP-17)",
 		1059:  "Gift Wrap",
 		1060:  "Gift Wrap Alt",
+		1985:  "Label",
 		9735:  "Zap Receipt",
 		10002: "Relay List",
 		10050: "DM Relay List",

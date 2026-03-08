@@ -87,6 +87,11 @@ func OptimizeIndexes(db *sql.DB) error {
 			name: "event_param_replaceable_idx",
 			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_param_replaceable_idx ON event (pubkey, kind, created_at DESC) WHERE kind >= 30000 AND kind < 40000`,
 		},
+		// Partial index for NIP-32 labels (kind 1985) - for moderation and content discovery
+		{
+			name: "event_labels_idx",
+			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_labels_idx ON event (pubkey, created_at DESC) WHERE kind = 1985`,
+		},
 	}
 
 	for _, idx := range indexes {

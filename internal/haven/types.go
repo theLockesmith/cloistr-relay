@@ -69,8 +69,13 @@ var DefaultPrivateKinds = []int{
 	// Application-specific private data
 	30078, // Application-specific data
 	// Bookmarks (private by default)
-	10003, // Bookmark list
-	30003, // Bookmark sets
+	10003, // Bookmark list (NIP-51)
+	30003, // Bookmark sets (NIP-51)
+	// NIP-51 Private Lists
+	10000, // Mute list - users don't want others to know who they muted
+	10006, // Blocked relays list - private relay preferences
+	30000, // Categorized people list (can be mutes)
+	30001, // Categorized bookmark list
 }
 
 // DefaultChatKinds are event kinds that go to the chat box
@@ -106,6 +111,16 @@ var DefaultOutboxKinds = []int{
 	10002, // Relay list metadata (NIP-65)
 	10050, // DM relay list (NIP-17) - advertises preferred relays for receiving DMs
 	30023, // Long-form content
+	// NIP-51 Public Lists
+	10001, // Pin list - curated public content
+	10004, // Communities list - communities user follows
+	10005, // Public chats list - group chats user is in
+	10007, // Search relays list - preferred search relays
+	10015, // Interests list - topics of interest
+	10030, // User emoji list - custom emoji
+	30002, // Relay sets - categorized relay lists
+	// NIP-32 Labels
+	1985, // Labels - content moderation and classification
 }
 
 // Config holds HAVEN configuration

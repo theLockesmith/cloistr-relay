@@ -1222,8 +1222,13 @@ func TestDefaultKindConstants(t *testing.T) {
 		7375:  true, // Cashu wallet
 		7376:  true, // Cashu history
 		30078: true, // App-specific data
-		10003: true, // Bookmark list
-		30003: true, // Bookmark sets
+		10003: true, // Bookmark list (NIP-51)
+		30003: true, // Bookmark sets (NIP-51)
+		// NIP-51 Private Lists
+		10000: true, // Mute list
+		10006: true, // Blocked relays list
+		30000: true, // Categorized people list
+		30001: true, // Categorized bookmark list
 	}
 
 	for _, kind := range DefaultPrivateKinds {

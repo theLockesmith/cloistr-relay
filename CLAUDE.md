@@ -2,7 +2,7 @@
 
 **Custom Nostr relay built with khatru (Go)**
 
-**Status:** Working - 21 NIPs implemented (1, 9, 11, 13, 17, 22, 29, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
+**Status:** Working - 30 NIPs implemented (1, 9, 11, 13, 17, 22, 29, 32, 33, 40, 42, 43, 45, 46, 50, 51, 52, 57, 59, 65, 66, 70, 72, 73, 77, 85, 86, 88, 94) + WoT Filtering + HAVEN Box Routing + Admin UI + RSS/Atom Feeds + Algorithmic Feeds
 
 **Domain:** relay.cloistr.xyz (Cloistr is the consumer-facing brand for Coldforge Nostr services)
 **Admin UI:** relay-admin.cloistr.xyz (integrated via host-based routing)
@@ -83,17 +83,24 @@ docker compose logs -f relay
 │   ├── algo/           # Algorithmic feed scoring engine (opt-in, WoT-ranked, engagement, trending)
 │   ├── auth/           # NIP-42 authentication
 │   ├── cache/          # Redis/Dragonfly client wrapper
+│   ├── calendar/       # NIP-52 calendar events and RSVPs
 │   ├── config/         # Configuration loading
 │   ├── eventcache/     # Hot event caching (Dragonfly)
+│   ├── external/       # NIP-73 external content identifiers (ISBN, DOI, IMDB)
 │   ├── feeds/          # RSS/Atom feed generation (Nostr-to-RSS bridge)
 │   ├── giftwrap/       # NIP-59 gift wrap handling
 │   ├── groups/         # NIP-29 relay-based groups (kinds 9000-9022, 39000-39003)
 │   ├── handlers/       # Event validation, NIP-40/22/13
 │   ├── haven/          # HAVEN-style box routing (inbox/outbox/chat/private)
+│   ├── labels/         # NIP-32 content labeling (moderation, classification)
+│   ├── lists/          # NIP-51 user lists (mutes, bookmarks, relay sets)
 │   ├── logging/        # Structured JSON logging
+│   ├── membership/     # NIP-43 relay access and membership management
+│   ├── communities/    # NIP-72 moderated public communities
 │   ├── management/     # NIP-86 relay management API + store
 │   ├── middleware/     # Observability middleware (logging + tracing)
 │   ├── nip66/          # NIP-66 relay discovery and self-monitoring
+│   ├── polls/          # NIP-88 community polls and responses
 │   ├── protected/      # NIP-70 protected events handling
 │   ├── ratelimit/      # Distributed rate limiting (Dragonfly)
 │   ├── relay/          # Khatru relay setup
@@ -101,6 +108,7 @@ docker compose logs -f relay
 │   ├── session/        # Distributed session state (Dragonfly)
 │   ├── storage/        # PostgreSQL backend
 │   ├── tracing/        # Distributed tracing with spans
+│   ├── trust/          # NIP-85 trusted assertion providers
 │   ├── wot/            # Web of Trust filtering
 │   ├── writeahead/     # Write-ahead log (Dragonfly)
 │   └── zaps/           # NIP-57 Lightning zaps
@@ -663,11 +671,611 @@ NIP-17 events are tracked with specific labels:
 - `nostr_relay_events_received_total{kind="gift_wrap"}` - Kind 1059 events
 - `nostr_relay_events_received_total{kind="seal"}` - Kind 13 events
 
+## NIP-51 User Lists
+
+The relay implements NIP-51 for standardized list management, enabling users to organize pubkeys, events, relays, and other references.
+
+### Event Kinds
+
+| Kind | Name | Privacy | Description |
+|------|------|---------|-------------|
+| 10000 | Mute List | Private | Muted pubkeys, events, hashtags, words |
+| 10001 | Pin List | Public | Pinned/highlighted events |
+| 10002 | Relay List | Public | NIP-65 relay preferences |
+| 10003 | Bookmark List | Private | Bookmarked events |
+| 10004 | Communities List | Public | Communities user follows |
+| 10005 | Public Chats List | Public | Group chats user is in |
+| 10006 | Blocked Relays | Private | Relays to avoid |
+| 10007 | Search Relays | Public | Preferred NIP-50 relays |
+| 10015 | Interests List | Public | Topics of interest |
+| 10030 | Emoji List | Public | Custom emoji |
+| 30000 | People Sets | Private | Categorized pubkey lists (d-tag) |
+| 30001 | Bookmark Sets | Private | Categorized bookmarks (d-tag) |
+| 30002 | Relay Sets | Public | Categorized relay groups (d-tag) |
+| 30003 | Bookmark Sets | Private | Named bookmark collections (d-tag) |
+
+### HAVEN Box Routing
+
+NIP-51 lists are automatically routed to the appropriate HAVEN box:
+
+**Private Box (owner only):**
+- 10000 (Mute List) - Don't reveal who user muted
+- 10003 (Bookmark List) - Personal bookmarks
+- 10006 (Blocked Relays) - Private preferences
+- 30000 (People Sets) - Can contain mute categories
+- 30001 (Bookmark Sets) - Personal categorized bookmarks
+- 30003 (Bookmark Sets) - Named bookmark collections
+
+**Outbox (public):**
+- 10001 (Pin List) - Curated public content
+- 10002 (Relay List) - NIP-65 relay preferences
+- 10004 (Communities List) - Communities user follows
+- 10005 (Public Chats) - Group chats user is in
+- 10007 (Search Relays) - Search relay preferences
+- 10015 (Interests List) - Topics of interest
+- 10030 (Emoji List) - Custom emoji
+- 30002 (Relay Sets) - Categorized relay groups
+
+### Architecture
+
+```
+internal/lists/
+├── types.go         # NIP-51 kind definitions, privacy helpers
+└── types_test.go    # Kind validation tests
+```
+
+## NIP-65 Relay List Metadata
+
+The relay implements NIP-65 for advertising user relay preferences, enabling proper Outbox Model routing.
+
+### How It Works
+
+Users publish a kind 10002 replaceable event containing their preferred relays:
+- **read** relays: where to find their incoming mentions/replies
+- **write** relays: where they publish their own notes
+- Clients use this to route events and discover where to find a user's content
+
+### Event Structure
+
+```json
+{
+  "kind": 10002,
+  "tags": [
+    ["r", "wss://relay.example.com/", "read"],
+    ["r", "wss://relay.cloistr.xyz/", "write"],
+    ["r", "wss://nos.lol/"]
+  ],
+  "content": ""
+}
+```
+
+Tags without a read/write marker indicate both read and write.
+
+### Relay Behavior
+
+- Kind 10002 events are stored in the **Outbox** (owner's public data)
+- Replaceable: newer events replace older ones per pubkey
+- Cached via event cache for fast lookups
+- Indexed via `event_replaceable_idx` for efficient queries
+
+### Integration
+
+- **Blastr** uses relay lists to determine where to broadcast
+- **Importer** can use relay lists to discover where to fetch mentions from
+- Clients query the relay for kind 10002 to route messages properly
+
+## NIP-32 Content Labeling
+
+The relay implements NIP-32 for content labeling, enabling distributed moderation and content classification.
+
+### How It Works
+
+Labels are kind 1985 events that tag other content (events, pubkeys, relays, topics) with structured metadata:
+- **L tags**: Define label namespaces (e.g., "ugc", "relay/moderation")
+- **l tags**: Contain label values with namespace references (e.g., ["l", "spam", "ugc"])
+
+### Event Structure
+
+```json
+{
+  "kind": 1985,
+  "tags": [
+    ["L", "ugc"],
+    ["l", "spam", "ugc"],
+    ["l", "nsfw", "ugc"],
+    ["e", "abc123", "wss://relay.example.com"],
+    ["p", "pubkey456"]
+  ],
+  "content": ""
+}
+```
+
+### Label Namespaces
+
+| Namespace | Purpose |
+|-----------|---------|
+| `ugc` | User-generated content labels |
+| `relay/moderation` | Relay admin moderation labels |
+| `content-warning` | Content warnings |
+| `quality` | Quality/trust indicators |
+| `ISO-639-1` | Language codes |
+| `license` | Content licensing (CC, MIT, etc.) |
+
+### Common Moderation Labels
+
+| Label | Meaning |
+|-------|---------|
+| `spam` | Spam content |
+| `nsfw` | Not safe for work |
+| `adult` | Adult content |
+| `gore` | Violent/gore content |
+| `abuse` | Abusive content |
+| `illegal` | Potentially illegal content |
+| `impersonation` | Account impersonation |
+| `bot` | Automated/bot account |
+
+### Relay Behavior
+
+- Kind 1985 events are stored in the **Outbox** (public labels)
+- Indexed via `event_labels_idx` for efficient queries
+- Admin UI displays "Label" for kind 1985 in stats
+- Labels can be queried by target (e-tag, p-tag) for moderation
+
+### Architecture
+
+```
+internal/labels/
+├── types.go         # Kind constants, namespaces, Label/Target types
+└── types_test.go    # Comprehensive tests
+```
+
+### Use Cases
+
+1. **Content Moderation**: Admins label spam/abuse for filtering
+2. **Content Discovery**: Users label content by topic
+3. **Trust Networks**: Label trusted/verified accounts
+4. **Client-side Filtering**: Clients apply labels for content warnings
+
+## NIP-43 Relay Access & Membership
+
+The relay implements NIP-43 for controlled access through membership and invite codes.
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 13534 | Membership List | Relay-published list of members |
+| 8000 | Add Member | Notification when user joins |
+| 8001 | Remove Member | Notification when user leaves |
+| 28934 | Join Request | User request to join with optional invite code |
+| 28935 | Invite Response | Ephemeral invite code response |
+| 28936 | Leave Request | User request to leave |
+
+### How It Works
+
+1. **User requests to join** by publishing kind 28934 with optional invite code
+2. **Relay validates invite** (if required) and adds user to members
+3. **Relay publishes kind 8000** notification
+4. **Relay updates kind 13534** membership list (if published)
+5. **User can leave** by publishing kind 28936
+
+All membership events include the NIP-70 protected tag (`-`) to prevent propagation to other relays.
+
+### Configuration
+
+```bash
+# Enable NIP-43 membership
+MEMBERSHIP_ENABLED=true
+
+# Relay identity (required for signing)
+MEMBERSHIP_RELAY_PRIVATE_KEY=<hex>
+
+# Access control
+MEMBERSHIP_REQUIRE_MEMBERSHIP=false  # Require membership to access
+MEMBERSHIP_ALLOW_JOIN_REQUESTS=true  # Allow self-service joins
+MEMBERSHIP_PUBLISH_LIST=false        # Publish member list publicly
+
+# Invite defaults
+MEMBERSHIP_INVITE_EXPIRY_HOURS=168   # 1 week
+MEMBERSHIP_INVITE_MAX_USES=1         # Single-use by default
+```
+
+### Database Schema
+
+The membership implementation creates these tables:
+- `nip43_members` - Member pubkeys and join timestamps
+- `nip43_invites` - Invite codes with expiry and usage tracking
+
+### Architecture
+
+```
+internal/membership/
+├── types.go         # Kind constants, Member, Invite, Config
+├── store.go         # PostgreSQL persistence
+└── types_test.go    # Comprehensive tests
+```
+
+### Use Cases
+
+1. **Private Relay**: Only members can read/write
+2. **Invite-Only**: New users need invite codes
+3. **Public with Benefits**: Members get priority or extra features
+4. **HAVEN Integration**: Combine with box routing for granular access
+
+## NIP-72 Moderated Communities
+
+The relay implements NIP-72 for Reddit-style public communities with moderation.
+
+### How It Works
+
+Unlike NIP-29 (relay-based closed groups), NIP-72 communities are:
+- **Public**: Anyone can view and post
+- **Moderated**: Moderators approve posts for visibility
+- **Distributed**: Can span multiple relays
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 34550 | Community Definition | Replaceable event defining community and moderators |
+| 1111 | Community Post | Posts to a community (references via A tag) |
+| 4550 | Approval | Moderator approval (includes full post JSON) |
+
+### Community Definition Structure
+
+```json
+{
+  "kind": 34550,
+  "tags": [
+    ["d", "community-id"],
+    ["name", "My Community"],
+    ["description", "A test community"],
+    ["image", "https://example.com/img.png", "800x600"],
+    ["rules", "Be nice"],
+    ["relay", "wss://relay.example.com"],
+    ["p", "moderator-pubkey", "", "moderator", "admin"]
+  ]
+}
+```
+
+### Post Structure
+
+Posts reference communities using uppercase A and P tags:
+```json
+{
+  "kind": 1111,
+  "tags": [
+    ["A", "34550:owner-pubkey:community-id"],
+    ["P", "owner-pubkey"]
+  ],
+  "content": "Hello community!"
+}
+```
+
+### Approval Flow
+
+1. User posts kind 1111 event with A tag referencing community
+2. Moderator reviews post
+3. Moderator publishes kind 4550 approval with:
+   - Community a-tag reference
+   - Post e-tag reference
+   - Full post JSON in content
+4. Clients display approved posts
+
+### Architecture
+
+```
+internal/communities/
+├── types.go         # Kind constants, Community, Approval types
+└── types_test.go    # Comprehensive tests
+```
+
+### Comparison: NIP-29 vs NIP-72
+
+| Feature | NIP-29 Groups | NIP-72 Communities |
+|---------|---------------|-------------------|
+| Access | Membership-based | Public |
+| Moderation | By membership | By approval |
+| Visibility | Members only | Anyone can view |
+| Post flow | Direct if member | Pending approval |
+| Relay role | Manages group | Stores events |
+
+## NIP-52 Calendar Events
+
+The relay implements NIP-52 for calendar events and RSVPs, enabling event scheduling on Nostr.
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 31922 | Date-based Event | Event on a specific date (all-day) |
+| 31923 | Time-based Event | Event at specific time with timezone |
+| 31924 | Calendar | Collection of calendar events |
+| 31925 | RSVP | Response to calendar event |
+
+### Date-based Event Structure
+
+```json
+{
+  "kind": 31922,
+  "tags": [
+    ["d", "unique-event-id"],
+    ["title", "Community Meetup"],
+    ["start", "2024-12-15"],
+    ["end", "2024-12-15"],
+    ["location", "123 Main St"],
+    ["p", "attendee-pubkey"]
+  ],
+  "content": "Event description here"
+}
+```
+
+### Time-based Event Structure
+
+```json
+{
+  "kind": 31923,
+  "tags": [
+    ["d", "unique-event-id"],
+    ["title", "Weekly Call"],
+    ["start", "1702656000"],
+    ["end", "1702659600"],
+    ["start_tzid", "America/New_York"],
+    ["location", "https://meet.example.com"],
+    ["p", "attendee-pubkey"]
+  ],
+  "content": "Weekly team sync"
+}
+```
+
+### RSVP Structure
+
+```json
+{
+  "kind": 31925,
+  "tags": [
+    ["d", "31923:organizer-pubkey:event-id"],
+    ["a", "31923:organizer-pubkey:event-id"],
+    ["status", "accepted"]
+  ],
+  "content": ""
+}
+```
+
+Status values: `accepted`, `declined`, `tentative`
+
+### Architecture
+
+```
+internal/calendar/
+├── types.go         # Kind constants, CalendarEvent, RSVP, Calendar types
+└── types_test.go    # Comprehensive tests
+```
+
+### Use Cases
+
+1. **Community Events**: Nostr meetups and conferences
+2. **Personal Calendars**: Private event tracking
+3. **Group Scheduling**: Coordinate with followers/contacts
+4. **Event Discovery**: Public events with location tags
+
+## NIP-88 Polls
+
+The relay implements NIP-88 for community polling, enabling structured voting on questions.
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 1068 | Poll | Poll question with options |
+| 1018 | Poll Response | User's vote(s) |
+
+### Poll Structure
+
+```json
+{
+  "kind": 1068,
+  "tags": [
+    ["poll_option", "0", "Option A"],
+    ["poll_option", "1", "Option B"],
+    ["poll_option", "2", "Option C"],
+    ["closed_at", "1718438400"],
+    ["min_choices", "1"],
+    ["max_choices", "2"]
+  ],
+  "content": "What is your favorite option?"
+}
+```
+
+### Poll Response Structure
+
+```json
+{
+  "kind": 1018,
+  "tags": [
+    ["e", "poll-event-id"],
+    ["response", "0"],
+    ["response", "2"]
+  ],
+  "content": ""
+}
+```
+
+### Features
+
+- **Multiple Choice**: Configure min/max selections
+- **Deadline**: Optional `closed_at` timestamp
+- **Validation**: `ValidateResponse()` checks selection bounds
+- **Parsing**: Extract polls and responses from events
+
+### Architecture
+
+```
+internal/polls/
+├── types.go         # Kind constants, Poll, PollOption, PollResponse types
+└── types_test.go    # Comprehensive tests
+```
+
+### Use Cases
+
+1. **Community Decisions**: Vote on group topics
+2. **Content Feedback**: Audience polling
+3. **Event Planning**: Schedule preferences
+4. **Governance**: DAO-style voting
+
+## NIP-73 External Content IDs
+
+The relay implements NIP-73 for referencing external content by global identifiers, enabling cross-referencing Nostr content with external media.
+
+### Supported Identifier Types
+
+| Type | Prefix | Example |
+|------|--------|---------|
+| ISBN | `isbn` | `isbn:9780141036144` |
+| DOI | `doi` | `doi:10.1000/xyz123` |
+| ISAN | `isan` | `isan:0000-0000-0000-0000-0000-X` |
+| IMDB | `imdb` | `imdb:tt0111161` |
+| TMDB | `tmdb` | `tmdb:movie/550` |
+| Spotify | `spotify` | `spotify:album:abc123` |
+| MusicBrainz | `musicbrainz` | `musicbrainz:release/abc` |
+| Podcast GUID | `podcast:guid` | `podcast:guid:abc-123` |
+| OpenLibrary | `openlibrary` | `openlibrary:OL123W` |
+
+### Event Structure
+
+External references use i-tags:
+
+```json
+{
+  "kind": 1,
+  "tags": [
+    ["i", "isbn:9780141036144"],
+    ["i", "doi:10.1000/xyz123"],
+    ["k", "book"],
+    ["k", "review"]
+  ],
+  "content": "Just finished reading 1984..."
+}
+```
+
+### Features
+
+- **Parsing**: `ParseExternalRefs()` extracts i-tags from events
+- **Validation**: `IsValidISBN()`, `IsValidDOI()` for format checking
+- **Kind Hints**: k-tags for content categorization
+- **Formatting**: `FormatITag()` for creating i-tag values
+
+### Architecture
+
+```
+internal/external/
+├── types.go         # Type constants, ExternalRef, parsing functions
+└── types_test.go    # Comprehensive tests
+```
+
+### Use Cases
+
+1. **Book Reviews**: Reference books by ISBN
+2. **Academic Discussion**: Reference papers by DOI
+3. **Movie/TV Reviews**: Reference by IMDB/TMDB IDs
+4. **Music Sharing**: Reference albums by Spotify/MusicBrainz
+5. **Podcast Notes**: Reference episodes by GUID
+
+## NIP-85 Trusted Assertions
+
+The relay implements NIP-85 for delegated Web of Trust scoring, allowing users to trust service providers for reputation calculations.
+
+### How It Works
+
+1. Users publish kind 10040 events listing their trusted assertion providers
+2. Providers publish kind 30040 events with trust assertions about pubkeys/events
+3. Clients combine WoT data with trusted provider assertions
+4. Enables specialized trust services (spam detection, verification, etc.)
+
+### Event Kinds
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 10040 | Trusted Providers List | User's trusted assertion providers (replaceable) |
+| 30040 | Trust Assertion | Provider's assertion about a target |
+
+### Trusted Providers List Structure
+
+```json
+{
+  "kind": 10040,
+  "tags": [
+    ["p", "provider-pubkey-1", "wss://provider-relay.com"],
+    ["p", "provider-pubkey-2"]
+  ],
+  "content": ""
+}
+```
+
+### Trust Assertion Structure
+
+```json
+{
+  "kind": 30040,
+  "tags": [
+    ["d", "spam"],
+    ["p", "target-pubkey"],
+    ["e", "target-event-id"],
+    ["assertion", "spam"],
+    ["reason", "Known spam account"]
+  ],
+  "content": ""
+}
+```
+
+### Assertion Types
+
+| Type | Meaning |
+|------|---------|
+| `trusted` | Verified trustworthy |
+| `spam` | Known spammer |
+| `bot` | Automated account |
+| `impersonation` | Fake identity |
+| `verified` | Identity verified |
+| `banned` | Should be blocked |
+
+### Features
+
+- **Provider Management**: Parse/create trusted provider lists
+- **Assertion Parsing**: Extract assertions from events
+- **Provider Check**: `IsTrustedProvider()` to validate sources
+- **Flexible Targets**: Assert on pubkeys and/or events
+
+### Architecture
+
+```
+internal/trust/
+├── types.go         # Kind constants, TrustProvider, TrustAssertion types
+└── types_test.go    # Comprehensive tests
+```
+
+### Use Cases
+
+1. **Spam Filtering**: Trust spam detection services
+2. **Identity Verification**: Use verification providers
+3. **Content Moderation**: Delegate to moderation services
+4. **WoT Augmentation**: Extend trust calculations with external data
+5. **Domain Expertise**: Trust topic-specific curators
+
 ## Future Roadmap
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| **NIP-0A CRDTs** | Contact list conflict resolution (watching PR #1630) | Medium | Watching |
+| **NIP-51 Lists** | User lists (mutes, bookmarks, relay sets) | High | ✅ Complete |
+| **NIP-65 Relay List** | Relay list metadata (kind 10002) | High | ✅ Complete |
+| **NIP-32 Labeling** | Content labeling for moderation (kind 1985) | High | ✅ Complete |
+| **NIP-43 Relay Access** | Membership management and invites | Medium | ✅ Complete |
+| **NIP-72 Communities** | Moderated public communities | Medium | ✅ Complete |
+| **NIP-52 Calendar** | Calendar events and RSVPs | Low | ✅ Complete |
+| **NIP-88 Polls** | Community polling | Low | ✅ Complete |
+| **NIP-73 External IDs** | External content identifiers | Low | ✅ Complete |
+| **NIP-85 Trusted Assertions** | Delegated WoT scoring | Low | ✅ Complete |
+| **NIP-0A CRDTs** | Contact list conflict resolution (watching PR #1630) | Low | Watching |
 | **Geographic Distribution** | Multi-region deployment | Low | Planned |
 
 ### Completed Enhancements
@@ -676,6 +1284,15 @@ NIP-17 events are tracked with specific labels:
 - ~~**NIP-29 Groups**~~: Relay-based chat groups with membership and moderation
 - ~~**Importer Webhooks**~~: Real-time WebSocket subscriptions for instant inbox updates
 - ~~**Blastr Retry Logic**~~: Persistent retry queue for failed broadcasts (commit 924cd29)
+- ~~**NIP-51 Lists**~~: User lists (mutes, bookmarks, relay sets) with HAVEN routing
+- ~~**NIP-65 Relay List**~~: Relay list metadata for Outbox Model routing
+- ~~**NIP-32 Labeling**~~: Content labeling for distributed moderation
+- ~~**NIP-43 Membership**~~: Relay access management with invites
+- ~~**NIP-72 Communities**~~: Reddit-style moderated communities
+- ~~**NIP-52 Calendar**~~: Calendar events and RSVPs
+- ~~**NIP-88 Polls**~~: Community polling with multi-choice support
+- ~~**NIP-73 External IDs**~~: Reference external content (ISBN, DOI, IMDB)
+- ~~**NIP-85 Trusted Assertions**~~: Delegated WoT providers
 
 ## Resources
 
