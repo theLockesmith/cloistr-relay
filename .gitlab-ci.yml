@@ -11,7 +11,7 @@ stages:
 
 test:unit:
   stage: test
-  image: golang:1.24-alpine
+  image: golang:1.25-alpine
   <<: *go-cache
   variables:
     GOPATH: ${CI_PROJECT_DIR}/.go
@@ -26,14 +26,14 @@ test:unit:
 
 lint:
   stage: test
-  image: golang:1.24-alpine
+  image: golang:1.25-alpine
   <<: *go-cache
   variables:
     GOPATH: ${CI_PROJECT_DIR}/.go
   before_script:
     - for i in 1 2 3 4 5; do apk add --no-cache git ca-certificates curl && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
     - mkdir -p .go
-    - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.0.2
+    - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
     - go mod tidy
   script:
     - ${GOPATH}/bin/golangci-lint run --timeout 5m ./...
