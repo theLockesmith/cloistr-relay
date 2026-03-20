@@ -42,7 +42,6 @@ type PubSub struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	mu     sync.RWMutex
 }
 
 // eventMessage is the wire format for pub/sub messages
@@ -115,7 +114,7 @@ func (ps *PubSub) subscribeLoop() {
 // subscribe handles the actual Redis subscription
 func (ps *PubSub) subscribe() {
 	pubsub := ps.rdb.Subscribe(ps.ctx, ChannelName)
-	defer pubsub.Close()
+	defer func() { _ = pubsub.Close() }()
 
 	// Wait for subscription confirmation
 	_, err := pubsub.Receive(ps.ctx)
