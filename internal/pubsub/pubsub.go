@@ -18,6 +18,8 @@ const (
 	ChannelName = "relay:events"
 	// DefaultRetryInterval is the interval between reconnection attempts
 	DefaultRetryInterval = 5 * time.Second
+	// PublishBufferSize is the size of the async publish channel
+	PublishBufferSize = 1000
 )
 
 // Config holds pub/sub configuration
@@ -39,9 +41,10 @@ type PubSub struct {
 	config *Config
 	podID  string // Unique identifier for this pod to avoid echo
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	publishCh chan *nostr.Event // Async publish channel
 }
 
 // eventMessage is the wire format for pub/sub messages
@@ -62,23 +65,25 @@ func New(rdb *redis.Client, relay *khatru.Relay, cfg *Config) *PubSub {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &PubSub{
-		rdb:    rdb,
-		relay:  relay,
-		config: cfg,
-		podID:  podID,
-		ctx:    ctx,
-		cancel: cancel,
+		rdb:       rdb,
+		relay:     relay,
+		config:    cfg,
+		podID:     podID,
+		ctx:       ctx,
+		cancel:    cancel,
+		publishCh: make(chan *nostr.Event, PublishBufferSize),
 	}
 }
 
-// Start begins the pub/sub subscription
+// Start begins the pub/sub subscription and publish loop
 func (ps *PubSub) Start() {
 	if ps.rdb == nil || !ps.config.Enabled {
 		return
 	}
 
-	ps.wg.Add(1)
+	ps.wg.Add(2)
 	go ps.subscribeLoop()
+	go ps.publishLoop()
 
 	log.Printf("Cross-pod pub/sub started (pod ID: %s...)", ps.podID[:16])
 }
@@ -165,12 +170,25 @@ func (ps *PubSub) handleMessage(msg *redis.Message) {
 	}
 }
 
-// Publish sends an event to all other relay pods
-func (ps *PubSub) Publish(ctx context.Context, event *nostr.Event) error {
-	if ps.rdb == nil || !ps.config.Enabled {
-		return nil
-	}
+// publishLoop handles async publishing of events to Redis
+func (ps *PubSub) publishLoop() {
+	defer ps.wg.Done()
 
+	for {
+		select {
+		case <-ps.ctx.Done():
+			return
+		case event, ok := <-ps.publishCh:
+			if !ok {
+				return
+			}
+			ps.doPublish(event)
+		}
+	}
+}
+
+// doPublish performs the actual Redis publish (called from publishLoop goroutine)
+func (ps *PubSub) doPublish(event *nostr.Event) {
 	em := eventMessage{
 		PodID: ps.podID,
 		Event: event,
@@ -178,10 +196,29 @@ func (ps *PubSub) Publish(ctx context.Context, event *nostr.Event) error {
 
 	data, err := json.Marshal(em)
 	if err != nil {
-		return fmt.Errorf("failed to marshal event: %w", err)
+		log.Printf("Pub/sub: failed to marshal event %s: %v", event.ID[:8], err)
+		return
 	}
 
-	return ps.rdb.Publish(ctx, ChannelName, data).Err()
+	if err := ps.rdb.Publish(ps.ctx, ChannelName, data).Err(); err != nil {
+		log.Printf("Pub/sub: failed to publish event %s: %v", event.ID[:8], err)
+	}
+}
+
+// Publish queues an event for async publishing to other relay pods
+func (ps *PubSub) Publish(ctx context.Context, event *nostr.Event) error {
+	if ps.rdb == nil || !ps.config.Enabled {
+		return nil
+	}
+
+	// Non-blocking send - drop if buffer is full (better than blocking)
+	select {
+	case ps.publishCh <- event:
+	default:
+		log.Printf("Pub/sub: publish buffer full, dropping event %s", event.ID[:8])
+	}
+
+	return nil
 }
 
 // CreateStoreEventHook returns a handler that publishes events to other pods after storage
