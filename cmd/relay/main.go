@@ -36,6 +36,7 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/logging"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/middleware"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/nip66"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/pubsub"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/tracing"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/writeahead"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/zaps"
@@ -161,6 +162,21 @@ func main() {
 
 	// Create the relay (with optional event cache and write-ahead log)
 	r := relay.NewRelayWithOptions(cfg, db, searchBackend, evtCache, wal)
+
+	// Initialize cross-pod event pub/sub (if enabled and cache available)
+	var eventPubSub *pubsub.PubSub
+	if cacheClient != nil && cfg.EventPubSubEnabled {
+		pubsubCfg := &pubsub.Config{
+			Enabled: true,
+		}
+		eventPubSub = pubsub.New(cacheClient.RedisClient(), r, pubsubCfg)
+		// Register store hook to publish events to other pods
+		r.StoreEvent = append(r.StoreEvent, eventPubSub.CreateStoreEventHook())
+		// Start subscription to receive events from other pods
+		eventPubSub.Start()
+		defer eventPubSub.Stop()
+		log.Println("Cross-pod event pub/sub enabled (Dragonfly/Redis)")
+	}
 
 	// Register custom handlers (validation, filtering)
 	// Pass whether distributed rate limiting is active so in-memory rate limiting can be skipped

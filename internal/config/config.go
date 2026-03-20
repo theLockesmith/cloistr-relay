@@ -67,6 +67,7 @@ type Config struct {
 	WriteAheadEnabled   bool // Enable write-ahead logging (events to Dragonfly first)
 	EventCacheEnabled   bool // Enable hot event caching in Dragonfly
 	SessionStoreEnabled bool // Enable distributed session state in Dragonfly
+	EventPubSubEnabled  bool // Enable cross-pod event broadcasting via pub/sub
 
 	// NIP-70 Protected Events
 	ProtectedEventsEnabled bool // Enable NIP-70 protected event handling (default true)
@@ -340,6 +341,9 @@ func Load() (*Config, error) {
 	}
 	if sessionEnabled := os.Getenv("SESSION_STORE_ENABLED"); sessionEnabled == "true" || sessionEnabled == "1" {
 		cfg.SessionStoreEnabled = true
+	}
+	if pubsubEnabled := os.Getenv("EVENT_PUBSUB_ENABLED"); pubsubEnabled == "true" || pubsubEnabled == "1" {
+		cfg.EventPubSubEnabled = true
 	}
 
 	// NIP-70 Protected Events (enabled by default)
