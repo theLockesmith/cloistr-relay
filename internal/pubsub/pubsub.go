@@ -232,3 +232,14 @@ func (ps *PubSub) CreateStoreEventHook() func(context.Context, *nostr.Event) err
 		return nil
 	}
 }
+
+// CreateEphemeralEventHook returns a handler that publishes ephemeral events to other pods
+// This should be registered with relay.OnEphemeralEvent for NIP-46 and other ephemeral kinds
+func (ps *PubSub) CreateEphemeralEventHook() func(context.Context, *nostr.Event) {
+	return func(ctx context.Context, event *nostr.Event) {
+		// Publish to other pods (fire and forget)
+		if err := ps.Publish(ctx, event); err != nil {
+			log.Printf("Pub/sub: failed to publish ephemeral event %s: %v", event.ID[:8], err)
+		}
+	}
+}

@@ -170,8 +170,10 @@ func main() {
 			Enabled: true,
 		}
 		eventPubSub = pubsub.New(cacheClient.RedisClient(), r, pubsubCfg)
-		// Register store hook to publish events to other pods
+		// Register store hook to publish stored events to other pods
 		r.StoreEvent = append(r.StoreEvent, eventPubSub.CreateStoreEventHook())
+		// Register ephemeral hook to publish NIP-46 and other ephemeral events to other pods
+		r.OnEphemeralEvent = append(r.OnEphemeralEvent, eventPubSub.CreateEphemeralEventHook())
 		// Start subscription to receive events from other pods
 		eventPubSub.Start()
 		defer eventPubSub.Stop()
