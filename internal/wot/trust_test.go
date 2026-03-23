@@ -55,6 +55,32 @@ func TestDefaultPolicies(t *testing.T) {
 	}
 }
 
+func TestAllowedPubkeysBypassPoW(t *testing.T) {
+	// Create a handler with an allowed pubkey
+	allowedPubkey := "532aceee51a63b3a7a242aca4e0b79f57352046b8743d0ea1833d135d2034ce6"
+	untrustedPubkey := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	cfg := &Config{
+		Enabled:        true,
+		OwnerPubkey:    "0000000000000000000000000000000000000000000000000000000000000001",
+		Policies:       DefaultPolicies(),
+		AllowedPubkeys: []string{allowedPubkey},
+	}
+
+	// NewHandler builds the allowedPubkeys map
+	handler := NewHandler(nil, cfg.OwnerPubkey, cfg)
+
+	// Verify allowed pubkey is in the map
+	if _, ok := handler.allowedPubkeys[allowedPubkey]; !ok {
+		t.Error("allowed pubkey should be in the map")
+	}
+
+	// Verify untrusted pubkey is not in the map
+	if _, ok := handler.allowedPubkeys[untrustedPubkey]; ok {
+		t.Error("untrusted pubkey should not be in the map")
+	}
+}
+
 func TestCountLeadingZeroBits(t *testing.T) {
 	tests := []struct {
 		hexID    string

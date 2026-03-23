@@ -66,6 +66,8 @@ type Config struct {
 	CacheTTL time.Duration
 	// MaxFollowDepth is the maximum depth for follow traversal (default 2)
 	MaxFollowDepth int
+	// AllowedPubkeys bypasses WoT requirements (treated as trusted)
+	AllowedPubkeys []string
 
 	// PageRank settings (Tier 2)
 	// UsePageRank enables PageRank-based trust scoring instead of simple follow distance

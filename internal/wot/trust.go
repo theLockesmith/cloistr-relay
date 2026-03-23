@@ -87,11 +87,12 @@ func (tc *TrustCalculator) calculateTrustLevel(pubkey string) TrustLevel {
 
 // Handler holds the WoT configuration and provides relay handlers
 type Handler struct {
-	store       *Store
-	calculator  *TrustCalculator
-	pagerank    *PageRankCalculator
-	usePageRank bool
-	policies    map[TrustLevel]TrustPolicy
+	store          *Store
+	calculator     *TrustCalculator
+	pagerank       *PageRankCalculator
+	usePageRank    bool
+	policies       map[TrustLevel]TrustPolicy
+	allowedPubkeys map[string]struct{} // Fast lookup for whitelisted pubkeys
 }
 
 // NewHandler creates a new WoT handler
@@ -101,11 +102,18 @@ func NewHandler(store *Store, ownerPubkey string, cfg *Config) *Handler {
 		policies = DefaultPolicies()
 	}
 
+	// Build fast lookup map for allowed pubkeys
+	allowedMap := make(map[string]struct{})
+	for _, pk := range cfg.AllowedPubkeys {
+		allowedMap[pk] = struct{}{}
+	}
+
 	h := &Handler{
-		store:       store,
-		calculator:  NewTrustCalculator(store, ownerPubkey, cfg.MaxFollowDepth),
-		usePageRank: cfg.UsePageRank,
-		policies:    policies,
+		store:          store,
+		calculator:     NewTrustCalculator(store, ownerPubkey, cfg.MaxFollowDepth),
+		usePageRank:    cfg.UsePageRank,
+		policies:       policies,
+		allowedPubkeys: allowedMap,
 	}
 
 	// Initialize PageRank if enabled
@@ -128,6 +136,11 @@ func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool
 		// NIP-46 Nostr Connect events (kind 24133) are exempt from POW requirements
 		// These are ephemeral events used for remote signer communication
 		if event.Kind == 24133 {
+			return false, ""
+		}
+
+		// Allowed pubkeys bypass all WoT requirements
+		if _, allowed := h.allowedPubkeys[event.PubKey]; allowed {
 			return false, ""
 		}
 
@@ -203,6 +216,9 @@ func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
 	}
 
 	log.Printf("WoT filtering enabled for owner %s (mode: %s)", cfg.OwnerPubkey[:8], handler.getMode())
+	if len(cfg.AllowedPubkeys) > 0 {
+		log.Printf("WoT allowed pubkeys (bypass PoW): %d pubkeys configured", len(cfg.AllowedPubkeys))
+	}
 	log.Printf("WoT policies: owner=%d/s, follow=%d/s, follow2=%d/s, unknown=%d/s (PoW: %d bits)",
 		handler.policies[TrustLevelOwner].EventsPerSecond,
 		handler.policies[TrustLevelFollow].EventsPerSecond,

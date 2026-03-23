@@ -233,6 +233,7 @@ func main() {
 			CacheTTL:       5 * time.Minute,
 			MaxFollowDepth: 2,
 			UsePageRank:    cfg.WoTUsePageRank,
+			AllowedPubkeys: cfg.AllowedPubkeys, // Bypass WoT for whitelisted pubkeys
 		}
 
 		// Set PageRank interval (default 60 minutes)
