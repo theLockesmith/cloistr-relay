@@ -31,34 +31,26 @@
     </script>
 
     <!-- nostr-tools for NIP-46 -->
-    <!-- Using unpkg ESM for proper ES6 class static method support -->
+    <!-- Using esm.sh which resolves bare imports for browser compatibility -->
     <script type="module">
         let nostrTools = {};
         let loadError = null;
 
         try {
-            // Import from unpkg which preserves ES6 class static methods
+            // esm.sh handles bare imports and provides browser-compatible modules
             const [pure, nip46Module, pool, utils] = await Promise.all([
-                import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/pure.js'),
-                import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/nip46.js'),
-                import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/pool.js'),
-                import('https://unpkg.com/@noble/hashes@1.6.0/esm/utils.js')
+                import('https://esm.sh/nostr-tools@2.23.3'),
+                import('https://esm.sh/nostr-tools@2.23.3/nip46'),
+                import('https://esm.sh/nostr-tools@2.23.3/pool'),
+                import('https://esm.sh/@noble/hashes@1.6.0/utils')
             ]);
 
-            console.log('nostr-tools pure exports:', Object.keys(pure));
+            console.log('nostr-tools exports:', Object.keys(pure));
             console.log('nostr-tools NIP-46 exports:', Object.keys(nip46Module));
 
-            // In nostr-tools 2.x, BunkerSigner is a class with static methods
             const BunkerSigner = nip46Module.BunkerSigner;
             console.log('BunkerSigner:', BunkerSigner);
-            console.log('BunkerSigner type:', typeof BunkerSigner);
-
-            if (BunkerSigner) {
-                // Check for static methods
-                console.log('BunkerSigner.fromBunker:', BunkerSigner.fromBunker);
-                console.log('BunkerSigner static methods:', Object.getOwnPropertyNames(BunkerSigner));
-                console.log('BunkerSigner prototype methods:', Object.getOwnPropertyNames(BunkerSigner.prototype || {}));
-            }
+            console.log('BunkerSigner.fromBunker:', BunkerSigner?.fromBunker);
 
             nostrTools = {
                 generateSecretKey: pure.generateSecretKey,

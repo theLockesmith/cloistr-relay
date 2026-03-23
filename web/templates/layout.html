@@ -34,12 +34,12 @@
 
     <!-- nostr-tools for NIP-46 support -->
     <script type="module">
-        // Import from unpkg which preserves ES6 class static methods
+        // esm.sh handles bare imports for browser compatibility
         const [pure, nip46Module, pool, utils] = await Promise.all([
-            import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/pure.js'),
-            import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/nip46.js'),
-            import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/pool.js'),
-            import('https://unpkg.com/@noble/hashes@1.6.0/esm/utils.js')
+            import('https://esm.sh/nostr-tools@2.23.3'),
+            import('https://esm.sh/nostr-tools@2.23.3/nip46'),
+            import('https://esm.sh/nostr-tools@2.23.3/pool'),
+            import('https://esm.sh/@noble/hashes@1.6.0/utils')
         ]);
 
         window.nostrTools = {
