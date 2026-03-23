@@ -31,28 +31,33 @@
     </script>
 
     <!-- nostr-tools for NIP-46 -->
-    <!-- Using esm.sh with bundle mode for proper static method support -->
+    <!-- Using unpkg ESM for proper ES6 class static method support -->
     <script type="module">
         let nostrTools = {};
         let loadError = null;
 
         try {
-            // Use esm.sh with ?bundle to get a properly bundled version
-            // This ensures static methods like BunkerSigner.fromBunker are available
-            const [pure, nip46, pool, utils] = await Promise.all([
-                import('https://esm.sh/nostr-tools@2.10.4?bundle'),
-                import('https://esm.sh/nostr-tools@2.10.4/nip46?bundle'),
-                import('https://esm.sh/nostr-tools@2.10.4/pool?bundle'),
-                import('https://esm.sh/@noble/hashes@1.4.0/utils?bundle')
+            // Import from unpkg which preserves ES6 class static methods
+            const [pure, nip46Module, pool, utils] = await Promise.all([
+                import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/pure.js'),
+                import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/nip46.js'),
+                import('https://unpkg.com/nostr-tools@2.23.3/lib/esm/pool.js'),
+                import('https://unpkg.com/@noble/hashes@1.6.0/esm/utils.js')
             ]);
 
             console.log('nostr-tools pure exports:', Object.keys(pure));
-            console.log('nostr-tools NIP-46 exports:', Object.keys(nip46));
-            console.log('BunkerSigner:', nip46.BunkerSigner);
-            console.log('BunkerSigner type:', typeof nip46.BunkerSigner);
-            if (nip46.BunkerSigner) {
-                console.log('BunkerSigner.fromBunker:', nip46.BunkerSigner.fromBunker);
-                console.log('BunkerSigner static methods:', Object.getOwnPropertyNames(nip46.BunkerSigner));
+            console.log('nostr-tools NIP-46 exports:', Object.keys(nip46Module));
+
+            // In nostr-tools 2.x, BunkerSigner is a class with static methods
+            const BunkerSigner = nip46Module.BunkerSigner;
+            console.log('BunkerSigner:', BunkerSigner);
+            console.log('BunkerSigner type:', typeof BunkerSigner);
+
+            if (BunkerSigner) {
+                // Check for static methods
+                console.log('BunkerSigner.fromBunker:', BunkerSigner.fromBunker);
+                console.log('BunkerSigner static methods:', Object.getOwnPropertyNames(BunkerSigner));
+                console.log('BunkerSigner prototype methods:', Object.getOwnPropertyNames(BunkerSigner.prototype || {}));
             }
 
             nostrTools = {
@@ -60,10 +65,10 @@
                 getPublicKey: pure.getPublicKey,
                 hexToBytes: utils.hexToBytes,
                 bytesToHex: utils.bytesToHex,
-                BunkerSigner: nip46.BunkerSigner,
-                parseBunkerInput: nip46.parseBunkerInput,
+                BunkerSigner: BunkerSigner,
+                parseBunkerInput: nip46Module.parseBunkerInput,
                 SimplePool: pool.SimplePool,
-                nip46
+                nip46: nip46Module
             };
         } catch (e) {
             console.error('Failed to load nostr-tools:', e);
