@@ -13,6 +13,9 @@
     <!-- htmx -->
     <script src="https://unpkg.com/htmx.org@2.0.0"></script>
 
+    <!-- Alpine.js for dropdowns -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -94,65 +97,76 @@
                             <span class="text-gray-400 ml-1">Relay Admin</span>
                         </div>
                         <div class="hidden md:block ml-10">
-                            <div class="flex items-baseline space-x-4">
+                            <div class="flex items-baseline space-x-1">
+                                <!-- Core nav items -->
                                 <a href="/"
                                    class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Dashboard
-                                </a>
-                                <a href="/pubkeys"
-                                   class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    Pubkeys
                                 </a>
                                 <a href="/events"
                                    class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
                                     Events
                                 </a>
-                                <a href="/moderation"
-                                   class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    Moderation
+                                <a href="/pubkeys"
+                                   class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
+                                    Pubkeys
                                 </a>
-                                <a href="/ips"
-                                   class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    IPs
-                                </a>
-                                <a href="/kinds"
-                                   class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    Kinds
-                                </a>
-                                <a href="/haven"
-                                   class="{{if eq .ActiveNav "haven"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    HAVEN
-                                </a>
-                                <a href="/browser"
-                                   class="{{if eq .ActiveNav "browser"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    Browser
-                                </a>
-                                <a href="/stats"
-                                   class="{{if eq .ActiveNav "stats"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    Stats
-                                </a>
-                                <a href="/wot"
-                                   class="{{if eq .ActiveNav "wot"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    WoT
-                                </a>
-                                <a href="/settings"
-                                   class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium">
-                                    Settings
-                                </a>
+
+                                <!-- Policy dropdown -->
+                                <div class="relative" x-data="{ open: false }">
+                                    <button @click="open = !open" @click.away="open = false"
+                                            class="{{if or (eq .ActiveNav "moderation") (eq .ActiveNav "ips") (eq .ActiveNav "kinds") (eq .ActiveNav "wot")}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
+                                        Policy
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" x-transition class="absolute left-0 mt-2 w-40 rounded-md bg-gray-700 shadow-lg ring-1 ring-black ring-opacity-5 z-50">
+                                        <a href="/moderation" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-t-md">Moderation</a>
+                                        <a href="/ips" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">IPs</a>
+                                        <a href="/kinds" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Kinds</a>
+                                        <a href="/wot" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-b-md">WoT</a>
+                                    </div>
+                                </div>
+
+                                <!-- Tools dropdown -->
+                                <div class="relative" x-data="{ open: false }">
+                                    <button @click="open = !open" @click.away="open = false"
+                                            class="{{if or (eq .ActiveNav "haven") (eq .ActiveNav "browser") (eq .ActiveNav "stats")}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700 hover:text-white{{end}} rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
+                                        Tools
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" x-transition class="absolute left-0 mt-2 w-40 rounded-md bg-gray-700 shadow-lg ring-1 ring-black ring-opacity-5 z-50">
+                                        <a href="/haven" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-t-md">HAVEN</a>
+                                        <a href="/browser" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Browser</a>
+                                        <a href="/stats" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-b-md">Stats</a>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                     <div class="hidden md:block">
-                        <div id="auth-status" class="flex items-center">
+                        <div id="auth-status" class="flex items-center space-x-3">
                             {{if .AdminPubkey}}
-                            <span class="text-sm text-gray-400 font-mono">{{.AdminPubkey}}</span>
+                            <!-- Settings gear -->
+                            <a href="/settings" class="{{if eq .ActiveNav "settings"}}text-white{{else}}text-gray-400 hover:text-white{{end}} p-1" title="Settings">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                            </a>
+                            <!-- Pubkey (shortened) -->
+                            <span class="text-xs text-gray-500 font-mono" title="{{.AdminPubkey}}">{{.AdminPubkey}}</span>
+                            <!-- Logout -->
                             <a href="/logout" onclick="sessionStorage.clear();"
-                               class="ml-4 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                               class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
                                 Logout
                             </a>
                             {{else}}
                             <a href="/login"
-                               class="ml-4 bg-nostr-purple hover:bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                               class="bg-nostr-purple hover:bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
                                 Login
                             </a>
                             {{end}}
@@ -164,16 +178,23 @@
             <!-- Mobile menu -->
             <div class="md:hidden border-t border-gray-700" id="mobile-menu">
                 <div class="space-y-1 px-2 pb-3 pt-2">
+                    <!-- Core -->
                     <a href="/" class="{{if eq .ActiveNav "dashboard"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Dashboard</a>
-                    <a href="/pubkeys" class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Pubkeys</a>
                     <a href="/events" class="{{if eq .ActiveNav "events"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Events</a>
+                    <a href="/pubkeys" class="{{if eq .ActiveNav "pubkeys"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Pubkeys</a>
+                    <!-- Policy section -->
+                    <div class="pt-2 pb-1 px-3 text-xs text-gray-500 uppercase tracking-wider">Policy</div>
                     <a href="/moderation" class="{{if eq .ActiveNav "moderation"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Moderation</a>
                     <a href="/ips" class="{{if eq .ActiveNav "ips"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">IPs</a>
                     <a href="/kinds" class="{{if eq .ActiveNav "kinds"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Kinds</a>
+                    <a href="/wot" class="{{if eq .ActiveNav "wot"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">WoT</a>
+                    <!-- Tools section -->
+                    <div class="pt-2 pb-1 px-3 text-xs text-gray-500 uppercase tracking-wider">Tools</div>
                     <a href="/haven" class="{{if eq .ActiveNav "haven"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">HAVEN</a>
                     <a href="/browser" class="{{if eq .ActiveNav "browser"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Browser</a>
                     <a href="/stats" class="{{if eq .ActiveNav "stats"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Stats</a>
-                    <a href="/wot" class="{{if eq .ActiveNav "wot"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">WoT</a>
+                    <!-- Settings -->
+                    <div class="pt-2 pb-1 px-3 text-xs text-gray-500 uppercase tracking-wider">Config</div>
                     <a href="/settings" class="{{if eq .ActiveNav "settings"}}bg-gray-900 text-white{{else}}text-gray-300 hover:bg-gray-700{{end}} block rounded-md px-3 py-2 text-base font-medium">Settings</a>
                 </div>
             </div>
