@@ -479,6 +479,10 @@ func main() {
 	// Create admin UI mux (served on relay-admin.* hostnames)
 	var adminMux *http.ServeMux
 	if mgmtStore != nil && len(cfg.AdminPubkeys) > 0 {
+		// Enable distributed admin sessions if cache is available
+		if cacheClient != nil {
+			admin.SetRedisClient(cacheClient.RedisClient())
+		}
 		adminMux = http.NewServeMux()
 		adminHandler := admin.NewHandler(mgmtStore, cfg.AdminPubkeys)
 		// Inject HAVEN system for admin UI stats display

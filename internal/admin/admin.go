@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
 	"git.coldforge.xyz/coldforge/cloistr-relay/web"
+	"github.com/redis/go-redis/v9"
 )
 
 // contextKey is used for storing values in request context
@@ -35,20 +37,32 @@ const (
 
 // adminSession represents an authenticated admin session
 type adminSession struct {
-	Token     string
-	Pubkey    string
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	Token     string    `json:"token"`
+	Pubkey    string    `json:"pubkey"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// sessionStore manages admin sessions (in-memory with mutex for thread safety)
+// sessionStore manages admin sessions
+// Uses Redis for distributed sessions when available, falls back to in-memory
 type sessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*adminSession
+	rdb      *redis.Client
 }
+
+const sessionKeyPrefix = "admin_session:"
 
 var sessions = &sessionStore{
 	sessions: make(map[string]*adminSession),
+}
+
+// SetRedisClient configures Redis for distributed session storage
+func SetRedisClient(rdb *redis.Client) {
+	sessions.rdb = rdb
+	if rdb != nil {
+		log.Println("Admin UI using distributed sessions (Redis/Dragonfly)")
+	}
 }
 
 // createSession creates a new admin session and returns the token
@@ -67,6 +81,23 @@ func (s *sessionStore) createSession(pubkey string) (string, error) {
 		ExpiresAt: time.Now().Add(SessionTTL),
 	}
 
+	// Store in Redis if available
+	if s.rdb != nil {
+		data, err := json.Marshal(session)
+		if err != nil {
+			log.Printf("Admin session marshal error: %v", err)
+		} else {
+			ctx := context.Background()
+			if err := s.rdb.Set(ctx, sessionKeyPrefix+token, data, SessionTTL).Err(); err != nil {
+				log.Printf("Admin session Redis set error: %v", err)
+				// Fall through to in-memory as backup
+			} else {
+				return token, nil // Successfully stored in Redis
+			}
+		}
+	}
+
+	// Fall back to in-memory storage
 	s.mu.Lock()
 	s.sessions[token] = session
 	s.mu.Unlock()
@@ -76,6 +107,31 @@ func (s *sessionStore) createSession(pubkey string) (string, error) {
 
 // getSession retrieves a session by token
 func (s *sessionStore) getSession(token string) *adminSession {
+	// Try Redis first
+	if s.rdb != nil {
+		ctx := context.Background()
+		data, err := s.rdb.Get(ctx, sessionKeyPrefix+token).Bytes()
+		if err == nil {
+			var session adminSession
+			if err := json.Unmarshal(data, &session); err == nil {
+				// Check if expired
+				if time.Now().After(session.ExpiresAt) {
+					s.deleteSession(token)
+					return nil
+				}
+				return &session
+			}
+		} else if err != redis.Nil {
+			log.Printf("Admin session Redis get error: %v", err)
+		}
+		// If Redis has no record and we're using Redis, don't check in-memory
+		// This ensures consistent behavior across pods
+		if err == redis.Nil {
+			return nil
+		}
+	}
+
+	// Fall back to in-memory
 	s.mu.RLock()
 	session, exists := s.sessions[token]
 	s.mu.RUnlock()
@@ -95,6 +151,15 @@ func (s *sessionStore) getSession(token string) *adminSession {
 
 // deleteSession removes a session
 func (s *sessionStore) deleteSession(token string) {
+	// Delete from Redis if available
+	if s.rdb != nil {
+		ctx := context.Background()
+		if err := s.rdb.Del(ctx, sessionKeyPrefix+token).Err(); err != nil {
+			log.Printf("Admin session Redis delete error: %v", err)
+		}
+	}
+
+	// Also delete from in-memory (for consistency)
 	s.mu.Lock()
 	delete(s.sessions, token)
 	s.mu.Unlock()
