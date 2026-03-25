@@ -372,6 +372,7 @@ func main() {
 	// Initialize per-user HAVEN (multi-tenant mode with shared worker pools)
 	var havenUserSettings *haven.UserSettingsStore
 	var wotUserSettings *wot.UserSettingsStore
+	var orgStore *haven.OrgStore
 	var blastrManager *haven.BlastrManager
 	var importerManager *haven.ImporterManager
 	if cfg.HavenMultiUserEnabled {
@@ -392,6 +393,13 @@ func main() {
 		if err := wotUserSettings.Init(context.Background()); err != nil {
 			log.Fatalf("Failed to initialize WoT user settings: %v", err)
 		}
+
+		// Initialize B2B organization store
+		orgStore = haven.NewOrgStore(rawDB)
+		if err := orgStore.Init(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize organization store: %v", err)
+		}
+		log.Println("B2B organization store enabled")
 
 		// Initialize BlastrManager with shared worker pool
 		blastrCfg := haven.DefaultBlastrManagerConfig()
@@ -425,7 +433,7 @@ func main() {
 		log.Println("Per-user HAVEN enabled (multi-tenant mode)")
 	}
 	// Suppress unused variable warnings (available for future integration)
-	_, _, _, _ = havenUserSettings, wotUserSettings, blastrManager, importerManager
+	_, _, _, _, _ = havenUserSettings, wotUserSettings, orgStore, blastrManager, importerManager
 
 	// Initialize NIP-29 relay-based groups (if enabled)
 	if cfg.GroupsEnabled {
