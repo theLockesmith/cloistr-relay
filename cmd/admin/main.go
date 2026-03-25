@@ -12,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
 )
 
@@ -60,6 +61,26 @@ func main() {
 	// Set up admin handler
 	handler := admin.NewHandler(store, adminPubkeys)
 
+	// Load HAVEN config from environment (same as relay)
+	if envBool("HAVEN_ENABLED") {
+		havenConfig := &haven.Config{
+			Enabled:               true,
+			OwnerPubkey:           os.Getenv("HAVEN_OWNER_PUBKEY"),
+			AllowPublicOutboxRead: envBool("HAVEN_ALLOW_PUBLIC_OUTBOX_READ"),
+			AllowPublicInboxWrite: envBool("HAVEN_ALLOW_PUBLIC_INBOX_WRITE"),
+			RequireAuthForChat:    envBool("HAVEN_REQUIRE_AUTH_FOR_CHAT"),
+			RequireAuthForPrivate: envBool("HAVEN_REQUIRE_AUTH_FOR_PRIVATE"),
+			BlastrEnabled:         envBool("HAVEN_BLASTR_ENABLED"),
+			BlastrRelays:          parseCommaSeparated(os.Getenv("HAVEN_BLASTR_RELAYS")),
+			ImporterEnabled:         envBool("HAVEN_IMPORTER_ENABLED"),
+			ImporterRelays:          parseCommaSeparated(os.Getenv("HAVEN_IMPORTER_RELAYS")),
+			ImporterRealtimeEnabled: envBool("HAVEN_IMPORTER_REALTIME"),
+		}
+		// Pass config only (no live system - admin runs separately from relay)
+		handler.SetHavenSystem(nil, havenConfig)
+		log.Printf("HAVEN: enabled for owner %s", havenConfig.OwnerPubkey[:16])
+	}
+
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -87,6 +108,11 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string) bool {
+	v := strings.ToLower(os.Getenv(key))
+	return v == "true" || v == "1" || v == "yes"
 }
 
 func parseCommaSeparated(s string) []string {
