@@ -108,6 +108,7 @@ type Config struct {
 	HavenImporterEnabled         bool     // Enable inbox importing
 	HavenImporterRelays          []string // Relays to import from
 	HavenImporterRealtimeEnabled bool     // Enable real-time WebSocket subscriptions (vs polling)
+	HavenMultiUserEnabled        bool     // Enable per-user HAVEN (shared worker pools)
 
 	// RSS/Atom Feed
 	FeedEnabled         bool // Enable RSS/Atom feed endpoints
@@ -461,6 +462,9 @@ func Load() (*Config, error) {
 	}
 	if havenImporterRealtime := os.Getenv("HAVEN_IMPORTER_REALTIME"); havenImporterRealtime == "true" || havenImporterRealtime == "1" {
 		cfg.HavenImporterRealtimeEnabled = true
+	}
+	if havenMultiUser := os.Getenv("HAVEN_MULTI_USER"); havenMultiUser == "true" || havenMultiUser == "1" {
+		cfg.HavenMultiUserEnabled = true
 	}
 
 	// RSS/Atom Feed (enabled by default when HAVEN is enabled)

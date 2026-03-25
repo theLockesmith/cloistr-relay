@@ -25,6 +25,7 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
+	"git.coldforge.xyz/coldforge/cloistr-relay/internal/membership"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/metrics"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/protected"
 	"git.coldforge.xyz/coldforge/cloistr-relay/internal/ratelimit"
@@ -367,6 +368,64 @@ func main() {
 			}
 		}
 	}
+
+	// Initialize per-user HAVEN (multi-tenant mode with shared worker pools)
+	var havenUserSettings *haven.UserSettingsStore
+	var wotUserSettings *wot.UserSettingsStore
+	var blastrManager *haven.BlastrManager
+	var importerManager *haven.ImporterManager
+	if cfg.HavenMultiUserEnabled {
+		// Initialize membership store (required for tier lookups)
+		memberStore := membership.NewStore(rawDB)
+		if err := memberStore.InitSchema(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize membership store: %v", err)
+		}
+
+		// Initialize HAVEN user settings store
+		havenUserSettings = haven.NewUserSettingsStore(rawDB)
+		if err := havenUserSettings.Init(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize HAVEN user settings: %v", err)
+		}
+
+		// Initialize WoT user settings store
+		wotUserSettings = wot.NewUserSettingsStore(rawDB)
+		if err := wotUserSettings.Init(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize WoT user settings: %v", err)
+		}
+
+		// Initialize BlastrManager with shared worker pool
+		blastrCfg := haven.DefaultBlastrManagerConfig()
+		blastrManager = haven.NewBlastrManager(blastrCfg, memberStore, havenUserSettings)
+		r.OnEventSaved = append(r.OnEventSaved, blastrManager.OnEventSaved())
+		blastrManager.Start()
+		defer blastrManager.Stop()
+		log.Printf("HAVEN BlastrManager: %d workers for per-user broadcasting", blastrCfg.WorkerCount)
+
+		// Initialize ImporterManager with scheduler and shared worker pool
+		importerCfg := haven.DefaultImporterManagerConfig()
+		importerManager = haven.NewImporterManager(importerCfg, memberStore, havenUserSettings)
+		importerManager.SetStoreFunc(func(ctx context.Context, event *nostr.Event, userPubkey string) error {
+			// Store event in user's inbox (uses standard save path)
+			return db.SaveEvent(ctx, event)
+		})
+		importerManager.Start()
+		defer importerManager.Stop()
+		log.Printf("HAVEN ImporterManager: %d workers, polling every %v", importerCfg.WorkerCount, importerCfg.PollInterval)
+
+		// Register HAVEN settings watcher (NIP-78)
+		havenSettingsWatcher := haven.NewHavenSettingsWatcher(havenUserSettings)
+		r.OnEventSaved = append(r.OnEventSaved, havenSettingsWatcher.OnEventSaved())
+		log.Println("HAVEN settings watcher enabled (NIP-78)")
+
+		// Register WoT settings watcher (NIP-78)
+		wotSettingsWatcher := wot.NewSettingsWatcher(wotUserSettings)
+		r.OnEventSaved = append(r.OnEventSaved, wotSettingsWatcher.OnEventSaved())
+		log.Println("WoT settings watcher enabled (NIP-78)")
+
+		log.Println("Per-user HAVEN enabled (multi-tenant mode)")
+	}
+	// Suppress unused variable warnings (available for future integration)
+	_, _, _, _ = havenUserSettings, wotUserSettings, blastrManager, importerManager
 
 	// Initialize NIP-29 relay-based groups (if enabled)
 	if cfg.GroupsEnabled {
