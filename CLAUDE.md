@@ -103,21 +103,44 @@ dashboards/          Grafana JSON files
 
 ## Completed Phases
 
-| Phase | Focus | Status |
-|-------|-------|--------|
-| Phase 0-5 | Foundation, Dragonfly, NIPs, Infra, Observability | Done |
-| HAVEN | Box routing, Blastr, Importer, Metrics | Done |
-| RSS/Algo | Feeds, ranked algorithms | Done |
-| NIP-29 | Relay-based groups | Done |
-| NIP-17 | Modern encrypted DMs | Done |
-| Admin UI | Event browser, stats, WoT viz | Done |
+| Phase | Focus |
+|-------|-------|
+| Foundation | khatru, PostgreSQL, NIP-42 auth |
+| Dragonfly | Caching, distributed state, pub/sub |
+| NIPs | 30 implemented (see list above) |
+| HAVEN | Single-owner box routing, Blastr, Importer |
+| RSS/Algo | Feeds, ranked algorithms |
+| NIP-29 | Relay-based groups |
+| NIP-17 | Modern encrypted DMs |
+| Admin UI | Event browser, stats, WoT viz |
 
-## Future Roadmap
+## Roadmap: Per-User HAVEN
 
-| Item | Priority |
-|------|----------|
+Transform from single-owner to multi-tenant. See [docs/per-user-haven-scope.md](docs/per-user-haven-scope.md).
+
+| Phase | Focus |
+|-------|-------|
+| 1 | Tier Infrastructure (extend NIP-43 members, Lightning payments) |
+| 2 | Per-User WoT (user filter layer, settings table) |
+| 3 | Per-User HAVEN Routing (context-aware Router) |
+| 4 | Shared Worker Blastr (pool architecture, tier gating) |
+| 5 | Shared Worker Importer (scheduler + shared pool) |
+| 6 | User Self-Service (settings UI, NIP-78, export) |
+
+## Roadmap: B2B
+
+| Model | Description |
+|-------|-------------|
+| Self-Hosted | Customer runs own instance (license fee) |
+| Managed Relay | Coldforge hosts dedicated relay (monthly BTC) |
+| Shared Enterprise | Org tier on relay.cloistr.xyz (per-seat BTC) |
+
+## Future
+
+| Item | Status |
+|------|--------|
 | NIP-0A CRDTs | Watching PR #1630 |
-| Geographic Distribution | Planned |
+| Geographic Distribution | After multi-tenant stabilizes |
 
 ## Resources
 
