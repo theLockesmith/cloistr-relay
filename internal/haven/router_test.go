@@ -1568,3 +1568,353 @@ func TestSetEventLookup(t *testing.T) {
 		t.Error("SetEventLookup should set the eventLookup field")
 	}
 }
+
+// mockMemberStore implements MemberStore for testing per-user routing
+type mockMemberStore struct {
+	members map[string]*MemberInfo
+}
+
+func (m *mockMemberStore) GetMemberInfo(ctx context.Context, pubkey string) (*MemberInfo, error) {
+	if info, ok := m.members[pubkey]; ok {
+		return info, nil
+	}
+	return nil, nil
+}
+
+func (m *mockMemberStore) IsMember(ctx context.Context, pubkey string) (bool, error) {
+	_, ok := m.members[pubkey]
+	return ok, nil
+}
+
+// TestRouteEventForUser_SingleOwnerMode tests that single-owner mode falls back to RouteEvent
+func TestRouteEventForUser_SingleOwnerMode(t *testing.T) {
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: ownerPubkey,
+	}
+	router := NewRouter(cfg)
+	// No member store - single owner mode
+
+	event := &nostr.Event{
+		Kind:   1,
+		PubKey: ownerPubkey,
+		Tags:   nostr.Tags{},
+	}
+
+	result := router.RouteEventForUser(context.Background(), event, ownerPubkey)
+
+	if result.Box != BoxOutbox {
+		t.Errorf("RouteEventForUser() in single-owner mode = %v, want %v", result.Box, BoxOutbox)
+	}
+	if result.OwnerPubkey != ownerPubkey {
+		t.Errorf("OwnerPubkey = %s, want %s", result.OwnerPubkey, ownerPubkey)
+	}
+}
+
+// TestRouteEventForUser_MultiUserMode_Outbox tests outbox routing in multi-user mode
+func TestRouteEventForUser_MultiUserMode_Outbox(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+		// No single owner - multi-user mode
+	}
+	router := NewRouter(cfg)
+
+	// Set up member store
+	memberStore := &mockMemberStore{
+		members: map[string]*MemberInfo{
+			alicePubkey: {
+				Pubkey:        alicePubkey,
+				Tier:          "premium",
+				HasHavenBoxes: true,
+			},
+			bobPubkey: {
+				Pubkey:        bobPubkey,
+				Tier:          "free",
+				HasHavenBoxes: false, // Free tier, no HAVEN
+			},
+		},
+	}
+	router.SetMemberStore(memberStore)
+
+	// Alice's event should go to her outbox
+	aliceEvent := &nostr.Event{
+		Kind:   1,
+		PubKey: alicePubkey,
+		Tags:   nostr.Tags{},
+	}
+
+	result := router.RouteEventForUser(context.Background(), aliceEvent, alicePubkey)
+
+	if result.Box != BoxOutbox {
+		t.Errorf("RouteEventForUser() for member = %v, want %v", result.Box, BoxOutbox)
+	}
+	if result.OwnerPubkey != alicePubkey {
+		t.Errorf("OwnerPubkey = %s, want %s", result.OwnerPubkey, alicePubkey)
+	}
+	if result.Tier != "premium" {
+		t.Errorf("Tier = %s, want %s", result.Tier, "premium")
+	}
+}
+
+// TestRouteEventForUser_MultiUserMode_NoHavenBoxes tests that free tier members don't get HAVEN boxes
+func TestRouteEventForUser_MultiUserMode_NoHavenBoxes(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+	router := NewRouter(cfg)
+
+	memberStore := &mockMemberStore{
+		members: map[string]*MemberInfo{
+			bobPubkey: {
+				Pubkey:        bobPubkey,
+				Tier:          "free",
+				HasHavenBoxes: false,
+			},
+		},
+	}
+	router.SetMemberStore(memberStore)
+
+	// Bob's event (free tier, no HAVEN boxes)
+	bobEvent := &nostr.Event{
+		Kind:   1,
+		PubKey: bobPubkey,
+		Tags:   nostr.Tags{},
+	}
+
+	result := router.RouteEventForUser(context.Background(), bobEvent, bobPubkey)
+
+	if result.Box != BoxUnknown {
+		t.Errorf("RouteEventForUser() for free tier = %v, want %v", result.Box, BoxUnknown)
+	}
+}
+
+// TestRouteEventForUser_MultiUserMode_Inbox tests inbox routing in multi-user mode
+func TestRouteEventForUser_MultiUserMode_Inbox(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+	router := NewRouter(cfg)
+
+	memberStore := &mockMemberStore{
+		members: map[string]*MemberInfo{
+			alicePubkey: {
+				Pubkey:        alicePubkey,
+				Tier:          "premium",
+				HasHavenBoxes: true,
+			},
+		},
+	}
+	router.SetMemberStore(memberStore)
+
+	// Event from Bob to Alice (p-tag)
+	eventToAlice := &nostr.Event{
+		Kind:   1,
+		PubKey: bobPubkey,
+		Tags: nostr.Tags{
+			{"p", alicePubkey},
+		},
+	}
+
+	result := router.RouteEventForUser(context.Background(), eventToAlice, bobPubkey)
+
+	if result.Box != BoxInbox {
+		t.Errorf("RouteEventForUser() for event to member = %v, want %v", result.Box, BoxInbox)
+	}
+	if result.OwnerPubkey != alicePubkey {
+		t.Errorf("OwnerPubkey = %s, want %s", result.OwnerPubkey, alicePubkey)
+	}
+}
+
+// TestRouteEventForUser_MultiUserMode_Private tests private box routing
+func TestRouteEventForUser_MultiUserMode_Private(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+	router := NewRouter(cfg)
+
+	memberStore := &mockMemberStore{
+		members: map[string]*MemberInfo{
+			alicePubkey: {
+				Pubkey:        alicePubkey,
+				Tier:          "premium",
+				HasHavenBoxes: true,
+			},
+		},
+	}
+	router.SetMemberStore(memberStore)
+
+	// Private kind from Alice (authenticated)
+	privateEvent := &nostr.Event{
+		Kind:   30024, // Draft
+		PubKey: alicePubkey,
+		Tags:   nostr.Tags{},
+	}
+
+	result := router.RouteEventForUser(context.Background(), privateEvent, alicePubkey)
+
+	if result.Box != BoxPrivate {
+		t.Errorf("RouteEventForUser() for private kind = %v, want %v", result.Box, BoxPrivate)
+	}
+	if result.OwnerPubkey != alicePubkey {
+		t.Errorf("OwnerPubkey = %s, want %s", result.OwnerPubkey, alicePubkey)
+	}
+}
+
+// TestRouteEventForUser_MultiUserMode_PrivateNotAuthenticated tests private kind rejection without auth
+func TestRouteEventForUser_MultiUserMode_PrivateNotAuthenticated(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+	router := NewRouter(cfg)
+
+	memberStore := &mockMemberStore{
+		members: map[string]*MemberInfo{
+			alicePubkey: {
+				Pubkey:        alicePubkey,
+				Tier:          "premium",
+				HasHavenBoxes: true,
+			},
+		},
+	}
+	router.SetMemberStore(memberStore)
+
+	// Private kind but no authentication
+	privateEvent := &nostr.Event{
+		Kind:   30024, // Draft
+		PubKey: alicePubkey,
+		Tags:   nostr.Tags{},
+	}
+
+	// No authed pubkey
+	result := router.RouteEventForUser(context.Background(), privateEvent, "")
+
+	if result.Box != BoxUnknown {
+		t.Errorf("RouteEventForUser() for unauthenticated private = %v, want %v", result.Box, BoxUnknown)
+	}
+}
+
+// TestRouteEventForUser_MultiUserMode_Chat tests chat box routing
+func TestRouteEventForUser_MultiUserMode_Chat(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+	router := NewRouter(cfg)
+
+	memberStore := &mockMemberStore{
+		members: map[string]*MemberInfo{
+			alicePubkey: {
+				Pubkey:        alicePubkey,
+				Tier:          "premium",
+				HasHavenBoxes: true,
+			},
+		},
+	}
+	router.SetMemberStore(memberStore)
+
+	// Gift wrap (chat kind) from Alice
+	chatEvent := &nostr.Event{
+		Kind:   1059,
+		PubKey: alicePubkey,
+		Tags:   nostr.Tags{},
+	}
+
+	result := router.RouteEventForUser(context.Background(), chatEvent, alicePubkey)
+
+	if result.Box != BoxChat {
+		t.Errorf("RouteEventForUser() for chat kind = %v, want %v", result.Box, BoxChat)
+	}
+}
+
+// TestIsMultiUserMode tests the IsMultiUserMode helper
+func TestIsMultiUserMode(t *testing.T) {
+	tests := []struct {
+		name           string
+		ownerPubkey    string
+		hasMemberStore bool
+		expected       bool
+	}{
+		{
+			name:           "no owner, has member store = multi-user",
+			ownerPubkey:    "",
+			hasMemberStore: true,
+			expected:       true,
+		},
+		{
+			name:           "has owner, has member store = single-owner with store",
+			ownerPubkey:    ownerPubkey,
+			hasMemberStore: true,
+			expected:       false,
+		},
+		{
+			name:           "no owner, no member store = disabled",
+			ownerPubkey:    "",
+			hasMemberStore: false,
+			expected:       false,
+		},
+		{
+			name:           "has owner, no member store = single-owner",
+			ownerPubkey:    ownerPubkey,
+			hasMemberStore: false,
+			expected:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Enabled:     true,
+				OwnerPubkey: tt.ownerPubkey,
+			}
+			router := NewRouter(cfg)
+
+			if tt.hasMemberStore {
+				router.SetMemberStore(&mockMemberStore{})
+			}
+
+			result := router.IsMultiUserMode()
+			if result != tt.expected {
+				t.Errorf("IsMultiUserMode() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestRoutingResult tests the RoutingResult struct
+func TestRoutingResult(t *testing.T) {
+	result := RoutingResult{
+		Box:         BoxOutbox,
+		OwnerPubkey: alicePubkey,
+		Tier:        "premium",
+	}
+
+	if result.Box != BoxOutbox {
+		t.Errorf("Box = %v, want %v", result.Box, BoxOutbox)
+	}
+	if result.OwnerPubkey != alicePubkey {
+		t.Errorf("OwnerPubkey = %s, want %s", result.OwnerPubkey, alicePubkey)
+	}
+	if result.Tier != "premium" {
+		t.Errorf("Tier = %s, want %s", result.Tier, "premium")
+	}
+}
+
+// TestSetUserSettingsStore tests the SetUserSettingsStore method
+func TestSetUserSettingsStore(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+	router := NewRouter(cfg)
+
+	// Initially no user settings store
+	if router.HasUserSettingsStore() {
+		t.Error("Router should initially have no user settings store")
+	}
+
+	// Set user settings store (nil is OK for this test)
+	router.SetUserSettingsStore(nil)
+
+	// Still no store since we set nil
+	if router.HasUserSettingsStore() {
+		t.Error("Setting nil store should not make HasUserSettingsStore true")
+	}
+}
