@@ -280,7 +280,7 @@ func TestRejectFilter_Unauthenticated_InboxRead(t *testing.T) {
 	if !reject {
 		t.Error("Unauthenticated inbox read should be rejected")
 	}
-	if reason != "restricted: only owner can read inbox" {
+	if reason != "auth-required: only owner can read inbox" {
 		t.Errorf("Wrong rejection reason: got %q", reason)
 	}
 }

@@ -160,7 +160,8 @@ func (h *Handler) RejectFilter() func(context.Context, nostr.Filter) (bool, stri
 					if authedPubkey != h.config.OwnerPubkey {
 						h.metrics.RecordAccessDenied(box, "read", "not_owner")
 						h.metrics.RecordFilterRejected(box, "not_owner")
-						return true, "restricted: only owner can read inbox"
+						// Use auth-required: prefix so khatru sends NIP-42 AUTH challenge
+						return true, "auth-required: only owner can read inbox"
 					}
 				case BoxOutbox:
 					// Public read allowed
