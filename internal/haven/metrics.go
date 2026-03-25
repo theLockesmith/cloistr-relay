@@ -165,6 +165,42 @@ var (
 		Help: "Total fetch attempts per relay",
 	}, []string{"relay", "status"})
 
+	// ImporterManager per-user/per-tier metrics
+	havenImporterManagerJobsQueued = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_importer_manager_jobs_queued_total",
+		Help: "Total number of jobs queued by tier",
+	}, []string{"tier"})
+
+	havenImporterManagerJobsProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_importer_manager_jobs_processed_total",
+		Help: "Total number of jobs processed by tier",
+	}, []string{"tier"})
+
+	havenImporterManagerEventsImported = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_importer_manager_events_imported_total",
+		Help: "Total events imported by tier",
+	}, []string{"tier"})
+
+	havenImporterManagerRelayFetch = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_importer_manager_relay_fetch_total",
+		Help: "Total fetch attempts per relay and tier",
+	}, []string{"relay", "tier", "status"})
+
+	havenImporterManagerUsersEnabled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_importer_manager_users_enabled",
+		Help: "Number of users with importer enabled",
+	})
+
+	havenImporterManagerQueueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_importer_manager_queue_size",
+		Help: "Current number of jobs in the ImporterManager queue",
+	})
+
+	havenImporterManagerWorkers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_importer_manager_workers",
+		Help: "Number of ImporterManager workers",
+	})
+
 	// Box event counts (gauges for current state, updated periodically)
 	havenBoxEventsStored = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nostr_relay_haven_box_events_stored",
@@ -356,6 +392,45 @@ func (m *Metrics) RecordImporterRelayFetch(relay string, success bool) {
 		status = "failed"
 	}
 	havenImporterRelayFetchTotal.WithLabelValues(truncateRelay(relay), status).Inc()
+}
+
+// RecordImporterManagerQueued records a job queued by tier
+func (m *Metrics) RecordImporterManagerQueued(tier string) {
+	havenImporterManagerJobsQueued.WithLabelValues(tier).Inc()
+}
+
+// RecordImporterManagerProcessed records a job processed by tier
+func (m *Metrics) RecordImporterManagerProcessed(tier string) {
+	havenImporterManagerJobsProcessed.WithLabelValues(tier).Inc()
+}
+
+// RecordImporterManagerImported records an event imported by tier
+func (m *Metrics) RecordImporterManagerImported(tier string) {
+	havenImporterManagerEventsImported.WithLabelValues(tier).Inc()
+}
+
+// RecordImporterManagerRelayFetch records a fetch attempt by relay and tier
+func (m *Metrics) RecordImporterManagerRelayFetch(relay, tier string, success bool) {
+	status := "success"
+	if !success {
+		status = "failed"
+	}
+	havenImporterManagerRelayFetch.WithLabelValues(truncateRelay(relay), tier, status).Inc()
+}
+
+// SetImporterManagerUsersEnabled sets the count of users with importer enabled
+func (m *Metrics) SetImporterManagerUsersEnabled(count int) {
+	havenImporterManagerUsersEnabled.Set(float64(count))
+}
+
+// SetImporterManagerQueueSize sets the ImporterManager queue size
+func (m *Metrics) SetImporterManagerQueueSize(size int) {
+	havenImporterManagerQueueSize.Set(float64(size))
+}
+
+// SetImporterManagerWorkers sets the number of ImporterManager workers
+func (m *Metrics) SetImporterManagerWorkers(count int) {
+	havenImporterManagerWorkers.Set(float64(count))
 }
 
 // SetBoxEventsStored sets the event count for a box
