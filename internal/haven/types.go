@@ -25,6 +25,27 @@ type EventLookup interface {
 	GetEventByID(ctx context.Context, id string) (*nostr.Event, error)
 }
 
+// MemberInfo contains tier information for a member
+type MemberInfo struct {
+	Pubkey           string
+	Tier             string
+	HasHavenBoxes    bool
+	HasBlastr        bool
+	HasImporter      bool
+	HasWoTControl    bool
+	MaxBlastrRelays  int
+	MaxImporterRelays int
+}
+
+// MemberStore is an interface for looking up member tier information
+// This enables per-user HAVEN routing based on membership tiers
+type MemberStore interface {
+	// GetMemberInfo returns tier info for a pubkey, or nil if not a member
+	GetMemberInfo(ctx context.Context, pubkey string) (*MemberInfo, error)
+	// IsMember returns true if the pubkey is a registered member
+	IsMember(ctx context.Context, pubkey string) (bool, error)
+}
+
 // Box represents the type of storage box for event routing
 type Box int
 

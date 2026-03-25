@@ -379,3 +379,190 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("DefaultInviteMaxUses = %d, want 1", cfg.DefaultInviteMaxUses)
 	}
 }
+
+// Tier tests
+
+func TestTierConstants(t *testing.T) {
+	tests := []struct {
+		name string
+		tier MemberTier
+		want string
+	}{
+		{"Free", TierFree, "free"},
+		{"Hybrid", TierHybrid, "hybrid"},
+		{"Premium", TierPremium, "premium"},
+		{"Enterprise", TierEnterprise, "enterprise"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if string(tt.tier) != tt.want {
+				t.Errorf("Tier%s = %s, want %s", tt.name, tt.tier, tt.want)
+			}
+		})
+	}
+}
+
+func TestTierIsValid(t *testing.T) {
+	validTiers := []MemberTier{TierFree, TierHybrid, TierPremium, TierEnterprise}
+	for _, tier := range validTiers {
+		if !tier.IsValid() {
+			t.Errorf("Tier %s should be valid", tier)
+		}
+	}
+
+	invalidTiers := []MemberTier{"invalid", "gold", "silver", ""}
+	for _, tier := range invalidTiers {
+		if tier.IsValid() {
+			t.Errorf("Tier %s should be invalid", tier)
+		}
+	}
+}
+
+func TestTierGetLimits(t *testing.T) {
+	tests := []struct {
+		tier          MemberTier
+		hasHavenBoxes bool
+		hasBlastr     bool
+		hasImporter   bool
+		hasWoTControl bool
+	}{
+		{TierFree, false, false, false, false},
+		{TierHybrid, true, true, true, true},
+		{TierPremium, true, true, true, true},
+		{TierEnterprise, true, true, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.tier), func(t *testing.T) {
+			limits := tt.tier.GetLimits()
+			if limits.HasHavenBoxes != tt.hasHavenBoxes {
+				t.Errorf("HasHavenBoxes = %v, want %v", limits.HasHavenBoxes, tt.hasHavenBoxes)
+			}
+			if limits.HasBlastr != tt.hasBlastr {
+				t.Errorf("HasBlastr = %v, want %v", limits.HasBlastr, tt.hasBlastr)
+			}
+			if limits.HasImporter != tt.hasImporter {
+				t.Errorf("HasImporter = %v, want %v", limits.HasImporter, tt.hasImporter)
+			}
+			if limits.HasWoTControl != tt.hasWoTControl {
+				t.Errorf("HasWoTControl = %v, want %v", limits.HasWoTControl, tt.hasWoTControl)
+			}
+		})
+	}
+}
+
+func TestTierRelayLimits(t *testing.T) {
+	// Free tier has no relays (features disabled anyway)
+	freeLimits := TierFree.GetLimits()
+	if freeLimits.MaxBlastrRelays != 0 || freeLimits.MaxImporterRelays != 0 {
+		t.Error("Free tier should have 0 relay limits")
+	}
+
+	// Hybrid tier has 3 relays
+	hybridLimits := TierHybrid.GetLimits()
+	if hybridLimits.MaxBlastrRelays != 3 || hybridLimits.MaxImporterRelays != 3 {
+		t.Errorf("Hybrid tier should have 3 relay limits, got blastr=%d importer=%d",
+			hybridLimits.MaxBlastrRelays, hybridLimits.MaxImporterRelays)
+	}
+
+	// Premium tier has 10 relays
+	premiumLimits := TierPremium.GetLimits()
+	if premiumLimits.MaxBlastrRelays != 10 || premiumLimits.MaxImporterRelays != 10 {
+		t.Errorf("Premium tier should have 10 relay limits, got blastr=%d importer=%d",
+			premiumLimits.MaxBlastrRelays, premiumLimits.MaxImporterRelays)
+	}
+
+	// Enterprise tier has unlimited (0)
+	enterpriseLimits := TierEnterprise.GetLimits()
+	if enterpriseLimits.MaxBlastrRelays != 0 || enterpriseLimits.MaxImporterRelays != 0 {
+		t.Errorf("Enterprise tier should have unlimited (0) relay limits, got blastr=%d importer=%d",
+			enterpriseLimits.MaxBlastrRelays, enterpriseLimits.MaxImporterRelays)
+	}
+}
+
+func TestMemberGetEffectiveTier(t *testing.T) {
+	tests := []struct {
+		name     string
+		member   Member
+		expected MemberTier
+	}{
+		{
+			name:     "empty tier defaults to free",
+			member:   Member{Pubkey: "test", Tier: ""},
+			expected: TierFree,
+		},
+		{
+			name:     "free tier stays free",
+			member:   Member{Pubkey: "test", Tier: TierFree},
+			expected: TierFree,
+		},
+		{
+			name:     "premium tier without expiry",
+			member:   Member{Pubkey: "test", Tier: TierPremium},
+			expected: TierPremium,
+		},
+		{
+			name: "premium tier with future expiry",
+			member: Member{
+				Pubkey:        "test",
+				Tier:          TierPremium,
+				TierExpiresAt: time.Now().Add(24 * time.Hour),
+			},
+			expected: TierPremium,
+		},
+		{
+			name: "premium tier with past expiry downgrades to free",
+			member: Member{
+				Pubkey:        "test",
+				Tier:          TierPremium,
+				TierExpiresAt: time.Now().Add(-24 * time.Hour),
+			},
+			expected: TierFree,
+		},
+		{
+			name: "enterprise tier with past expiry downgrades to free",
+			member: Member{
+				Pubkey:        "test",
+				Tier:          TierEnterprise,
+				TierExpiresAt: time.Now().Add(-1 * time.Hour),
+			},
+			expected: TierFree,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.member.GetEffectiveTier(); got != tt.expected {
+				t.Errorf("GetEffectiveTier() = %s, want %s", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMemberGetLimits(t *testing.T) {
+	member := Member{
+		Pubkey: "test",
+		Tier:   TierPremium,
+	}
+
+	limits := member.GetLimits()
+	if !limits.HasHavenBoxes {
+		t.Error("Premium member should have HAVEN boxes")
+	}
+	if limits.MaxBlastrRelays != 10 {
+		t.Errorf("Premium member should have 10 blastr relays, got %d", limits.MaxBlastrRelays)
+	}
+
+	// Expired member gets free limits
+	expiredMember := Member{
+		Pubkey:        "test",
+		Tier:          TierPremium,
+		TierExpiresAt: time.Now().Add(-1 * time.Hour),
+	}
+
+	expiredLimits := expiredMember.GetLimits()
+	if expiredLimits.HasHavenBoxes {
+		t.Error("Expired member should not have HAVEN boxes")
+	}
+}

@@ -13,7 +13,8 @@ type Router struct {
 	chatKinds    map[int]bool
 	inboxKinds   map[int]bool
 	outboxKinds  map[int]bool
-	eventLookup  EventLookup // Optional: for e-tag routing
+	eventLookup  EventLookup  // Optional: for e-tag routing
+	memberStore  MemberStore  // Optional: for per-user tier-based routing
 }
 
 // NewRouter creates a new box router
@@ -55,6 +56,18 @@ func NewRouter(cfg *Config) *Router {
 // if they reference one of the owner's events.
 func (r *Router) SetEventLookup(lookup EventLookup) {
 	r.eventLookup = lookup
+}
+
+// SetMemberStore sets the member store for tier-based routing.
+// When set, enables per-user HAVEN boxes based on membership tiers.
+// This is the foundation for Phase 3 per-user routing.
+func (r *Router) SetMemberStore(store MemberStore) {
+	r.memberStore = store
+}
+
+// HasMemberStore returns true if a member store is configured
+func (r *Router) HasMemberStore() bool {
+	return r.memberStore != nil
 }
 
 // RouteEvent determines which box an event should be stored in

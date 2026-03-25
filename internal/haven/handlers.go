@@ -11,9 +11,10 @@ import (
 
 // Handler manages HAVEN box routing for events and queries
 type Handler struct {
-	router  *Router
-	config  *Config
-	metrics *Metrics
+	router      *Router
+	config      *Config
+	metrics     *Metrics
+	memberStore MemberStore
 }
 
 // truncateID safely truncates an ID/pubkey for logging
@@ -43,6 +44,22 @@ func NewHandler(cfg *Config) *Handler {
 // This enables routing reactions/reposts to inbox when they reference owner's events.
 func (h *Handler) SetEventLookup(lookup EventLookup) {
 	h.router.SetEventLookup(lookup)
+}
+
+// SetMemberStore sets the member store for tier-based routing.
+// This enables per-user HAVEN boxes based on membership tiers.
+func (h *Handler) SetMemberStore(store MemberStore) {
+	h.memberStore = store
+	h.router.SetMemberStore(store)
+}
+
+// GetMemberInfo returns tier information for a pubkey if MemberStore is configured.
+// Returns nil if no MemberStore is set or the pubkey is not a member.
+func (h *Handler) GetMemberInfo(ctx context.Context, pubkey string) (*MemberInfo, error) {
+	if h.memberStore == nil {
+		return nil, nil
+	}
+	return h.memberStore.GetMemberInfo(ctx, pubkey)
 }
 
 // RejectEvent validates events against box access policies
@@ -330,6 +347,16 @@ func (s *HavenSystem) SetEventLookup(lookup EventLookup) {
 		return
 	}
 	s.Handler.SetEventLookup(lookup)
+}
+
+// SetMemberStore sets the member store for tier-based routing.
+// This enables per-user HAVEN boxes based on membership tiers.
+func (s *HavenSystem) SetMemberStore(store MemberStore) {
+	if s == nil || s.Handler == nil {
+		return
+	}
+	s.Handler.SetMemberStore(store)
+	log.Println("HAVEN: member store configured for tier-based routing")
 }
 
 // Stats returns combined statistics

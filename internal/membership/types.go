@@ -41,6 +41,58 @@ const (
 	KindLeaveRequest = 28936
 )
 
+// MemberTier represents a membership tier with different feature access
+type MemberTier string
+
+const (
+	// TierFree is the default tier with basic access
+	TierFree MemberTier = "free"
+	// TierHybrid unlocks HAVEN features with limited relays
+	TierHybrid MemberTier = "hybrid"
+	// TierPremium unlocks full HAVEN features
+	TierPremium MemberTier = "premium"
+	// TierEnterprise unlocks unlimited features
+	TierEnterprise MemberTier = "enterprise"
+)
+
+// TierLimits defines feature access for each tier
+type TierLimits struct {
+	// HasHavenBoxes enables per-user inbox/outbox/private/chat
+	HasHavenBoxes bool
+	// HasBlastr enables outbox broadcasting
+	HasBlastr bool
+	// HasImporter enables inbox event fetching
+	HasImporter bool
+	// HasWoTControl enables user WoT customization
+	HasWoTControl bool
+	// MaxBlastrRelays limits broadcast relays (0 = unlimited)
+	MaxBlastrRelays int
+	// MaxImporterRelays limits import relays (0 = unlimited)
+	MaxImporterRelays int
+}
+
+// TierConfig maps tiers to their feature limits
+var TierConfig = map[MemberTier]TierLimits{
+	TierFree:       {false, false, false, false, 0, 0},
+	TierHybrid:     {true, true, true, true, 3, 3},
+	TierPremium:    {true, true, true, true, 10, 10},
+	TierEnterprise: {true, true, true, true, 0, 0},
+}
+
+// GetLimits returns the feature limits for a tier
+func (t MemberTier) GetLimits() TierLimits {
+	if limits, ok := TierConfig[t]; ok {
+		return limits
+	}
+	return TierConfig[TierFree]
+}
+
+// IsValid returns true if the tier is a known tier
+func (t MemberTier) IsValid() bool {
+	_, ok := TierConfig[t]
+	return ok
+}
+
 // Member represents a relay member
 type Member struct {
 	// Pubkey is the member's hex pubkey
@@ -51,6 +103,29 @@ type Member struct {
 	InviteCode string
 	// AddedBy is the pubkey that added them (admin or via invite)
 	AddedBy string
+	// Tier is the member's subscription tier
+	Tier MemberTier
+	// TierExpiresAt is when the paid tier expires (zero = never)
+	TierExpiresAt time.Time
+	// LightningAddress for payments/refunds
+	LightningAddress string
+}
+
+// GetEffectiveTier returns the member's tier, accounting for expiration
+func (m *Member) GetEffectiveTier() MemberTier {
+	if m.Tier == "" || m.Tier == TierFree {
+		return TierFree
+	}
+	// Check if tier has expired
+	if !m.TierExpiresAt.IsZero() && time.Now().After(m.TierExpiresAt) {
+		return TierFree
+	}
+	return m.Tier
+}
+
+// GetLimits returns the feature limits for this member's effective tier
+func (m *Member) GetLimits() TierLimits {
+	return m.GetEffectiveTier().GetLimits()
 }
 
 // Invite represents an invite code
