@@ -21,6 +21,11 @@ var Version = "0.6.0"
 func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend *search.SearchBackend) *khatru.Relay {
 	relay := khatru.NewRelay()
 
+	// Set ServiceURL for NIP-42 authentication validation
+	// This ensures AUTH events are validated against the public relay URL,
+	// not the internal K8s service URL used for connections.
+	relay.ServiceURL = cfg.RelayURL
+
 	// Configure relay metadata (NIP-11)
 	relay.Info.Name = cfg.RelayName
 	relay.Info.Description = "Cloistr Nostr relay - built with khatru"
@@ -89,6 +94,11 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 // NewRelayWithOptions creates a relay with optional event cache and write-ahead log
 func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend *search.SearchBackend, evtCache *eventcache.Cache, wal *writeahead.WAL) *khatru.Relay {
 	relay := khatru.NewRelay()
+
+	// Set ServiceURL for NIP-42 authentication validation
+	// This ensures AUTH events are validated against the public relay URL,
+	// not the internal K8s service URL used for connections.
+	relay.ServiceURL = cfg.RelayURL
 
 	// Configure relay metadata (NIP-11)
 	relay.Info.Name = cfg.RelayName
