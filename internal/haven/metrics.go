@@ -98,6 +98,42 @@ var (
 		Help: "Current number of events in the retry queue",
 	})
 
+	// BlastrManager per-user/per-tier metrics
+	havenBlastrManagerJobsQueued = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_manager_jobs_queued_total",
+		Help: "Total number of jobs queued by tier",
+	}, []string{"tier"})
+
+	havenBlastrManagerJobsDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_manager_jobs_dropped_total",
+		Help: "Total number of jobs dropped due to full queue by tier",
+	}, []string{"tier"})
+
+	havenBlastrManagerBroadcast = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_manager_broadcast_total",
+		Help: "Total successful broadcasts by tier",
+	}, []string{"tier"})
+
+	havenBlastrManagerFailed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_manager_failed_total",
+		Help: "Total failed broadcasts by tier",
+	}, []string{"tier"})
+
+	havenBlastrManagerRelayPublish = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_blastr_manager_relay_publish_total",
+		Help: "Total publish attempts per relay and tier",
+	}, []string{"relay", "tier", "status"})
+
+	havenBlastrManagerQueueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_blastr_manager_queue_size",
+		Help: "Current number of jobs in the BlastrManager queue",
+	})
+
+	havenBlastrManagerWorkers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_blastr_manager_workers",
+		Help: "Number of BlastrManager workers",
+	})
+
 	// Importer metrics
 	havenImporterEventsImported = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "nostr_relay_haven_importer_events_imported_total",
@@ -247,6 +283,45 @@ func (m *Metrics) RecordBlastrRetryExhausted() {
 // SetBlastrRetryQueueSize sets the retry queue size
 func (m *Metrics) SetBlastrRetryQueueSize(size int) {
 	havenBlastrRetryQueueSize.Set(float64(size))
+}
+
+// RecordBlastrManagerQueued records a job queued by tier
+func (m *Metrics) RecordBlastrManagerQueued(tier string) {
+	havenBlastrManagerJobsQueued.WithLabelValues(tier).Inc()
+}
+
+// RecordBlastrManagerDropped records a job dropped by tier
+func (m *Metrics) RecordBlastrManagerDropped(tier string) {
+	havenBlastrManagerJobsDropped.WithLabelValues(tier).Inc()
+}
+
+// RecordBlastrManagerBroadcast records a successful broadcast by tier
+func (m *Metrics) RecordBlastrManagerBroadcast(tier string) {
+	havenBlastrManagerBroadcast.WithLabelValues(tier).Inc()
+}
+
+// RecordBlastrManagerFailed records a failed broadcast by tier
+func (m *Metrics) RecordBlastrManagerFailed(tier string) {
+	havenBlastrManagerFailed.WithLabelValues(tier).Inc()
+}
+
+// RecordBlastrManagerRelayPublish records a publish attempt by relay and tier
+func (m *Metrics) RecordBlastrManagerRelayPublish(relay, tier string, success bool) {
+	status := "success"
+	if !success {
+		status = "failed"
+	}
+	havenBlastrManagerRelayPublish.WithLabelValues(truncateRelay(relay), tier, status).Inc()
+}
+
+// SetBlastrManagerQueueSize sets the BlastrManager queue size
+func (m *Metrics) SetBlastrManagerQueueSize(size int) {
+	havenBlastrManagerQueueSize.Set(float64(size))
+}
+
+// SetBlastrManagerWorkers sets the number of BlastrManager workers
+func (m *Metrics) SetBlastrManagerWorkers(count int) {
+	havenBlastrManagerWorkers.Set(float64(count))
 }
 
 // RecordImporterImported records an imported event
