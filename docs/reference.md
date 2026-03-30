@@ -151,6 +151,30 @@ HAVEN implements the Outbox Model with four relay types in one.
 | `HAVEN_IMPORTER_RELAYS` | - | Relays to fetch from (comma-separated) |
 | `HAVEN_IMPORTER_REALTIME` | false | Enable real-time WebSocket subscriptions |
 
+### Multi-User Mode (Per-User HAVEN)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HAVEN_MULTI_USER` | false | Enable per-user HAVEN with shared worker pools |
+
+When enabled, initializes:
+- **UserSettingsStore** - Per-user Blastr/Importer settings (NIP-78 synced)
+- **WoT UserSettingsStore** - Per-user blocklists and trusted lists
+- **BlastrManager** - Shared worker pool for per-user broadcasting
+- **ImporterManager** - Scheduler + shared pool for per-user inbox import
+- **OrgStore** - B2B organization management
+
+Users manage settings via NIP-78 events (kind 30078, d-tag: `cloistr-haven-settings`).
+
+**Tier-based feature gating:**
+
+| Tier | HAVEN Boxes | Blastr | Importer | WoT Control | Relay Limit |
+|------|-------------|--------|----------|-------------|-------------|
+| free | No | No | No | Relay default | N/A |
+| hybrid | Yes | Yes | Yes | User overrides | 3 |
+| premium | Yes | Yes | Yes | Full control | 10 |
+| enterprise | Yes | Yes | Yes | Full + custom | Unlimited |
+
 ### E-tag Routing
 
 When a reaction (kind 7) or repost (kind 6) arrives without a p-tag to the owner:
@@ -162,13 +186,18 @@ When a reaction (kind 7) or repost (kind 6) arrives without a p-tag to the owner
 
 ```
 internal/haven/
-├── types.go         # Box types, default kinds, config, EventLookup interface
-├── router.go        # Event/filter routing (includes E-tag routing)
-├── handlers.go      # RejectEvent, RejectFilter, OverwriteFilter, HavenSystem
-├── blastr.go        # Outbox broadcasting
-├── importer.go      # Inbox event fetching
-├── metrics.go       # Prometheus metrics
-└── *_test.go        # Tests
+├── types.go              # Box types, default kinds, config, MemberStore interface
+├── router.go             # Event/filter routing (single + multi-user)
+├── handlers.go           # RejectEvent, RejectFilter, HavenSystem
+├── blastr.go             # Single-owner outbox broadcasting
+├── importer.go           # Single-owner inbox fetching
+├── blastr_manager.go     # Per-user Blastr with shared worker pool
+├── importer_manager.go   # Per-user Importer with scheduler
+├── user_settings.go      # UserSettingsStore for per-user HAVEN settings
+├── settings_watcher.go   # NIP-78 settings watcher (kind 30078)
+├── organization.go       # B2B: Organization, OrgMember, OrgStore
+├── metrics.go            # Prometheus metrics (single + per-tier)
+└── *_test.go             # Tests
 ```
 
 ### HAVEN Prometheus Metrics

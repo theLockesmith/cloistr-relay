@@ -103,42 +103,57 @@ dashboards/          Grafana JSON files
 
 ## Completed Phases
 
-| Phase | Focus |
-|-------|-------|
-| Foundation | khatru, PostgreSQL, NIP-42 auth |
-| Dragonfly | Caching, distributed state, pub/sub |
-| NIPs | 30 implemented (see list above) |
-| HAVEN | Single-owner box routing, Blastr, Importer |
-| RSS/Algo | Feeds, ranked algorithms |
-| NIP-29 | Relay-based groups |
-| NIP-17 | Modern encrypted DMs |
-| Admin UI | Event browser, stats, WoT viz |
+| Phase | Focus | Status |
+|-------|-------|--------|
+| Foundation | khatru, PostgreSQL, NIP-42 auth | Done |
+| Dragonfly | Caching, distributed state, pub/sub | Done |
+| NIPs | 30 implemented (see list above) | Done |
+| HAVEN | Single-owner box routing, Blastr, Importer | Done |
+| RSS/Algo | Feeds, ranked algorithms | Done |
+| NIP-29 | Relay-based groups | Done |
+| NIP-17 | Modern encrypted DMs | Done |
+| Admin UI | Event browser, stats, WoT viz | Done |
 
-## Roadmap: Per-User HAVEN
+## Per-User HAVEN (Multi-Tenant)
 
 Transform from single-owner to multi-tenant. See [docs/per-user-haven-scope.md](docs/per-user-haven-scope.md).
 
-| Phase | Focus |
-|-------|-------|
-| 1 | Tier Infrastructure (extend NIP-43 members, Lightning payments) |
-| 2 | Per-User WoT (user filter layer, settings table) |
-| 3 | Per-User HAVEN Routing (context-aware Router) |
-| 4 | Shared Worker Blastr (pool architecture, tier gating) |
-| 5 | Shared Worker Importer (scheduler + shared pool) |
-| 6 | User Self-Service (settings UI, NIP-78, export) |
+**Enable with:** `HAVEN_MULTI_USER=true`
 
-## Roadmap: B2B
+| Phase | Focus | Status |
+|-------|-------|--------|
+| 1 | Tier Infrastructure (MemberStore, TierLimits) | **Done** |
+| 2 | Per-User WoT (user filter layer, NIP-78 watcher) | **Done** |
+| 3 | Per-User HAVEN Routing (RoutingResult, RouteEventForUser) | **Done** |
+| 4 | Shared Worker Blastr (BlastrManager, shared pool) | **Done** |
+| 5 | Shared Worker Importer (ImporterManager, scheduler) | **Done** |
+| 6 | User Self-Service (HavenSettingsWatcher, export) | **Done** |
+| 7 | Integration Wiring | Pending |
 
-| Model | Description |
-|-------|-------------|
-| Self-Hosted | Customer runs own instance (license fee) |
-| Managed Relay | Coldforge hosts dedicated relay (monthly BTC) |
-| Shared Enterprise | Org tier on relay.cloistr.xyz (per-seat BTC) |
+**Phase 7 (Pending):** Connect per-user routing to khatru handlers. Currently the code exists but events still use single-owner routing logic.
+
+## B2B Organization Model
+
+| Component | Status |
+|-----------|--------|
+| Organization struct | **Done** |
+| OrgMember with roles | **Done** |
+| OrgStore (CRUD) | **Done** |
+| Tier inheritance | **Done** |
+| OrgSettings (WoT baseline) | **Done** |
+| Wired into relay startup | **Done** |
+
+**B2B tiers:**
+- Self-Hosted: Customer runs own instance (license fee)
+- Managed Relay: Coldforge hosts dedicated (monthly BTC)
+- Shared Enterprise: Org tier on relay.cloistr.xyz (per-seat BTC)
 
 ## Future
 
 | Item | Status |
 |------|--------|
+| Per-User Handler Integration | Next priority |
+| Lightning Payment Integration | Planned |
 | NIP-0A CRDTs | Watching PR #1630 |
 | Geographic Distribution | After multi-tenant stabilizes |
 

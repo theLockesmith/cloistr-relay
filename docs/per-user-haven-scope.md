@@ -635,3 +635,69 @@ haven_enabled: true
 5. **WoT Control**: User-level for paid tiers. Relay floor always applies. Users raise the bar, never lower it.
 
 6. **B2B Model**: Organizations get enterprise tier, members inherit. Org admins manage membership. Billing via Lightning to org address.
+
+---
+
+## Implementation Status
+
+**Last Updated:** 2026-03-30
+
+### Completed Phases
+
+| Phase | Status | Commit | Files |
+|-------|--------|--------|-------|
+| **Phase 1: Tier Infrastructure** | ✅ Done | 52771a0 | `types.go` (MemberStore, MemberInfo, TierLimits) |
+| **Phase 2: Per-User WoT** | ✅ Done | ff47462 | `internal/wot/user_settings.go`, `settings_watcher.go` |
+| **Phase 3: Per-User Routing** | ✅ Done | 22ce08e | `router.go` (RoutingResult, RouteEventForUser), `user_settings.go` |
+| **Phase 4: BlastrManager** | ✅ Done | 16441b1 | `blastr_manager.go` (shared worker pool) |
+| **Phase 5: ImporterManager** | ✅ Done | 4f17e54 | `importer_manager.go` (scheduler + pool) |
+| **Phase 6: User Self-Service** | ✅ Done | c0c392f | `settings_watcher.go` (NIP-78 HAVEN settings) |
+| **Integration Wiring** | ✅ Done | 527bf82 | `cmd/relay/main.go` (HAVEN_MULTI_USER mode) |
+| **B2B Organizations** | ✅ Done | 6489a2f | `organization.go` (OrgStore, OrgMember) |
+
+### What's Wired
+
+- `HAVEN_MULTI_USER=true` enables multi-tenant mode
+- `membership.Store` implements `haven.MemberStore` for tier lookups
+- `UserSettingsStore.Init()` creates `haven_user_settings` table
+- `wot.UserSettingsStore.Init()` creates `wot_user_settings` table
+- `OrgStore.Init()` creates `organizations`, `org_members`, `org_settings` tables
+- `BlastrManager` registered on `OnEventSaved` hook
+- `ImporterManager` scheduler running on startup
+- `HavenSettingsWatcher` syncs NIP-78 events to database
+- `wot.SettingsWatcher` syncs NIP-78 WoT events to database
+
+### Pending Integration
+
+The per-user routing functions exist but aren't yet called from khatru handlers:
+
+| Function | Purpose | Integration Point |
+|----------|---------|-------------------|
+| `RouteEventForUser` | Context-aware event routing | `handlers.go` RejectEvent |
+| `CanAccessUserBox` | Per-user read access control | `handlers.go` RejectFilter |
+| `UserWoTFilter` | Per-user WoT filtering | `wot/handler.go` |
+| `GetEffectiveTierForPubkey` | Org tier inheritance | `membership/store.go` GetMemberInfo |
+
+### Database Tables Created
+
+```sql
+-- Per-user HAVEN settings
+CREATE TABLE haven_user_settings (...)
+
+-- Per-user WoT settings
+CREATE TABLE wot_user_settings (...)
+
+-- B2B organizations
+CREATE TABLE organizations (...)
+CREATE TABLE org_members (...)
+CREATE TABLE org_settings (...)
+```
+
+### Configuration
+
+Enable per-user mode:
+```bash
+HAVEN_MULTI_USER=true
+```
+
+This runs alongside single-owner HAVEN - they are not mutually exclusive.
