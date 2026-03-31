@@ -585,3 +585,424 @@ func TestBoxStats_ZeroValues(t *testing.T) {
 		t.Errorf("BoxStats.String() = %q, want %q", stats.String(), expected)
 	}
 }
+
+// --- Multi-User Handler Tests ---
+
+// testMemberStore implements MemberStore for handler testing
+type testMemberStore struct {
+	members map[string]*MemberInfo
+}
+
+func newTestMemberStore() *testMemberStore {
+	return &testMemberStore{
+		members: make(map[string]*MemberInfo),
+	}
+}
+
+func (m *testMemberStore) AddMember(pubkey, tier string, hasBoxes bool) {
+	m.members[pubkey] = &MemberInfo{
+		Pubkey:        pubkey,
+		Tier:          tier,
+		HasHavenBoxes: hasBoxes,
+	}
+}
+
+func (m *testMemberStore) IsMember(ctx context.Context, pubkey string) (bool, error) {
+	_, ok := m.members[pubkey]
+	return ok, nil
+}
+
+func (m *testMemberStore) GetMemberInfo(ctx context.Context, pubkey string) (*MemberInfo, error) {
+	info, ok := m.members[pubkey]
+	if !ok {
+		return nil, nil
+	}
+	return info, nil
+}
+
+// mockWoTUserFilter implements WoTUserFilter for testing
+type mockWoTUserFilter struct {
+	blockedPairs map[string]bool // "sender:recipient" -> blocked
+}
+
+func newMockWoTUserFilter() *mockWoTUserFilter {
+	return &mockWoTUserFilter{
+		blockedPairs: make(map[string]bool),
+	}
+}
+
+func (m *mockWoTUserFilter) BlockSenderForRecipient(sender, recipient string) {
+	m.blockedPairs[sender+":"+recipient] = true
+}
+
+func (m *mockWoTUserFilter) ShouldAllowToInbox(ctx context.Context, event *nostr.Event, recipientPubkey string) WoTFilterResult {
+	if event == nil {
+		return WoTFilterResult{Allowed: true}
+	}
+	key := event.PubKey + ":" + recipientPubkey
+	if m.blockedPairs[key] {
+		return WoTFilterResult{
+			Allowed: false,
+			Reason:  "sender is blocked",
+			Source:  "user_block",
+		}
+	}
+	return WoTFilterResult{Allowed: true}
+}
+
+// TestMultiUserHandler_RejectEvent_MemberOutbox tests member writing to their outbox
+// Note: Without khatru auth context, member outbox writes appear as unknown events
+// because RouteEventForUser can't verify the authenticated pubkey matches the sender.
+// Full auth flow tested in integration tests.
+func TestMultiUserHandler_RejectEvent_MemberOutbox(t *testing.T) {
+	memberStore := newTestMemberStore()
+	memberStore.AddMember(alicePubkey, "premium", true)
+
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: "", // Multi-user mode - no single owner
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectEvent()
+
+	// Alice writes to her outbox (kind 1 from Alice)
+	event := &nostr.Event{
+		ID:     "test123",
+		PubKey: alicePubkey,
+		Kind:   1,
+		Tags:   nostr.Tags{},
+	}
+
+	ctx := context.Background()
+
+	// Without auth context, routing returns BoxUnknown because
+	// RouteEventForUser requires authedPubkey == event.PubKey for outbox routing
+	reject, reason := rejectFn(ctx, event)
+
+	// Expected: rejected as unknown box (no auth context)
+	if !reject {
+		t.Error("Unauthenticated member outbox write should be rejected")
+	}
+	if reason != "restricted: event does not belong to any HAVEN box" {
+		t.Errorf("Wrong rejection reason: got %q", reason)
+	}
+}
+
+// TestMultiUserHandler_RejectEvent_InboxToMember tests event addressed to member's inbox
+func TestMultiUserHandler_RejectEvent_InboxToMember(t *testing.T) {
+	memberStore := newTestMemberStore()
+	memberStore.AddMember(alicePubkey, "premium", true)
+
+	cfg := &Config{
+		Enabled:               true,
+		OwnerPubkey:           "",
+		AllowPublicInboxWrite: true,
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectEvent()
+
+	// Bob sends to Alice's inbox
+	event := &nostr.Event{
+		ID:     "test123",
+		PubKey: bobPubkey,
+		Kind:   1,
+		Tags: nostr.Tags{
+			{"p", alicePubkey},
+		},
+	}
+
+	ctx := context.Background()
+
+	reject, _ := rejectFn(ctx, event)
+	if reject {
+		t.Error("Public inbox write to member should be allowed")
+	}
+}
+
+// TestMultiUserHandler_RejectEvent_NonMemberPrivateKind tests non-member trying private kinds
+func TestMultiUserHandler_RejectEvent_NonMemberPrivateKind(t *testing.T) {
+	memberStore := newTestMemberStore()
+	// bobPubkey is NOT a member
+
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: "",
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectEvent()
+
+	// Bob tries to write a private kind
+	event := &nostr.Event{
+		ID:     "test123",
+		PubKey: bobPubkey,
+		Kind:   30024, // Private kind
+		Tags:   nostr.Tags{},
+	}
+
+	ctx := context.Background()
+
+	reject, reason := rejectFn(ctx, event)
+	if !reject {
+		t.Error("Non-member private kind should be rejected")
+	}
+	if reason != "restricted: event does not belong to any HAVEN box" {
+		t.Errorf("Wrong rejection reason: got %q", reason)
+	}
+}
+
+// TestMultiUserHandler_RejectEvent_WoTBlocked tests per-user WoT blocking
+func TestMultiUserHandler_RejectEvent_WoTBlocked(t *testing.T) {
+	memberStore := newTestMemberStore()
+	memberStore.AddMember(alicePubkey, "premium", true)
+
+	wotFilter := newMockWoTUserFilter()
+	wotFilter.BlockSenderForRecipient(bobPubkey, alicePubkey)
+
+	cfg := &Config{
+		Enabled:               true,
+		OwnerPubkey:           "",
+		AllowPublicInboxWrite: true,
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore:   memberStore,
+		WoTUserFilter: wotFilter,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectEvent()
+
+	// Bob sends to Alice's inbox (but Alice has blocked Bob)
+	event := &nostr.Event{
+		ID:     "test123",
+		PubKey: bobPubkey,
+		Kind:   1,
+		Tags: nostr.Tags{
+			{"p", alicePubkey},
+		},
+	}
+
+	ctx := context.Background()
+
+	reject, reason := rejectFn(ctx, event)
+	if !reject {
+		t.Error("WoT-blocked event should be rejected")
+	}
+	if reason != "restricted: blocked by recipient's WoT settings" {
+		t.Errorf("Wrong rejection reason: got %q", reason)
+	}
+}
+
+// TestMultiUserHandler_RejectEvent_WoTAllowed tests per-user WoT allowing event
+func TestMultiUserHandler_RejectEvent_WoTAllowed(t *testing.T) {
+	memberStore := newTestMemberStore()
+	memberStore.AddMember(alicePubkey, "premium", true)
+
+	wotFilter := newMockWoTUserFilter()
+	// Charlie is NOT blocked by Alice
+
+	cfg := &Config{
+		Enabled:               true,
+		OwnerPubkey:           "",
+		AllowPublicInboxWrite: true,
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore:   memberStore,
+		WoTUserFilter: wotFilter,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectEvent()
+
+	// Charlie sends to Alice's inbox
+	event := &nostr.Event{
+		ID:     "test123",
+		PubKey: charliePubkey,
+		Kind:   1,
+		Tags: nostr.Tags{
+			{"p", alicePubkey},
+		},
+	}
+
+	ctx := context.Background()
+
+	reject, _ := rejectFn(ctx, event)
+	if reject {
+		t.Error("Non-blocked event to member's inbox should be allowed")
+	}
+}
+
+// TestMultiUserHandler_RejectEvent_Disabled tests disabled multi-user HAVEN
+func TestMultiUserHandler_RejectEvent_Disabled(t *testing.T) {
+	memberStore := newTestMemberStore()
+
+	cfg := &Config{
+		Enabled:     false,
+		OwnerPubkey: "",
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectEvent()
+
+	event := &nostr.Event{
+		ID:     "test123",
+		PubKey: alicePubkey,
+		Kind:   1,
+		Tags:   nostr.Tags{},
+	}
+
+	ctx := context.Background()
+
+	reject, _ := rejectFn(ctx, event)
+	if reject {
+		t.Error("Disabled multi-user HAVEN should not reject events")
+	}
+}
+
+// TestMultiUserHandler_RejectFilter_MemberInbox tests member reading own inbox
+func TestMultiUserHandler_RejectFilter_MemberInbox(t *testing.T) {
+	t.Skip("Requires khatru authenticated context - test in integration tests")
+}
+
+// TestMultiUserHandler_RejectFilter_Disabled tests disabled HAVEN filter
+func TestMultiUserHandler_RejectFilter_Disabled(t *testing.T) {
+	memberStore := newTestMemberStore()
+
+	cfg := &Config{
+		Enabled:     false,
+		OwnerPubkey: "",
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	rejectFn := handler.RejectFilter()
+
+	filter := nostr.Filter{
+		Kinds: []int{30024},
+	}
+
+	ctx := context.Background()
+
+	reject, _ := rejectFn(ctx, filter)
+	if reject {
+		t.Error("Disabled multi-user HAVEN should not reject filters")
+	}
+}
+
+// TestMultiUserHandler_OverwriteFilter_RemovePrivateKinds tests private kind removal
+func TestMultiUserHandler_OverwriteFilter_RemovePrivateKinds(t *testing.T) {
+	memberStore := newTestMemberStore()
+
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: "",
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	overwriteFn := handler.OverwriteFilter()
+
+	filter := &nostr.Filter{
+		Kinds: []int{1, 30024, 7, 7375},
+	}
+
+	ctx := context.Background()
+	overwriteFn(ctx, filter)
+
+	// Private kinds (30024, 7375) should be removed
+	expectedKinds := []int{1, 7}
+	if len(filter.Kinds) != len(expectedKinds) {
+		t.Errorf("OverwriteFilter() kinds = %v, want %v", filter.Kinds, expectedKinds)
+	}
+}
+
+// TestMultiUserHandler_OnEventSaved tests the OnEventSaved handler
+func TestMultiUserHandler_OnEventSaved(t *testing.T) {
+	memberStore := newTestMemberStore()
+	memberStore.AddMember(alicePubkey, "premium", true)
+
+	cfg := &Config{
+		Enabled:     true,
+		OwnerPubkey: "",
+	}
+
+	multiCfg := &MultiUserHandlerConfig{
+		MemberStore: memberStore,
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+	onSavedFn := handler.OnEventSaved()
+
+	event := &nostr.Event{
+		ID:     "test123456789",
+		PubKey: alicePubkey,
+		Kind:   1,
+		Tags:   nostr.Tags{},
+	}
+
+	ctx := context.Background()
+
+	// Should not panic
+	onSavedFn(ctx, event)
+}
+
+// TestNewMultiUserHandler_NilConfig tests handler creation with nil configs
+func TestNewMultiUserHandler_NilConfig(t *testing.T) {
+	handler := NewMultiUserHandler(nil, nil)
+	if handler == nil {
+		t.Fatal("NewMultiUserHandler(nil, nil) should return a valid handler")
+	}
+	if handler.config == nil {
+		t.Error("NewMultiUserHandler should use DefaultConfig when nil")
+	}
+}
+
+// TestRegisterMultiUserHandlers_NilMemberStore tests registration without member store
+func TestRegisterMultiUserHandlers_NilMemberStore(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+	}
+
+	// No member store
+	system := RegisterMultiUserHandlers(nil, cfg, nil)
+	if system != nil {
+		t.Error("RegisterMultiUserHandlers without member store should return nil")
+	}
+}
+
+// TestMultiUserSystem_Stop tests graceful shutdown
+func TestMultiUserSystem_Stop(t *testing.T) {
+	// Nil system should not panic
+	var system *MultiUserSystem
+	system.Stop()
+
+	// System with nil components should not panic
+	system = &MultiUserSystem{}
+	system.Stop()
+}

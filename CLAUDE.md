@@ -128,9 +128,9 @@ Transform from single-owner to multi-tenant. See [docs/per-user-haven-scope.md](
 | 4 | Shared Worker Blastr (BlastrManager, shared pool) | **Done** |
 | 5 | Shared Worker Importer (ImporterManager, scheduler) | **Done** |
 | 6 | User Self-Service (HavenSettingsWatcher, export) | **Done** |
-| 7 | Integration Wiring | Pending |
+| 7 | Integration Wiring (MultiUserHandler, khatru handlers) | **Done** |
 
-**Phase 7 (Pending):** Connect per-user routing to khatru handlers. Currently the code exists but events still use single-owner routing logic.
+All phases complete. Per-user routing is fully integrated via `RegisterMultiUserHandlers()`. When `HAVEN_MULTI_USER=true`, events are routed based on authenticated user pubkey with per-user WoT filtering.
 
 ## B2B Organization Model
 
@@ -152,8 +152,7 @@ Transform from single-owner to multi-tenant. See [docs/per-user-haven-scope.md](
 
 | Item | Status |
 |------|--------|
-| Per-User Handler Integration | Next priority |
-| Lightning Payment Integration | Planned |
+| Lightning Payment Integration | Next priority |
 | NIP-0A CRDTs | Watching PR #1630 |
 | Geographic Distribution | After multi-tenant stabilizes |
 

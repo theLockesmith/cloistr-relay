@@ -667,16 +667,24 @@ haven_enabled: true
 - `HavenSettingsWatcher` syncs NIP-78 events to database
 - `wot.SettingsWatcher` syncs NIP-78 WoT events to database
 
-### Pending Integration
+### Handler Integration (Phase 7 - Complete)
 
-The per-user routing functions exist but aren't yet called from khatru handlers:
+The per-user routing is now wired into khatru handlers via `MultiUserHandler`:
 
-| Function | Purpose | Integration Point |
-|----------|---------|-------------------|
-| `RouteEventForUser` | Context-aware event routing | `handlers.go` RejectEvent |
-| `CanAccessUserBox` | Per-user read access control | `handlers.go` RejectFilter |
-| `UserWoTFilter` | Per-user WoT filtering | `wot/handler.go` |
-| `GetEffectiveTierForPubkey` | Org tier inheritance | `membership/store.go` GetMemberInfo |
+| Component | Purpose | Status |
+|-----------|---------|--------|
+| `MultiUserHandler` | Per-user event/filter routing | **Done** |
+| `RegisterMultiUserHandlers()` | Register handlers with khatru | **Done** |
+| `WoTUserFilter` interface | Per-user WoT filtering in handlers | **Done** |
+| `wotUserFilterAdapter` | Adapts wot.UserFilter to haven interface | **Done** |
+
+When `HAVEN_MULTI_USER=true`:
+1. `RouteEventForUser()` routes events to per-user boxes based on authenticated pubkey
+2. `CanAccessUserBox()` checks per-user privacy settings for read/write access
+3. Per-user WoT filter blocks events based on recipient's blocklist/trusted list
+4. Per-user Blastr/Importer work via shared worker pools
+
+**Note:** Single-owner HAVEN (`HAVEN_ENABLED=true` with `HAVEN_OWNER_PUBKEY`) and multi-user HAVEN are mutually exclusive - multi-user takes precedence.
 
 ### Database Tables Created
 

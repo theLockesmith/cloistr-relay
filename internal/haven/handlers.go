@@ -388,3 +388,373 @@ func (s BoxStats) String() string {
 	return fmt.Sprintf("private=%d chat=%d inbox=%d outbox=%d",
 		s.Private, s.Chat, s.Inbox, s.Outbox)
 }
+
+// WoTUserFilter is the interface for per-user WoT filtering
+type WoTUserFilter interface {
+	// ShouldAllowToInbox checks if an event should reach a user's inbox
+	ShouldAllowToInbox(ctx context.Context, event *nostr.Event, recipientPubkey string) WoTFilterResult
+}
+
+// WoTFilterResult represents the outcome of a per-user WoT check
+type WoTFilterResult struct {
+	Allowed bool
+	Reason  string
+	Source  string
+}
+
+// MultiUserHandler manages per-user HAVEN box routing for multi-tenant mode
+type MultiUserHandler struct {
+	router            *Router
+	config            *Config
+	metrics           *Metrics
+	memberStore       MemberStore
+	userSettingsStore *UserSettingsStore
+	blastrManager     *BlastrManager
+	importerManager   *ImporterManager
+	wotUserFilter     WoTUserFilter
+}
+
+// MultiUserHandlerConfig holds configuration for multi-user handlers
+type MultiUserHandlerConfig struct {
+	MemberStore       MemberStore
+	UserSettingsStore *UserSettingsStore
+	BlastrManager     *BlastrManager
+	ImporterManager   *ImporterManager
+	WoTUserFilter     WoTUserFilter
+}
+
+// NewMultiUserHandler creates a new per-user HAVEN handler
+func NewMultiUserHandler(cfg *Config, multiCfg *MultiUserHandlerConfig) *MultiUserHandler {
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+	if multiCfg == nil {
+		multiCfg = &MultiUserHandlerConfig{}
+	}
+
+	router := NewRouter(cfg)
+	router.SetMemberStore(multiCfg.MemberStore)
+	router.SetUserSettingsStore(multiCfg.UserSettingsStore)
+
+	return &MultiUserHandler{
+		router:            router,
+		config:            cfg,
+		metrics:           GetMetrics(),
+		memberStore:       multiCfg.MemberStore,
+		userSettingsStore: multiCfg.UserSettingsStore,
+		blastrManager:     multiCfg.BlastrManager,
+		importerManager:   multiCfg.ImporterManager,
+		wotUserFilter:     multiCfg.WoTUserFilter,
+	}
+}
+
+// SetEventLookup sets the event lookup interface for e-tag routing
+func (h *MultiUserHandler) SetEventLookup(lookup EventLookup) {
+	h.router.SetEventLookup(lookup)
+}
+
+// RejectEvent validates events against per-user box access policies
+func (h *MultiUserHandler) RejectEvent() func(context.Context, *nostr.Event) (bool, string) {
+	return func(ctx context.Context, event *nostr.Event) (bool, string) {
+		if !h.config.Enabled {
+			return false, ""
+		}
+
+		authedPubkey := khatru.GetAuthed(ctx)
+
+		// Use per-user routing
+		result := h.router.RouteEventForUser(ctx, event, authedPubkey)
+
+		// Log routing decision
+		if result.OwnerPubkey != "" {
+			log.Printf("HAVEN[multi]: event %s (kind %d from %s) -> %s for user %s (tier: %s)",
+				truncateID(event.ID), event.Kind, truncateID(event.PubKey),
+				result.Box, truncateID(result.OwnerPubkey), result.Tier)
+		} else {
+			log.Printf("HAVEN[multi]: event %s (kind %d from %s) -> %s (no owner)",
+				truncateID(event.ID), event.Kind, truncateID(event.PubKey), result.Box)
+		}
+
+		// If box is unknown, check if it can be accepted as community content
+		if result.Box == BoxUnknown {
+			// Chat kinds from anyone are allowed (WoT filters separately)
+			if h.router.chatKinds[event.Kind] {
+				result.Box = BoxChat
+			} else {
+				h.metrics.RecordEventRejected(BoxUnknown, "no_box")
+				return true, "restricted: event does not belong to any HAVEN box"
+			}
+		}
+
+		// Record access attempt
+		h.metrics.RecordAccessAttempt(result.Box, "write")
+
+		// Check write access based on box type and user
+		if !h.router.CanAccessUserBox(ctx, result.Box, authedPubkey, result.OwnerPubkey, true) {
+			switch result.Box {
+			case BoxPrivate:
+				if authedPubkey == "" {
+					h.metrics.RecordAccessDenied(result.Box, "write", "auth_required")
+					h.metrics.RecordEventRejected(result.Box, "auth_required")
+					return true, "auth-required: authentication required for private box"
+				}
+				h.metrics.RecordAccessDenied(result.Box, "write", "not_owner")
+				h.metrics.RecordEventRejected(result.Box, "not_owner")
+				return true, "restricted: only owner can write to private box"
+			case BoxChat:
+				if authedPubkey == "" {
+					h.metrics.RecordAccessDenied(result.Box, "write", "auth_required")
+					h.metrics.RecordEventRejected(result.Box, "auth_required")
+					return true, "auth-required: authentication required for chat"
+				}
+				// Chat allowed for authenticated users
+			case BoxInbox:
+				// Inbox write might be restricted by user settings
+				if result.OwnerPubkey != "" {
+					settings, err := h.router.GetUserSettings(ctx, result.OwnerPubkey)
+					if err != nil {
+						log.Printf("HAVEN[multi]: error getting user settings for %s: %v", truncateID(result.OwnerPubkey), err)
+						// Fail open - allow write if we can't check settings
+					}
+					if settings != nil && !settings.PublicInboxWrite {
+						h.metrics.RecordAccessDenied(result.Box, "write", "inbox_restricted")
+						h.metrics.RecordEventRejected(result.Box, "inbox_restricted")
+						return true, "restricted: inbox write is disabled for this user"
+					}
+				}
+			case BoxOutbox:
+				if authedPubkey != result.OwnerPubkey {
+					h.metrics.RecordAccessDenied(result.Box, "write", "not_owner")
+					h.metrics.RecordEventRejected(result.Box, "not_owner")
+					return true, "restricted: only owner can write to outbox"
+				}
+			}
+		}
+
+		// Apply per-user WoT filtering for inbox events
+		if result.Box == BoxInbox && result.OwnerPubkey != "" && h.wotUserFilter != nil {
+			wotResult := h.wotUserFilter.ShouldAllowToInbox(ctx, event, result.OwnerPubkey)
+			if !wotResult.Allowed {
+				log.Printf("HAVEN[multi]: event %s blocked by per-user WoT for %s: %s (source: %s)",
+					truncateID(event.ID), truncateID(result.OwnerPubkey), wotResult.Reason, wotResult.Source)
+				h.metrics.RecordAccessDenied(result.Box, "write", "wot_blocked")
+				h.metrics.RecordEventRejected(result.Box, "wot_blocked")
+				return true, "restricted: blocked by recipient's WoT settings"
+			}
+		}
+
+		// Verify event author matches authenticated pubkey
+		if authedPubkey != "" && event.PubKey != authedPubkey {
+			h.metrics.RecordEventRejected(result.Box, "pubkey_mismatch")
+			return true, "restricted: can only publish events as yourself"
+		}
+
+		// Record successful routing
+		h.metrics.RecordEventRouted(result.Box)
+
+		return false, ""
+	}
+}
+
+// RejectFilter validates filter access against per-user box policies
+func (h *MultiUserHandler) RejectFilter() func(context.Context, nostr.Filter) (bool, string) {
+	return func(ctx context.Context, filter nostr.Filter) (bool, string) {
+		if !h.config.Enabled {
+			return false, ""
+		}
+
+		authedPubkey := khatru.GetAuthed(ctx)
+
+		// Get per-user routing results
+		results := h.router.RouteFilterForUser(ctx, filter, authedPubkey)
+
+		// Check read access for each targeted box
+		for _, result := range results {
+			h.metrics.RecordAccessAttempt(result.Box, "read")
+
+			if !h.router.CanAccessUserBox(ctx, result.Box, authedPubkey, result.OwnerPubkey, false) {
+				switch result.Box {
+				case BoxPrivate:
+					if authedPubkey == "" {
+						h.metrics.RecordAccessDenied(result.Box, "read", "auth_required")
+						h.metrics.RecordFilterRejected(result.Box, "auth_required")
+						return true, "auth-required: authentication required for private box"
+					}
+					h.metrics.RecordAccessDenied(result.Box, "read", "not_owner")
+					h.metrics.RecordFilterRejected(result.Box, "not_owner")
+					return true, "restricted: only owner can read private box"
+				case BoxChat:
+					if authedPubkey == "" {
+						h.metrics.RecordAccessDenied(result.Box, "read", "auth_required")
+						h.metrics.RecordFilterRejected(result.Box, "auth_required")
+						return true, "auth-required: authentication required for chat"
+					}
+				case BoxInbox:
+					if authedPubkey != result.OwnerPubkey {
+						h.metrics.RecordAccessDenied(result.Box, "read", "not_owner")
+						h.metrics.RecordFilterRejected(result.Box, "not_owner")
+						return true, "auth-required: only owner can read inbox"
+					}
+				case BoxOutbox:
+					// Check user settings for public outbox read
+					if result.OwnerPubkey != "" && authedPubkey != result.OwnerPubkey {
+						settings, err := h.router.GetUserSettings(ctx, result.OwnerPubkey)
+						if err != nil {
+							log.Printf("HAVEN[multi]: error getting user settings for %s: %v", truncateID(result.OwnerPubkey), err)
+							// Fail open - allow read if we can't check settings
+						}
+						if settings != nil && !settings.PublicOutboxRead {
+							h.metrics.RecordAccessDenied(result.Box, "read", "outbox_restricted")
+							h.metrics.RecordFilterRejected(result.Box, "outbox_restricted")
+							return true, "auth-required: outbox read is restricted for this user"
+						}
+					}
+				}
+			}
+
+			h.metrics.RecordFilterRouted(result.Box)
+		}
+
+		return false, ""
+	}
+}
+
+// OverwriteFilter modifies filters to enforce per-user box boundaries
+func (h *MultiUserHandler) OverwriteFilter() func(context.Context, *nostr.Filter) {
+	return func(ctx context.Context, filter *nostr.Filter) {
+		if !h.config.Enabled {
+			return
+		}
+
+		authedPubkey := khatru.GetAuthed(ctx)
+
+		// Get routing results for this filter
+		results := h.router.RouteFilterForUser(ctx, *filter, authedPubkey)
+
+		// If no specific routing results, limit to public content
+		if len(results) == 0 {
+			// Remove private kinds from filter for non-authenticated users
+			if len(filter.Kinds) > 0 {
+				allowed := make([]int, 0, len(filter.Kinds))
+				for _, kind := range filter.Kinds {
+					if !h.router.privateKinds[kind] {
+						allowed = append(allowed, kind)
+					}
+				}
+				filter.Kinds = allowed
+			}
+			return
+		}
+
+		// For authenticated users querying their own boxes, allow all
+		for _, result := range results {
+			if result.OwnerPubkey == authedPubkey {
+				return // User querying own boxes - no filter modification needed
+			}
+		}
+
+		// For queries targeting other users' boxes, remove private kinds
+		if len(filter.Kinds) > 0 {
+			allowed := make([]int, 0, len(filter.Kinds))
+			for _, kind := range filter.Kinds {
+				if !h.router.privateKinds[kind] {
+					allowed = append(allowed, kind)
+				}
+			}
+			filter.Kinds = allowed
+		}
+	}
+}
+
+// OnEventSaved logs per-user routing for monitoring
+func (h *MultiUserHandler) OnEventSaved() func(context.Context, *nostr.Event) {
+	return func(ctx context.Context, event *nostr.Event) {
+		if !h.config.Enabled {
+			return
+		}
+
+		authedPubkey := khatru.GetAuthed(ctx)
+		result := h.router.RouteEventForUser(ctx, event, authedPubkey)
+
+		if result.OwnerPubkey != "" {
+			log.Printf("HAVEN[multi]: stored event %s in %s box for user %s",
+				truncateID(event.ID), result.Box, truncateID(result.OwnerPubkey))
+		} else {
+			log.Printf("HAVEN[multi]: stored event %s in %s box (community)",
+				truncateID(event.ID), result.Box)
+		}
+	}
+}
+
+// MultiUserSystem holds all per-user HAVEN components
+type MultiUserSystem struct {
+	Handler         *MultiUserHandler
+	BlastrManager   *BlastrManager
+	ImporterManager *ImporterManager
+}
+
+// RegisterMultiUserHandlers registers per-user HAVEN handlers with the relay
+func RegisterMultiUserHandlers(relay *khatru.Relay, cfg *Config, multiCfg *MultiUserHandlerConfig) *MultiUserSystem {
+	metrics := GetMetrics()
+
+	if cfg == nil || !cfg.Enabled {
+		log.Println("HAVEN[multi]: disabled")
+		metrics.SetHavenEnabled(false)
+		return nil
+	}
+
+	if multiCfg == nil || multiCfg.MemberStore == nil {
+		log.Println("HAVEN[multi]: disabled (no member store)")
+		metrics.SetHavenEnabled(false)
+		return nil
+	}
+
+	handler := NewMultiUserHandler(cfg, multiCfg)
+
+	// Register event rejection handler
+	relay.RejectEvent = append(relay.RejectEvent, handler.RejectEvent())
+
+	// Register filter rejection handler
+	relay.RejectFilter = append(relay.RejectFilter, handler.RejectFilter())
+
+	// Register filter overwrite handler
+	relay.OverwriteFilter = append(relay.OverwriteFilter, handler.OverwriteFilter())
+
+	// Register event saved handler for logging
+	relay.OnEventSaved = append(relay.OnEventSaved, handler.OnEventSaved())
+
+	// Set metrics
+	metrics.SetHavenEnabled(true)
+
+	system := &MultiUserSystem{
+		Handler:         handler,
+		BlastrManager:   multiCfg.BlastrManager,
+		ImporterManager: multiCfg.ImporterManager,
+	}
+
+	log.Println("HAVEN[multi]: per-user routing enabled")
+	log.Println("HAVEN[multi]: boxes - private (owner), chat (auth), inbox (public write), outbox (public read)")
+
+	return system
+}
+
+// SetEventLookup sets the event lookup interface for e-tag routing
+func (s *MultiUserSystem) SetEventLookup(lookup EventLookup) {
+	if s == nil || s.Handler == nil {
+		return
+	}
+	s.Handler.SetEventLookup(lookup)
+}
+
+// Stop gracefully shuts down per-user HAVEN components
+func (s *MultiUserSystem) Stop() {
+	if s == nil {
+		return
+	}
+	if s.BlastrManager != nil {
+		s.BlastrManager.Stop()
+	}
+	if s.ImporterManager != nil {
+		s.ImporterManager.Stop()
+	}
+}

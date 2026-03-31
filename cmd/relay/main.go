@@ -69,6 +69,21 @@ func (a *eventLookupAdapter) GetEventByID(ctx context.Context, id string) (*nost
 	return nil, nil // Event not found
 }
 
+// wotUserFilterAdapter adapts wot.UserFilter to haven.WoTUserFilter
+type wotUserFilterAdapter struct {
+	filter *wot.UserFilter
+}
+
+// ShouldAllowToInbox implements haven.WoTUserFilter
+func (a *wotUserFilterAdapter) ShouldAllowToInbox(ctx context.Context, event *nostr.Event, recipientPubkey string) haven.WoTFilterResult {
+	result := a.filter.ShouldAllowToInbox(ctx, event, recipientPubkey)
+	return haven.WoTFilterResult{
+		Allowed: result.Allowed,
+		Reason:  result.Reason,
+		Source:  string(result.Source),
+	}
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -332,10 +347,107 @@ func main() {
 		}
 	}
 
-	// Initialize HAVEN-style box routing (if enabled)
+	// Initialize HAVEN-style box routing
+	// Two modes: single-owner (legacy) or multi-user (per-user boxes)
 	var havenSystem *haven.HavenSystem
+	var havenMultiSystem *haven.MultiUserSystem
 	var havenCfg *haven.Config
-	if cfg.HavenEnabled && cfg.HavenOwnerPubkey != "" {
+
+	if cfg.HavenMultiUserEnabled {
+		// Multi-user mode: per-user HAVEN boxes with shared worker pools
+		log.Println("HAVEN: initializing multi-user mode")
+
+		// Initialize membership store (required for tier lookups)
+		memberStore := membership.NewStore(rawDB)
+		if err := memberStore.InitSchema(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize membership store: %v", err)
+		}
+
+		// Initialize HAVEN user settings store
+		havenUserSettings := haven.NewUserSettingsStore(rawDB)
+		if err := havenUserSettings.Init(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize HAVEN user settings: %v", err)
+		}
+
+		// Initialize WoT user settings store
+		wotUserSettings := wot.NewUserSettingsStore(rawDB)
+		if err := wotUserSettings.Init(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize WoT user settings: %v", err)
+		}
+
+		// Initialize B2B organization store
+		orgStore := haven.NewOrgStore(rawDB)
+		if err := orgStore.Init(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize organization store: %v", err)
+		}
+		log.Println("B2B organization store enabled")
+
+		// Initialize BlastrManager with shared worker pool
+		blastrCfg := haven.DefaultBlastrManagerConfig()
+		blastrManager := haven.NewBlastrManager(blastrCfg, memberStore, havenUserSettings)
+		blastrManager.Start()
+		defer blastrManager.Stop()
+		log.Printf("HAVEN BlastrManager: %d workers for per-user broadcasting", blastrCfg.WorkerCount)
+
+		// Initialize ImporterManager with scheduler and shared worker pool
+		importerCfg := haven.DefaultImporterManagerConfig()
+		importerManager := haven.NewImporterManager(importerCfg, memberStore, havenUserSettings)
+		importerManager.SetStoreFunc(func(ctx context.Context, event *nostr.Event, userPubkey string) error {
+			// Store event in user's inbox (uses standard save path)
+			return db.SaveEvent(ctx, event)
+		})
+		importerManager.Start()
+		defer importerManager.Stop()
+		log.Printf("HAVEN ImporterManager: %d workers, polling every %v", importerCfg.WorkerCount, importerCfg.PollInterval)
+
+		// Register HAVEN settings watcher (NIP-78)
+		havenSettingsWatcher := haven.NewHavenSettingsWatcher(havenUserSettings)
+		r.OnEventSaved = append(r.OnEventSaved, havenSettingsWatcher.OnEventSaved())
+		log.Println("HAVEN settings watcher enabled (NIP-78)")
+
+		// Register WoT settings watcher (NIP-78)
+		wotSettingsWatcher := wot.NewSettingsWatcher(wotUserSettings)
+		r.OnEventSaved = append(r.OnEventSaved, wotSettingsWatcher.OnEventSaved())
+		log.Println("WoT settings watcher enabled (NIP-78)")
+
+		// Build handler config for multi-user mode
+		havenCfg = &haven.Config{
+			Enabled:               true,
+			OwnerPubkey:           "", // No single owner in multi-user mode
+			PrivateKinds:          cfg.HavenPrivateKinds,
+			AllowPublicOutboxRead: cfg.HavenAllowPublicOutboxRead,
+			AllowPublicInboxWrite: cfg.HavenAllowPublicInboxWrite,
+			RequireAuthForChat:    cfg.HavenRequireAuthForChat,
+			RequireAuthForPrivate: cfg.HavenRequireAuthForPrivate,
+		}
+
+		// Create per-user WoT filter (uses the wotUserSettings store)
+		// Wrapped in adapter to convert wot.FilterResult to haven.WoTFilterResult
+		wotUserFilter := &wotUserFilterAdapter{
+			filter: wot.NewUserFilter(wotUserSettings, nil), // nil for relay handler - relay WoT runs separately
+		}
+
+		multiHandlerCfg := &haven.MultiUserHandlerConfig{
+			MemberStore:       memberStore,
+			UserSettingsStore: havenUserSettings,
+			BlastrManager:     blastrManager,
+			ImporterManager:   importerManager,
+			WoTUserFilter:     wotUserFilter,
+		}
+
+		// Register per-user HAVEN handlers
+		havenMultiSystem = haven.RegisterMultiUserHandlers(r, havenCfg, multiHandlerCfg)
+		if havenMultiSystem != nil {
+			defer havenMultiSystem.Stop()
+			// Set up E-tag routing for reactions/reposts
+			havenMultiSystem.SetEventLookup(&eventLookupAdapter{db: db})
+			log.Println("HAVEN[multi] E-tag routing enabled for reactions/reposts")
+		}
+
+		log.Println("Per-user HAVEN enabled (multi-tenant mode)")
+
+	} else if cfg.HavenEnabled && cfg.HavenOwnerPubkey != "" {
+		// Single-owner mode: legacy HAVEN routing
 		havenCfg = &haven.Config{
 			Enabled:               true,
 			OwnerPubkey:           cfg.HavenOwnerPubkey,
@@ -369,71 +481,8 @@ func main() {
 		}
 	}
 
-	// Initialize per-user HAVEN (multi-tenant mode with shared worker pools)
-	var havenUserSettings *haven.UserSettingsStore
-	var wotUserSettings *wot.UserSettingsStore
-	var orgStore *haven.OrgStore
-	var blastrManager *haven.BlastrManager
-	var importerManager *haven.ImporterManager
-	if cfg.HavenMultiUserEnabled {
-		// Initialize membership store (required for tier lookups)
-		memberStore := membership.NewStore(rawDB)
-		if err := memberStore.InitSchema(context.Background()); err != nil {
-			log.Fatalf("Failed to initialize membership store: %v", err)
-		}
-
-		// Initialize HAVEN user settings store
-		havenUserSettings = haven.NewUserSettingsStore(rawDB)
-		if err := havenUserSettings.Init(context.Background()); err != nil {
-			log.Fatalf("Failed to initialize HAVEN user settings: %v", err)
-		}
-
-		// Initialize WoT user settings store
-		wotUserSettings = wot.NewUserSettingsStore(rawDB)
-		if err := wotUserSettings.Init(context.Background()); err != nil {
-			log.Fatalf("Failed to initialize WoT user settings: %v", err)
-		}
-
-		// Initialize B2B organization store
-		orgStore = haven.NewOrgStore(rawDB)
-		if err := orgStore.Init(context.Background()); err != nil {
-			log.Fatalf("Failed to initialize organization store: %v", err)
-		}
-		log.Println("B2B organization store enabled")
-
-		// Initialize BlastrManager with shared worker pool
-		blastrCfg := haven.DefaultBlastrManagerConfig()
-		blastrManager = haven.NewBlastrManager(blastrCfg, memberStore, havenUserSettings)
-		r.OnEventSaved = append(r.OnEventSaved, blastrManager.OnEventSaved())
-		blastrManager.Start()
-		defer blastrManager.Stop()
-		log.Printf("HAVEN BlastrManager: %d workers for per-user broadcasting", blastrCfg.WorkerCount)
-
-		// Initialize ImporterManager with scheduler and shared worker pool
-		importerCfg := haven.DefaultImporterManagerConfig()
-		importerManager = haven.NewImporterManager(importerCfg, memberStore, havenUserSettings)
-		importerManager.SetStoreFunc(func(ctx context.Context, event *nostr.Event, userPubkey string) error {
-			// Store event in user's inbox (uses standard save path)
-			return db.SaveEvent(ctx, event)
-		})
-		importerManager.Start()
-		defer importerManager.Stop()
-		log.Printf("HAVEN ImporterManager: %d workers, polling every %v", importerCfg.WorkerCount, importerCfg.PollInterval)
-
-		// Register HAVEN settings watcher (NIP-78)
-		havenSettingsWatcher := haven.NewHavenSettingsWatcher(havenUserSettings)
-		r.OnEventSaved = append(r.OnEventSaved, havenSettingsWatcher.OnEventSaved())
-		log.Println("HAVEN settings watcher enabled (NIP-78)")
-
-		// Register WoT settings watcher (NIP-78)
-		wotSettingsWatcher := wot.NewSettingsWatcher(wotUserSettings)
-		r.OnEventSaved = append(r.OnEventSaved, wotSettingsWatcher.OnEventSaved())
-		log.Println("WoT settings watcher enabled (NIP-78)")
-
-		log.Println("Per-user HAVEN enabled (multi-tenant mode)")
-	}
-	// Suppress unused variable warnings (available for future integration)
-	_, _, _, _, _ = havenUserSettings, wotUserSettings, orgStore, blastrManager, importerManager
+	// Suppress unused variable warning for single-owner system (used in defer)
+	_ = havenSystem
 
 	// Initialize NIP-29 relay-based groups (if enabled)
 	if cfg.GroupsEnabled {

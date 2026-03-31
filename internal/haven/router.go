@@ -566,6 +566,20 @@ func (r *Router) RouteFilterForUser(ctx context.Context, filter nostr.Filter, au
 
 // CanAccessUserBox checks if a pubkey can access another user's box
 func (r *Router) CanAccessUserBox(ctx context.Context, box Box, requesterPubkey, ownerPubkey string, isWrite bool) bool {
+	// If no owner specified (community event or unknown routing), use default policies
+	if ownerPubkey == "" {
+		switch box {
+		case BoxOutbox, BoxPrivate:
+			return false // Can't write to unowned outbox/private
+		case BoxInbox:
+			return isWrite // Can write to community inbox, can't read
+		case BoxChat:
+			return requesterPubkey != "" // Auth required for chat
+		default:
+			return false
+		}
+	}
+
 	// Owner always has access
 	if requesterPubkey == ownerPubkey {
 		return true
