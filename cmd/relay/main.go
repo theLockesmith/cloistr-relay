@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/fiatjaf/eventstore/postgresql"
+	"github.com/fiatjaf/khatru"
+	"github.com/fiatjaf/relay29"
 	"github.com/nbd-wtf/go-nostr"
 
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/admin"
@@ -21,7 +23,6 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/eventcache"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/giftwrap"
-	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/groups"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
@@ -43,6 +44,20 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/zaps"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/web"
 )
+
+// relay29Wrapper adapts khatru.Relay to relay29's expected interface
+// relay29 expects BroadcastEvent to return nothing, but khatru returns int
+type relay29Wrapper struct {
+	*khatru.Relay
+}
+
+func (w *relay29Wrapper) BroadcastEvent(evt *nostr.Event) {
+	w.Relay.BroadcastEvent(evt) // ignore return value
+}
+
+func (w *relay29Wrapper) AddEvent(ctx context.Context, evt *nostr.Event) (skipBroadcast bool, writeError error) {
+	return w.Relay.AddEvent(ctx, evt)
+}
 
 // eventLookupAdapter implements haven.EventLookup using the PostgreSQL backend
 type eventLookupAdapter struct {
@@ -82,6 +97,25 @@ func (a *wotUserFilterAdapter) ShouldAllowToInbox(ctx context.Context, event *no
 		Reason:  result.Reason,
 		Source:  string(result.Source),
 	}
+}
+
+// tierCounterAdapter adapts membership.Store to haven.TierCounter
+type tierCounterAdapter struct {
+	store *membership.Store
+}
+
+// CountMembersByTier implements haven.TierCounter
+func (a *tierCounterAdapter) CountMembersByTier() (map[string]int, error) {
+	ctx := context.Background()
+	counts, err := a.store.CountMembersByTier(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]int)
+	for tier, count := range counts {
+		result[string(tier)] = count
+	}
+	return result, nil
 }
 
 func main() {
@@ -444,6 +478,12 @@ func main() {
 			log.Println("HAVEN[multi] E-tag routing enabled for reactions/reposts")
 		}
 
+		// Start metrics collector for tier distribution
+		metricsCollector := haven.NewMetricsCollector(&tierCounterAdapter{store: memberStore}, 60*time.Second)
+		metricsCollector.Start()
+		defer metricsCollector.Stop()
+		log.Println("HAVEN metrics collector started (tier distribution every 60s)")
+
 		log.Println("Per-user HAVEN enabled (multi-tenant mode)")
 
 	} else if cfg.HavenEnabled && cfg.HavenOwnerPubkey != "" {
@@ -484,24 +524,56 @@ func main() {
 	// Suppress unused variable warning for single-owner system (used in defer)
 	_ = havenSystem
 
-	// Initialize NIP-29 relay-based groups (if enabled)
+	// Initialize NIP-29 relay-based groups using relay29 (if enabled)
 	if cfg.GroupsEnabled {
-		groupsCfg := &groups.Config{
-			Enabled:                  true,
-			RelayURL:                 cfg.GroupsRelayURL,
-			AdminPubkeys:             cfg.GroupsAdminPubkeys,
-			AllowPublicGroupCreation: cfg.GroupsAllowPublicCreation,
-			MaxGroupsPerUser:         cfg.GroupsMaxGroupsPerUser,
-			DefaultPrivacy:           groups.Privacy(cfg.GroupsDefaultPrivacy),
-			InviteCodeExpiry:         time.Duration(cfg.GroupsInviteCodeExpiryHours) * time.Hour,
-		}
-		groupsStore, err := groups.NewStore(rawDB, groupsCfg)
-		if err != nil {
-			log.Printf("Warning: Failed to initialize NIP-29 groups store: %v", err)
+		if cfg.GroupsSecretKey == "" {
+			log.Printf("Warning: NIP-29 groups enabled but GROUPS_SECRET_KEY not set - groups will not work properly")
 		} else {
-			groupsHandler := groups.NewHandler(groupsStore, groupsCfg)
-			groupsHandler.RegisterHandlers(r)
-			log.Printf("NIP-29 relay-based groups enabled (max %d per user)", cfg.GroupsMaxGroupsPerUser)
+			// Initialize relay29 state
+			groupsState := relay29.New(relay29.Options{
+				Domain:    strings.TrimPrefix(strings.TrimPrefix(cfg.GroupsRelayURL, "wss://"), "ws://"),
+				DB:        db,
+				SecretKey: cfg.GroupsSecretKey,
+			})
+
+			// Configure state options
+			groupsState.AllowPrivateGroups = cfg.GroupsAllowPrivate
+
+			// Attach relay29 state to our existing relay (using wrapper for interface compatibility)
+			groupsState.Relay = &relay29Wrapper{r}
+			groupsState.GetAuthed = khatru.GetAuthed
+
+			// Add relay29 handlers to the relay
+			// Note: We already have StoreEvent, QueryEvents, DeleteEvent from relay.NewRelayWithOptions
+			// Add relay29's query handlers for group-specific queries
+			r.QueryEvents = append(r.QueryEvents,
+				groupsState.NormalEventQuery,
+				groupsState.MetadataQueryHandler,
+				groupsState.AdminsQueryHandler,
+				groupsState.MembersQueryHandler,
+				groupsState.RolesQueryHandler,
+			)
+			r.RejectFilter = append(r.RejectFilter,
+				groupsState.RequireKindAndSingleGroupIDOrSpecificEventReference,
+			)
+			r.RejectEvent = append(r.RejectEvent,
+				groupsState.RequireHTagForExistingGroup,
+				groupsState.RequireModerationEventsToBeRecent,
+				groupsState.RestrictWritesBasedOnGroupRules,
+				groupsState.RestrictInvalidModerationActions,
+				groupsState.PreventWritingOfEventsJustDeleted,
+				groupsState.CheckPreviousTag,
+			)
+			r.OnEventSaved = append(r.OnEventSaved,
+				groupsState.ApplyModerationAction,
+				groupsState.ReactToJoinRequest,
+				groupsState.ReactToLeaveRequest,
+				groupsState.AddToPreviousChecking,
+			)
+
+			// Derive public key for logging
+			pubkey, _ := nostr.GetPublicKey(cfg.GroupsSecretKey)
+			log.Printf("NIP-29 relay-based groups enabled (relay29, pubkey: %s...)", pubkey[:8])
 		}
 	}
 

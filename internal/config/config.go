@@ -124,14 +124,16 @@ type Config struct {
 	AlgoEngagementWeight float64 // Weight for engagement score (0-1, default: 0.4)
 	AlgoRecencyWeight    float64 // Weight for recency score (0-1, default: 0.3)
 
-	// NIP-29 Relay-based Groups
+	// NIP-29 Relay-based Groups (powered by relay29)
 	GroupsEnabled               bool     // Enable NIP-29 groups support
+	GroupsSecretKey             string   // Relay secret key for signing group metadata (hex)
 	GroupsRelayURL              string   // Relay URL for groups (defaults to RelayURL)
 	GroupsAdminPubkeys          []string // Pubkeys that can always create groups
 	GroupsAllowPublicCreation   bool     // Allow any authenticated user to create groups
 	GroupsMaxGroupsPerUser      int      // Maximum groups a user can create (0 = unlimited)
 	GroupsDefaultPrivacy        string   // Default privacy: open, restricted, private, hidden, closed
 	GroupsInviteCodeExpiryHours int      // Default invite code expiry in hours (default: 168 = 1 week)
+	GroupsAllowPrivate          bool     // Allow private groups (default: true)
 }
 
 // Load reads configuration from environment variables
@@ -561,6 +563,14 @@ func Load() (*Config, error) {
 		if v, err := strconv.Atoi(groupsExpiry); err == nil && v > 0 {
 			cfg.GroupsInviteCodeExpiryHours = v
 		}
+	}
+	if groupsSecretKey := os.Getenv("GROUPS_SECRET_KEY"); groupsSecretKey != "" {
+		cfg.GroupsSecretKey = groupsSecretKey
+	}
+	// Default to allowing private groups
+	cfg.GroupsAllowPrivate = true
+	if groupsAllowPrivate := os.Getenv("GROUPS_ALLOW_PRIVATE"); groupsAllowPrivate == "false" || groupsAllowPrivate == "0" {
+		cfg.GroupsAllowPrivate = false
 	}
 
 	return cfg, nil
