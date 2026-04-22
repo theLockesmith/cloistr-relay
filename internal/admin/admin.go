@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
-	"git.coldforge.xyz/coldforge/cloistr-relay/web"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/web"
 	"github.com/redis/go-redis/v9"
 )
 

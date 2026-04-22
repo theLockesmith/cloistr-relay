@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/web"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/web"
 )
 
 // PageData is the base data structure for full page renders

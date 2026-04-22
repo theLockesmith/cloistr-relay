@@ -10,7 +10,7 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/wot"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/wot"
 )
 
 // TrustLevelGetter is an interface for getting trust levels

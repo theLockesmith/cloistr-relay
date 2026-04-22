@@ -7,7 +7,7 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/wot"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/wot"
 )
 
 // mockTrustGetter implements TrustLevelGetter for testing

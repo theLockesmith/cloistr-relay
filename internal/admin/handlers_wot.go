@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/wot"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/wot"
 )
 
 // WoTVisualizationData holds data for the WoT visualization page

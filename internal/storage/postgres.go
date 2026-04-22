@@ -8,7 +8,7 @@ import (
 	"github.com/fiatjaf/eventstore/postgresql"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 )
 
 // NewPostgresBackend creates and initializes a PostgreSQL eventstore backend

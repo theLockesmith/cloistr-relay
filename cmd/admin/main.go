@@ -11,9 +11,9 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/admin"
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/management"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/admin"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
 )
 
 func main() {

@@ -13,7 +13,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/algo"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/algo"
 )
 
 // EventQuerier is an interface for querying events from the database

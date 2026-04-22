@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 )
 
 // HavenPageData holds data for the HAVEN admin page

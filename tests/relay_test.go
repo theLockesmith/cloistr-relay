@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/auth"
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/config"
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/handlers"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/auth"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
 
 	"github.com/nbd-wtf/go-nostr"
 )

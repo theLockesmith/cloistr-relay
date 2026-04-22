@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-relay/internal/haven"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 )
 
 // Store handles membership persistence
