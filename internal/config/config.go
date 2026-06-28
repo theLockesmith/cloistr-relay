@@ -134,6 +134,18 @@ type Config struct {
 	GroupsDefaultPrivacy        string   // Default privacy: open, restricted, private, hidden, closed
 	GroupsInviteCodeExpiryHours int      // Default invite code expiry in hours (default: 168 = 1 week)
 	GroupsAllowPrivate          bool     // Allow private groups (default: true)
+
+	// Lightning Payments & Tier Monetization (self-hosted LNbits)
+	PaymentsEnabled       bool   // Master switch for the payment subsystem
+	LNbitsURL             string // Base URL of self-hosted LNbits
+	LNbitsInvoiceKey      string // Invoice/read key (X-Api-Key header)
+	LNbitsWebhookSecret   string // Verifies inbound settle webhooks
+	PaymentsPublicURL     string // Public base URL so LNbits can reach /payments/webhook
+	RelaySecretKey        string // Relay signing key for NIP-43 kind 8000 notifications (hex)
+	TierHybridPriceSats   int64  // Price per period for hybrid tier (0 = not purchasable)
+	TierPremiumPriceSats  int64  // Price per period for premium tier (0 = not purchasable)
+	TierEnterprisePriceSats int64 // Price per period for enterprise tier (0 = manual/B2B only)
+	TierPeriodDays        int    // Default subscription period in days (default: 30)
 }
 
 // Load reads configuration from environment variables
@@ -571,6 +583,47 @@ func Load() (*Config, error) {
 	cfg.GroupsAllowPrivate = true
 	if groupsAllowPrivate := os.Getenv("GROUPS_ALLOW_PRIVATE"); groupsAllowPrivate == "false" || groupsAllowPrivate == "0" {
 		cfg.GroupsAllowPrivate = false
+	}
+
+	// Lightning Payments & Tier Monetization
+	cfg.TierPeriodDays = 30
+	if paymentsEnabled := os.Getenv("PAYMENTS_ENABLED"); paymentsEnabled == "true" || paymentsEnabled == "1" {
+		cfg.PaymentsEnabled = true
+	}
+	if lnbitsURL := os.Getenv("LNBITS_URL"); lnbitsURL != "" {
+		cfg.LNbitsURL = lnbitsURL
+	}
+	if lnbitsKey := os.Getenv("LNBITS_INVOICE_KEY"); lnbitsKey != "" {
+		cfg.LNbitsInvoiceKey = lnbitsKey
+	}
+	if lnbitsSecret := os.Getenv("LNBITS_WEBHOOK_SECRET"); lnbitsSecret != "" {
+		cfg.LNbitsWebhookSecret = lnbitsSecret
+	}
+	if paymentsURL := os.Getenv("PAYMENTS_PUBLIC_URL"); paymentsURL != "" {
+		cfg.PaymentsPublicURL = paymentsURL
+	}
+	if relaySecret := os.Getenv("RELAY_SECRET_KEY"); relaySecret != "" {
+		cfg.RelaySecretKey = relaySecret
+	}
+	if v := os.Getenv("TIER_HYBRID_PRICE_SATS"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			cfg.TierHybridPriceSats = n
+		}
+	}
+	if v := os.Getenv("TIER_PREMIUM_PRICE_SATS"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			cfg.TierPremiumPriceSats = n
+		}
+	}
+	if v := os.Getenv("TIER_ENTERPRISE_PRICE_SATS"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			cfg.TierEnterprisePriceSats = n
+		}
+	}
+	if v := os.Getenv("TIER_PERIOD_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.TierPeriodDays = n
+		}
 	}
 
 	return cfg, nil
