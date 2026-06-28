@@ -2,6 +2,7 @@ package haven
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -247,4 +248,100 @@ func TestMetrics_BoxEventsStored(t *testing.T) {
 	if count := testutil.ToFloat64(havenBoxEventsStored.WithLabelValues("outbox")); count != 1000 {
 		t.Errorf("Expected outbox events = 1000, got %f", count)
 	}
+}
+
+func TestMetrics_TierDistribution(t *testing.T) {
+	m := NewMetrics()
+
+	m.SetMembersByTier("free", 100)
+	m.SetMembersByTier("hybrid", 50)
+	m.SetMembersByTier("premium", 25)
+	m.SetMembersByTier("enterprise", 5)
+
+	if count := testutil.ToFloat64(havenMembersByTier.WithLabelValues("free")); count != 100 {
+		t.Errorf("Expected free tier = 100, got %f", count)
+	}
+	if count := testutil.ToFloat64(havenMembersByTier.WithLabelValues("premium")); count != 25 {
+		t.Errorf("Expected premium tier = 25, got %f", count)
+	}
+}
+
+func TestMetrics_WoTFiltering(t *testing.T) {
+	m := NewMetrics()
+
+	m.RecordWoTBlock("user_block")
+	m.RecordWoTBlock("user_block")
+	m.RecordWoTBlock("relay_block")
+	m.RecordWoTAllow("user_trust")
+	m.RecordWoTAllow("default")
+	m.RecordWoTAllow("default")
+	m.RecordWoTAllow("default")
+
+	if count := testutil.ToFloat64(havenWoTBlocksTotal.WithLabelValues("user_block")); count < 2 {
+		t.Errorf("Expected user_block >= 2, got %f", count)
+	}
+	if count := testutil.ToFloat64(havenWoTBlocksTotal.WithLabelValues("relay_block")); count < 1 {
+		t.Errorf("Expected relay_block >= 1, got %f", count)
+	}
+	if count := testutil.ToFloat64(havenWoTAllowsTotal.WithLabelValues("user_trust")); count < 1 {
+		t.Errorf("Expected user_trust allows >= 1, got %f", count)
+	}
+	if count := testutil.ToFloat64(havenWoTAllowsTotal.WithLabelValues("default")); count < 3 {
+		t.Errorf("Expected default allows >= 3, got %f", count)
+	}
+}
+
+func TestMetrics_WorkerProcessing(t *testing.T) {
+	m := NewMetrics()
+
+	// Record some processing times
+	m.ObserveWorkerProcessing("blastr", 0.1)
+	m.ObserveWorkerProcessing("blastr", 0.2)
+	m.ObserveWorkerProcessing("importer", 1.5)
+	m.ObserveWorkerProcessing("importer", 2.0)
+
+	// Histograms are harder to test directly, but we can at least verify no panics
+	// and that the histogram has observations
+	if count := testutil.CollectAndCount(havenWorkerProcessingSeconds); count == 0 {
+		t.Error("Expected worker processing histogram to have observations")
+	}
+}
+
+// mockTierCounter implements TierCounter for testing
+type mockTierCounter struct {
+	counts map[string]int
+	err    error
+}
+
+func (m *mockTierCounter) CountMembersByTier() (map[string]int, error) {
+	return m.counts, m.err
+}
+
+func TestMetricsCollector(t *testing.T) {
+	// Create a mock tier counter
+	mock := &mockTierCounter{
+		counts: map[string]int{
+			"free":       100,
+			"hybrid":     20,
+			"premium":    10,
+			"enterprise": 5,
+		},
+	}
+
+	// Create collector with short interval for testing
+	collector := NewMetricsCollector(mock, 100*time.Millisecond)
+	collector.Start()
+
+	// Wait for at least one collection cycle
+	time.Sleep(150 * time.Millisecond)
+
+	// Check that metrics were collected
+	if count := testutil.ToFloat64(havenMembersByTier.WithLabelValues("free")); count != 100 {
+		t.Errorf("Expected free tier = 100, got %f", count)
+	}
+	if count := testutil.ToFloat64(havenMembersByTier.WithLabelValues("enterprise")); count != 5 {
+		t.Errorf("Expected enterprise tier = 5, got %f", count)
+	}
+
+	collector.Stop()
 }

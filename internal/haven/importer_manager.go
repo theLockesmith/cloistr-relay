@@ -233,7 +233,9 @@ func (m *ImporterManager) worker(id int) {
 			if !ok {
 				return
 			}
+			start := time.Now()
 			m.processJob(job)
+			m.metrics.ObserveWorkerProcessing("importer", time.Since(start).Seconds())
 		}
 	}
 }

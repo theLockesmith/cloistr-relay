@@ -2,6 +2,8 @@ package haven
 
 import (
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -206,6 +208,30 @@ var (
 		Name: "nostr_relay_haven_box_events_stored",
 		Help: "Number of events stored in each HAVEN box (approximate)",
 	}, []string{"box"})
+
+	// Tier distribution metrics
+	havenMembersByTier = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "nostr_relay_haven_members_by_tier",
+		Help: "Number of members by tier",
+	}, []string{"tier"})
+
+	// User WoT filtering metrics
+	havenWoTBlocksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_wot_blocks_total",
+		Help: "Total number of events blocked by user WoT filtering",
+	}, []string{"source"})
+
+	havenWoTAllowsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "nostr_relay_haven_wot_allows_total",
+		Help: "Total number of events allowed by user WoT filtering",
+	}, []string{"source"})
+
+	// Worker processing duration
+	havenWorkerProcessingSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "nostr_relay_haven_worker_processing_seconds",
+		Help:    "Time spent processing jobs by worker type",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"type"})
 
 	// HAVEN system status
 	havenEnabled = promauto.NewGauge(prometheus.GaugeOpts{
@@ -465,6 +491,26 @@ func (m *Metrics) SetImporterEnabled(enabled bool) {
 	}
 }
 
+// SetMembersByTier sets the count of members for a specific tier
+func (m *Metrics) SetMembersByTier(tier string, count int) {
+	havenMembersByTier.WithLabelValues(tier).Set(float64(count))
+}
+
+// RecordWoTBlock records an event blocked by user WoT filtering
+func (m *Metrics) RecordWoTBlock(source string) {
+	havenWoTBlocksTotal.WithLabelValues(source).Inc()
+}
+
+// RecordWoTAllow records an event allowed by user WoT filtering
+func (m *Metrics) RecordWoTAllow(source string) {
+	havenWoTAllowsTotal.WithLabelValues(source).Inc()
+}
+
+// ObserveWorkerProcessing records the time spent processing a job
+func (m *Metrics) ObserveWorkerProcessing(workerType string, seconds float64) {
+	havenWorkerProcessingSeconds.WithLabelValues(workerType).Observe(seconds)
+}
+
 // categorizeReason extracts a short category from a rejection reason
 // It looks for a colon prefix (e.g., "auth-required: message" -> "auth-required")
 // to keep Prometheus label cardinality low
@@ -500,4 +546,70 @@ var globalMetrics = NewMetrics()
 // GetMetrics returns the global metrics instance
 func GetMetrics() *Metrics {
 	return globalMetrics
+}
+
+// TierCounter provides tier counts for metrics collection
+type TierCounter interface {
+	CountMembersByTier() (map[string]int, error)
+}
+
+// MetricsCollector periodically collects metrics from stores
+type MetricsCollector struct {
+	tierCounter TierCounter
+	interval    time.Duration
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
+}
+
+// NewMetricsCollector creates a new metrics collector
+func NewMetricsCollector(tierCounter TierCounter, interval time.Duration) *MetricsCollector {
+	return &MetricsCollector{
+		tierCounter: tierCounter,
+		interval:    interval,
+		stopCh:      make(chan struct{}),
+	}
+}
+
+// Start begins the periodic metrics collection
+func (c *MetricsCollector) Start() {
+	c.wg.Add(1)
+	go c.run()
+}
+
+// Stop stops the metrics collector
+func (c *MetricsCollector) Stop() {
+	close(c.stopCh)
+	c.wg.Wait()
+}
+
+func (c *MetricsCollector) run() {
+	defer c.wg.Done()
+
+	// Collect immediately on start
+	c.collect()
+
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.collect()
+		case <-c.stopCh:
+			return
+		}
+	}
+}
+
+func (c *MetricsCollector) collect() {
+	if c.tierCounter != nil {
+		counts, err := c.tierCounter.CountMembersByTier()
+		if err == nil {
+			// Set counts for all tiers (including zero for missing ones)
+			for _, tier := range []string{"free", "hybrid", "premium", "enterprise"} {
+				count := counts[tier]
+				globalMetrics.SetMembersByTier(tier, count)
+			}
+		}
+	}
 }

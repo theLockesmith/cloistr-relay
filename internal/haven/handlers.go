@@ -537,10 +537,13 @@ func (h *MultiUserHandler) RejectEvent() func(context.Context, *nostr.Event) (bo
 			if !wotResult.Allowed {
 				log.Printf("HAVEN[multi]: event %s blocked by per-user WoT for %s: %s (source: %s)",
 					truncateID(event.ID), truncateID(result.OwnerPubkey), wotResult.Reason, wotResult.Source)
+				h.metrics.RecordWoTBlock(wotResult.Source)
 				h.metrics.RecordAccessDenied(result.Box, "write", "wot_blocked")
 				h.metrics.RecordEventRejected(result.Box, "wot_blocked")
 				return true, "restricted: blocked by recipient's WoT settings"
 			}
+			// Record WoT allow with source
+			h.metrics.RecordWoTAllow(wotResult.Source)
 		}
 
 		// Verify event author matches authenticated pubkey

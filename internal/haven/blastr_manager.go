@@ -225,7 +225,9 @@ func (m *BlastrManager) worker(id int) {
 			if !ok {
 				return
 			}
+			start := time.Now()
 			m.processJob(job)
+			m.metrics.ObserveWorkerProcessing("blastr", time.Since(start).Seconds())
 		}
 	}
 }

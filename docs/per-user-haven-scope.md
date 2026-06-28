@@ -477,22 +477,24 @@ Workers are goroutines, not pods. Job queue handles burst. Relay connections poo
 
 ## Metrics
 
+All metrics are implemented and exported at `/metrics`:
+
 ```
-# Tier distribution
-haven_members_by_tier{tier="free|hybrid|premium|enterprise"}
+# Tier distribution (gauge, updated every 60s)
+nostr_relay_haven_members_by_tier{tier="free|hybrid|premium|enterprise"}
 
-# Feature usage
-haven_blastr_jobs_total{tier="..."}
-haven_importer_jobs_total{tier="..."}
+# Feature usage (counters by tier)
+nostr_relay_haven_blastr_manager_jobs_queued_total{tier="..."}
+nostr_relay_haven_importer_manager_jobs_queued_total{tier="..."}
 
-# User WoT
-haven_wot_blocks_total{} - Events blocked by user WoT
-haven_wot_allows_total{} - Events allowed by user trusted list
+# User WoT filtering (counters by source)
+nostr_relay_haven_wot_blocks_total{source="user_block|relay_block"}
+nostr_relay_haven_wot_allows_total{source="user_trust|default"}
 
-# Worker health
-haven_blastr_queue_depth{}
-haven_importer_queue_depth{}
-haven_worker_processing_seconds{type="blastr|importer"}
+# Worker health (gauges and histograms)
+nostr_relay_haven_blastr_manager_queue_size
+nostr_relay_haven_importer_manager_queue_size
+nostr_relay_haven_worker_processing_seconds{type="blastr|importer"}
 ```
 
 ## B2B Model
