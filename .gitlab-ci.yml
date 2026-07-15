@@ -16,13 +16,12 @@ include:
 
 test:unit:
   stage: test
-  image: golang:1.25-alpine
+  image: golang:1.25
   <<: *go-cache
   variables:
     GOPATH: ${CI_PROJECT_DIR}/.go
     CGO_ENABLED: "1"
   before_script:
-    - for i in 1 2 3 4 5; do apk add --no-cache git ca-certificates build-base && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
     - mkdir -p .go
   script:
     - go mod tidy
