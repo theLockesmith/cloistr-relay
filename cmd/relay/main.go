@@ -649,6 +649,13 @@ func main() {
 		log.Println("NIP-86 management API enabled at /management")
 	}
 
+	// Admin REST API endpoints (read screens for the React admin console)
+	if mgmtStore != nil && len(cfg.AdminPubkeys) > 0 {
+		apiHandler := management.NewAPIHandler(mgmtStore, cfg.AdminPubkeys)
+		apiHandler.SetHavenSystem(havenSystem, havenCfg)
+		apiHandler.RegisterRoutes(mux)
+	}
+
 	// Profiling endpoints (for performance debugging)
 	if cfg.PProfEnabled {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
