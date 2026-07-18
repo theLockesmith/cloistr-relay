@@ -22,6 +22,8 @@ func (h *MethodHandler) Dispatch(method string, params []json.RawMessage) (inter
 		return h.SupportedMethods()
 	case "banpubkey":
 		return h.BanPubkey(params)
+	case "unbanpubkey":
+		return h.UnbanPubkey(params)
 	case "listbannedpubkeys":
 		return h.ListBannedPubkeys(params)
 	case "allowpubkey":
@@ -34,6 +36,8 @@ func (h *MethodHandler) Dispatch(method string, params []json.RawMessage) (inter
 		return h.AllowEvent(params)
 	case "banevent":
 		return h.BanEvent(params)
+	case "unbanevent":
+		return h.UnbanEvent(params)
 	case "listbannedevents":
 		return h.ListBannedEvents(params)
 	case "changerelayname":
@@ -82,6 +86,24 @@ func (h *MethodHandler) BanPubkey(params []json.RawMessage) (interface{}, error)
 
 	if err := h.store.BanPubkey(pubkey, reason); err != nil {
 		return nil, fmt.Errorf("failed to ban pubkey: %w", err)
+	}
+
+	return true, nil
+}
+
+// UnbanPubkey removes a pubkey from the banned list
+func (h *MethodHandler) UnbanPubkey(params []json.RawMessage) (interface{}, error) {
+	if len(params) < 1 {
+		return nil, fmt.Errorf("missing pubkey parameter")
+	}
+
+	var pubkey string
+	if err := json.Unmarshal(params[0], &pubkey); err != nil {
+		return nil, fmt.Errorf("invalid pubkey parameter: %w", err)
+	}
+
+	if err := h.store.UnbanPubkey(pubkey); err != nil {
+		return nil, fmt.Errorf("failed to unban pubkey: %w", err)
 	}
 
 	return true, nil
@@ -163,6 +185,24 @@ func (h *MethodHandler) BanEvent(params []json.RawMessage) (interface{}, error) 
 
 	// Also update moderation queue if present
 	_ = h.store.UpdateModerationStatus(eventID, "rejected")
+
+	return true, nil
+}
+
+// UnbanEvent removes an event from the banned list
+func (h *MethodHandler) UnbanEvent(params []json.RawMessage) (interface{}, error) {
+	if len(params) < 1 {
+		return nil, fmt.Errorf("missing event_id parameter")
+	}
+
+	var eventID string
+	if err := json.Unmarshal(params[0], &eventID); err != nil {
+		return nil, fmt.Errorf("invalid event_id parameter: %w", err)
+	}
+
+	if err := h.store.UnbanEvent(eventID); err != nil {
+		return nil, fmt.Errorf("failed to unban event: %w", err)
+	}
 
 	return true, nil
 }

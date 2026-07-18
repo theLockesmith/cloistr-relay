@@ -19,8 +19,8 @@ func TestMethodHandler_SupportedMethods(t *testing.T) {
 	}
 
 	// Verify we have the expected number of methods
-	if len(methods) != 18 {
-		t.Errorf("expected 18 methods, got %d", len(methods))
+	if len(methods) != 20 {
+		t.Errorf("expected 20 methods, got %d", len(methods))
 	}
 
 	// Verify some key methods are present
