@@ -2,6 +2,7 @@ package wot
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -147,11 +148,15 @@ func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool
 		level := h.getTrustLevel(event.PubKey)
 		policy := h.policies[level]
 
-		// Check PoW requirement
+		// Check PoW requirement. The rejection carries the required difficulty so a
+		// client can mine to the exact target and retry (NIP-13 nonce), rather than
+		// guessing. Format matches the global gate (handlers.go) so clients parse one
+		// shape: "pow: ... (got N, need M)".
 		if policy.RequirePoW && policy.MinPoWDifficulty > 0 {
 			difficulty := countLeadingZeroBits(event.ID)
 			if difficulty < policy.MinPoWDifficulty {
-				return true, "pow: low trust requires proof of work"
+				return true, fmt.Sprintf("pow: low trust requires proof of work (got %d, need %d)",
+					difficulty, policy.MinPoWDifficulty)
 			}
 		}
 
