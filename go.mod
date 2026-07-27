@@ -1,6 +1,6 @@
 module git.aegis-hq.xyz/coldforge/cloistr-relay
 
-go 1.25.0
+go 1.26.5
 
 require (
 	github.com/fiatjaf/eventstore v0.17.5
