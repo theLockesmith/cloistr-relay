@@ -36,3 +36,5 @@ go.sum
 
 # Logs
 *.log
+CLAUDE.md
+.claude/
