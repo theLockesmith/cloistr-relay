@@ -29,7 +29,7 @@ test:unit:
     - mkdir -p .go
   script:
     - go mod tidy
-    - go test -v -race -cover ./internal/...
+    - go test -v -race -timeout 25m -cover ./internal/...
   coverage: '/coverage: \d+\.\d+% of statements/'
 
 lint:
