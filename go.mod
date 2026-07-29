@@ -7,7 +7,7 @@ require (
 	github.com/fiatjaf/khatru v0.19.1
 	github.com/fiatjaf/relay29 v0.5.1
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/lib/pq v1.11.1
+	github.com/lib/pq v1.12.3
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.17.3
