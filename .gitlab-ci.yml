@@ -5,6 +5,12 @@ stages:
 include:
   - project: 'coldforge/ci-templates'
     ref: main
+    file: '/templates/cloistr-rules.yml'
+  - project: 'coldforge/ci-templates'
+    ref: main
+    file: '/templates/go-test.yml'
+  - project: 'coldforge/ci-templates'
+    ref: main
     file: '/templates/kaniko-build.yml'
 
 .go-cache: &go-cache
@@ -14,34 +20,7 @@ include:
       - .go/pkg/mod/
     policy: pull-push
 
-test:unit:
-  stage: test
-  image: golang:1.25
-  <<: *go-cache
-  variables:
-    GOPATH: ${CI_PROJECT_DIR}/.go
-    CGO_ENABLED: "1"
-  before_script:
-    - mkdir -p .go
-  script:
-    - go mod tidy
-    - go test -v -race -cover ./internal/...
-  coverage: '/coverage: \d+\.\d+% of statements/'
 
-lint:
-  stage: test
-  image: golang:1.25-alpine
-  <<: *go-cache
-  variables:
-    GOPATH: ${CI_PROJECT_DIR}/.go
-  before_script:
-    - for i in 1 2 3 4 5; do apk add --no-cache git ca-certificates curl && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
-    - mkdir -p .go
-    - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.11.2
-    - go mod tidy
-  script:
-    - ${GOPATH}/bin/golangci-lint run --timeout 5m ./...
-  allow_failure: true
 
 build:relay:
   extends: .kaniko-build
@@ -53,3 +32,11 @@ build:admin:
   variables:
     KANIKO_DOCKERFILE_SUBPATH: "/Dockerfile.admin"
     KANIKO_IMAGE: "$CI_REGISTRY_IMAGE/admin"
+
+test:unit:
+  extends: [.go-test, .cloistr-rules]
+  variables:
+    GO_TEST_PACKAGES: "./internal/..."
+
+lint:
+  extends: [.go-lint, .cloistr-rules]
