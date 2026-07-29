@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
@@ -19,7 +19,7 @@ RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o relay ./cmd/relay
 
 # Test stage (unit tests only - integration tests run externally)
-FROM golang:1.25-alpine AS test
+FROM golang:1.26-alpine AS test
 
 # Install test dependencies
 RUN apk add --no-cache git ca-certificates
