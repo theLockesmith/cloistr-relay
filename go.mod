@@ -3,7 +3,7 @@ module git.aegis-hq.xyz/coldforge/cloistr-relay
 go 1.25.0
 
 require (
-	github.com/fiatjaf/eventstore v0.17.5
+	github.com/fiatjaf/eventstore v0.17.10
 	github.com/fiatjaf/khatru v0.19.1
 	github.com/fiatjaf/relay29 v0.5.1
 	github.com/jmoiron/sqlx v1.4.0
@@ -64,7 +64,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
-	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
