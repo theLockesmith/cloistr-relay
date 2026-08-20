@@ -145,6 +145,25 @@ func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool
 			return false, ""
 		}
 
+		// An author who has AUTHENTICATED (NIP-42) as this very pubkey is not an
+		// unknown. PoW exists to price anonymous spam; it buys nothing against
+		// someone who has already proven they hold the key, and the relay runs
+		// AUTH_POLICY=auth-write, so every write is authenticated anyway.
+		//
+		// Without this, first-party Cloistr data was gated as though it were
+		// spam from a stranger: stash publishes its file and folder metadata as
+		// kind 30078/30079, the relay answered
+		//   "pow: low trust requires proof of work (got 0, need 8)"
+		// and stash hung forever on "Connecting to your account…". Every user
+		// not hand-listed in ALLOWED_PUBKEYS was locked out of the product, which
+		// on a multi-user service is everyone but the operator.
+		//
+		// Anonymous and third-party writes are unaffected and still face the
+		// full trust policy.
+		if authorIsAuthenticated(khatru.GetAuthed(ctx), event.PubKey) {
+			return false, ""
+		}
+
 		level := h.getTrustLevel(event.PubKey)
 		policy := h.policies[level]
 
@@ -279,4 +298,18 @@ func countLeadingZeroBits(hexID string) int {
 		}
 	}
 	return zeroBits
+}
+
+// authorIsAuthenticated reports whether the connection has proven ownership of
+// the key that signed this event.
+//
+// Deliberately requires an EXACT match rather than "any authenticated
+// connection". A client authenticated as one pubkey must not be able to relay
+// unlimited unmined events on behalf of every other pubkey — that would turn
+// one account into an open spam relay.
+//
+// Pure so it can be tested: khatru.GetAuthed reads the authenticated key off an
+// unexported WebSocket context key, which cannot be constructed from a test.
+func authorIsAuthenticated(authedPubkey, eventPubkey string) bool {
+	return authedPubkey != "" && authedPubkey == eventPubkey
 }
