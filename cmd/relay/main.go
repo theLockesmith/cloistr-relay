@@ -263,6 +263,25 @@ func main() {
 
 	// Initialize WoT filtering (if enabled)
 	var wotHandler *wot.Handler
+	// NIP-42 auth MUST be registered BEFORE the WoT trust gate, and
+	// UNCONDITIONALLY — not inside the WoT block, or auth would silently
+	// depend on WoT being enabled.
+	//
+	// khatru runs RejectEvent handlers in REGISTRATION ORDER, and the first to
+	// reject decides the message the client sees. Auth used to be registered
+	// far below WoT, so an unauthenticated client publishing kind 30078 was told
+	//     "pow: low trust requires proof of work (got 0, need 8)"
+	// instead of "auth-required". It never learned it had to authenticate, so it
+	// never did, so the authed-author exemption in internal/wot/trust.go could
+	// never fire. stash hung forever on "Connecting to your account…" because of
+	// exactly this: the client was told to mine when it should have been told to
+	// log in.
+	//
+	// Auth first means the client authenticates and its retry arrives with
+	// khatru.GetAuthed(ctx) populated, so the exemption applies.
+	authCfg := parseAuthConfig(cfg)
+	auth.RegisterAuthHandlers(r, authCfg)
+
 	if cfg.WoTEnabled && cfg.WoTOwnerPubkey != "" {
 		wotStore := wot.NewStore(rawDB, 5*time.Minute)
 		if err := wotStore.Init(); err != nil {
@@ -576,10 +595,6 @@ func main() {
 			log.Printf("NIP-29 relay-based groups enabled (relay29, pubkey: %s...)", pubkey[:8])
 		}
 	}
-
-	// Register NIP-42 authentication handlers
-	authCfg := parseAuthConfig(cfg)
-	auth.RegisterAuthHandlers(r, authCfg)
 
 	// Register Prometheus metrics
 	metrics.RegisterRelayMetrics(r)
