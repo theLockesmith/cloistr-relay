@@ -123,5 +123,18 @@ func RegisterBanHandlers(relay *khatru.Relay, store *Store) {
 		return false, ""
 	})
 
+	// Reject events from pubkeys outside the allowed list (if pubkey restrictions are
+	// enabled). Both write surfaces for that list -- the admin UI's "Allow Pubkey" form
+	// and NIP-86 "allowpubkey" -- have always persisted rows that NOTHING read for
+	// enforcement, while the UI told the operator "When set, only these pubkeys can
+	// publish to the relay". This is that missing read. Empty table means unrestricted;
+	// see IsPubkeyAllowed.
+	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
+		if !store.IsPubkeyAllowed(event.PubKey) {
+			return true, "blocked: pubkey not in allowed list"
+		}
+		return false, ""
+	})
+
 	log.Println("NIP-86 ban checking handlers registered")
 }

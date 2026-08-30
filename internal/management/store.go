@@ -145,10 +145,24 @@ func (s *Store) RemoveAllowedPubkey(pubkey string) error {
 	return err
 }
 
-// IsPubkeyAllowed checks if a pubkey is in the allowed list
+// IsPubkeyAllowed reports whether a pubkey may write, treating the allowed list as
+// a RESTRICTIVE whitelist -- which is what the admin UI promises: "When set, only
+// these pubkeys can publish to the relay" (web/templates/pubkeys.html).
+//
+// "When set" is load-bearing. An EMPTY table means no restriction, so every pubkey
+// is allowed; without that, enabling the gate on an empty list would reject every
+// write and take the relay offline. This mirrors IsKindAllowed exactly, including
+// its behaviour of allowing writes when the count query itself fails, so a database
+// blip degrades to unrestricted rather than to a total write outage.
 func (s *Store) IsPubkeyAllowed(pubkey string) bool {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM management_allowed_pubkeys`).Scan(&count)
+	if err != nil || count == 0 {
+		return true // No restrictions if table is empty
+	}
+
 	var exists bool
-	err := s.db.QueryRow(
+	err = s.db.QueryRow(
 		`SELECT EXISTS(SELECT 1 FROM management_allowed_pubkeys WHERE pubkey = $1)`,
 		pubkey,
 	).Scan(&exists)
