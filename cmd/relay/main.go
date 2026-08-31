@@ -17,6 +17,7 @@ import (
 
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/admin"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/algo"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/arbiterclaim"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/auth"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/feeds"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/cache"
@@ -260,6 +261,23 @@ func main() {
 		management.RegisterBanHandlers(r, mgmtStore)
 		log.Printf("NIP-86 management API enabled for %d admin pubkeys", len(cfg.AdminPubkeys))
 	}
+
+	// Arbiter claim enforcement (kind 30078, d="arbiter:claim:*").
+	//
+	// Registered UNCONDITIONALLY and on purpose. This relay has repeatedly grown
+	// features that read as implemented and never execute -- a rate-limit policy
+	// only a log line consulted, an allow-list nothing enforced, a NIP-11 entry
+	// for a subsystem that was switched off, an entire groups package nothing
+	// imports. A config flag defaulting to off would make this the fifth.
+	//
+	// It is safe to run unconditionally because the handler's first branch
+	// returns for anything outside the claim namespace before touching the
+	// database, which internal/arbiterclaim's tests assert by counting queries.
+	claimStore := arbiterclaim.NewStore(rawDB, arbiterclaim.DefaultSettleWindow)
+	if err := claimStore.Init(); err != nil {
+		log.Fatalf("Failed to initialize arbiter claim store: %v", err)
+	}
+	arbiterclaim.RegisterHandlers(r, claimStore)
 
 	// Initialize WoT filtering (if enabled)
 	var wotHandler *wot.Handler
