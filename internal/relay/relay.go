@@ -17,6 +17,31 @@ import (
 // Version is the relay software version (set at build time or default)
 var Version = "0.6.0"
 
+// supportedNIPs reports the NIPs this relay actually serves, for the NIP-11
+// document.
+//
+// NIP-29 is advertised ONLY when relay-based groups will really initialise.
+// The list used to include 29 unconditionally, while cmd/relay/main.go gates
+// the whole relay29 setup on GroupsEnabled AND a non-empty GroupsSecretKey.
+// With GROUPS_ENABLED unset -- the production default -- the relay therefore
+// told every client it spoke NIP-29 while no group code was running at all: a
+// client that checks supported_nips before publishing a kind:9007 got a green
+// light for a path that did not exist, and its group silently became an
+// ordinary addressable event nothing would ever honour as group state.
+//
+// The condition here deliberately mirrors main.go's guard rather than just
+// GroupsEnabled, because enabling groups without a secret key logs a warning
+// and skips initialisation -- advertising 29 in that state would be the same
+// lie in a narrower window.
+func supportedNIPs(cfg *config.Config) []any {
+	nips := []any{1, 9, 11, 13, 17, 22}
+	if cfg.GroupsEnabled && cfg.GroupsSecretKey != "" {
+		nips = append(nips, 29)
+	}
+	nips = append(nips, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94)
+	return nips
+}
+
 // NewRelay creates and configures a khatru relay with PostgreSQL storage
 func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend *search.SearchBackend) *khatru.Relay {
 	relay := khatru.NewRelay()
@@ -31,7 +56,7 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	relay.Info.Description = "Cloistr Nostr relay - built with khatru"
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
-	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 17, 22, 29, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
+	relay.Info.SupportedNIPs = supportedNIPs(cfg)
 	relay.Info.Software = "https://git.aegis-hq.xyz/coldforge/cloistr-relay"
 	relay.Info.Version = Version
 
@@ -105,7 +130,7 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 	relay.Info.Description = "Cloistr Nostr relay - built with khatru"
 	relay.Info.PubKey = cfg.RelayPubkey
 	relay.Info.Contact = cfg.RelayContact
-	relay.Info.SupportedNIPs = []any{1, 9, 11, 13, 17, 22, 29, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
+	relay.Info.SupportedNIPs = supportedNIPs(cfg)
 	relay.Info.Software = "https://git.aegis-hq.xyz/coldforge/cloistr-relay"
 	relay.Info.Version = Version
 
