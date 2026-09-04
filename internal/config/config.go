@@ -22,9 +22,24 @@ type Config struct {
 	DBPassword   string
 
 	// Authentication settings
-	AuthPolicy      string   // "open", "auth-read", "auth-write", "auth-all"
-	AllowedPubkeys  []string // Whitelist of pubkeys allowed to write (if set)
-	AuthExemptKinds []int    // Kinds exempt from auth requirement (e.g., 24133 for NIP-46)
+	AuthPolicy string // "open", "auth-read", "auth-write", "auth-all"
+
+	// AllowedPubkeys is a PRIVILEGE grant, not a restriction. It is handed to the
+	// WoT gate, where these pubkeys bypass trust scoring, PoW and follow-graph
+	// checks entirely (internal/wot/types.go). Listing a key here GRANTS it
+	// something; it takes nothing away from anyone else.
+	AllowedPubkeys []string
+
+	// WriteWhitelistPubkeys is the opposite: a RESTRICTIVE list. When non-empty,
+	// only these pubkeys may write and every other authenticated pubkey is
+	// refused. Empty (the default) means unrestricted.
+	//
+	// These two were ONE value until 2026-09-04, which meant granting a WoT
+	// bypass to one key silently refused every key that was not listed. See
+	// internal/auth.Config.WriteWhitelist for what that did in production.
+	WriteWhitelistPubkeys []string
+
+	AuthExemptKinds []int // Kinds exempt from auth requirement (e.g., 24133 for NIP-46)
 
 	// NIP-22 Timestamp limits (in seconds)
 	MaxCreatedAtFuture int64 // Max seconds into future for created_at (default: 300 = 5 min)
@@ -227,6 +242,13 @@ func Load() (*Config, error) {
 	if allowedPubkeys := os.Getenv("ALLOWED_PUBKEYS"); allowedPubkeys != "" {
 		// Parse comma-separated list of pubkeys
 		cfg.AllowedPubkeys = parseCommaSeparated(allowedPubkeys)
+	}
+
+	// Separate from ALLOWED_PUBKEYS on purpose, and defaulting to empty on purpose:
+	// a deployment that wants an invite-only relay opts in, and the hosted relay
+	// never accidentally inherits a restriction from a WoT bypass list.
+	if writeWhitelist := os.Getenv("WRITE_WHITELIST_PUBKEYS"); writeWhitelist != "" {
+		cfg.WriteWhitelistPubkeys = parseCommaSeparated(writeWhitelist)
 	}
 
 	// Auth exempt kinds (comma-separated, e.g., "24133" for NIP-46)

@@ -93,24 +93,132 @@ func TestRequireAuthForWrite_AuthenticatedMismatchedPubkey(t *testing.T) {
 	t.Skip("Requires khatru context - test in integration tests")
 }
 
-// TestRequireAuthForWrite_WhitelistAllowed tests whitelisted pubkey can write
-func TestRequireAuthForWrite_WhitelistAllowed(t *testing.T) {
-	t.Skip("Requires khatru context - test in integration tests")
+// The write gate, exercised for real.
+//
+// These four cases were t.Skip("Requires khatru context - test in integration
+// tests") for the whole life of the file, and they name precisely the behaviour
+// that then shipped broken: a non-empty whitelist refused every real user,
+// because the same value was also the WoT bypass list. The decision now takes
+// the authenticated pubkey as an argument (evaluateWrite), so there is nothing
+// left to skip.
+func whitelistOf(pubkeys ...string) map[string]struct{} {
+	m := make(map[string]struct{}, len(pubkeys))
+	for _, pk := range pubkeys {
+		m[pk] = struct{}{}
+	}
+	return m
 }
 
-// TestRequireAuthForWrite_WhitelistDenied tests non-whitelisted pubkey is rejected
-func TestRequireAuthForWrite_WhitelistDenied(t *testing.T) {
-	t.Skip("Requires khatru context - test in integration tests")
+func TestEvaluateWrite(t *testing.T) {
+	const alice = "aaaa000000000000000000000000000000000000000000000000000000000001"
+	const bob = "bbbb000000000000000000000000000000000000000000000000000000000002"
+
+	tests := []struct {
+		name       string
+		exempt     map[int]bool
+		whitelist  map[string]struct{}
+		authed     string
+		event      *nostr.Event
+		wantReject bool
+		wantMsg    string
+	}{
+		{
+			name:      "whitelisted pubkey can write",
+			whitelist: whitelistOf(alice),
+			authed:    alice,
+			event:     &nostr.Event{Kind: 1, PubKey: alice},
+		},
+		{
+			name:       "non-whitelisted pubkey is rejected",
+			whitelist:  whitelistOf(alice),
+			authed:     bob,
+			event:      &nostr.Event{Kind: 1, PubKey: bob},
+			wantReject: true,
+			wantMsg:    "restricted: your pubkey is not on the whitelist",
+		},
+		{
+			// THE REGRESSION GUARD. An empty whitelist is the hosted relay's
+			// configuration, and it must let an ordinary authenticated user write.
+			name:      "empty whitelist allows any authenticated user",
+			whitelist: whitelistOf(),
+			authed:    bob,
+			event:     &nostr.Event{Kind: 30078, PubKey: bob},
+		},
+		{
+			name:   "nil whitelist allows any authenticated user",
+			authed: bob,
+			event:  &nostr.Event{Kind: 30078, PubKey: bob},
+		},
+		{
+			name:       "unauthenticated write is refused before the whitelist",
+			whitelist:  whitelistOf(alice),
+			authed:     "",
+			event:      &nostr.Event{Kind: 1, PubKey: alice},
+			wantReject: true,
+			wantMsg:    "auth-required: authentication required to publish events",
+		},
+		{
+			// Being on the whitelist does not let you publish as someone else.
+			name:       "authenticated as someone else",
+			whitelist:  whitelistOf(alice, bob),
+			authed:     alice,
+			event:      &nostr.Event{Kind: 1, PubKey: bob},
+			wantReject: true,
+			wantMsg:    "restricted: you can only publish events as your authenticated identity",
+		},
+		{
+			name:      "kind 22242 AUTH events bypass the gate entirely",
+			whitelist: whitelistOf(alice),
+			authed:    "",
+			event:     &nostr.Event{Kind: 22242, PubKey: bob},
+		},
+		{
+			// NIP-46 signer traffic must survive an invite-only relay, or remote
+			// signing breaks for everyone not on the list.
+			name:      "exempt kind bypasses the whitelist",
+			exempt:    map[int]bool{24133: true},
+			whitelist: whitelistOf(alice),
+			authed:    "",
+			event:     &nostr.Event{Kind: 24133, PubKey: bob},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exempt := tt.exempt
+			if exempt == nil {
+				exempt = map[int]bool{}
+			}
+			reject, msg := evaluateWrite(exempt, tt.whitelist, tt.authed, tt.event)
+			if reject != tt.wantReject {
+				t.Fatalf("reject = %v, want %v (msg %q)", reject, tt.wantReject, msg)
+			}
+			if msg != tt.wantMsg {
+				t.Errorf("msg = %q, want %q", msg, tt.wantMsg)
+			}
+		})
+	}
 }
 
-// TestRequireAuthForWrite_EmptyWhitelist tests that empty whitelist allows all authenticated users
-func TestRequireAuthForWrite_EmptyWhitelist(t *testing.T) {
-	t.Skip("Requires khatru context - test in integration tests")
-}
+// The restrictive whitelist and the WoT bypass list are separate fields, and
+// nothing may quietly re-join them. This is a compile-and-behaviour guard on the
+// exact defect: a Config carrying no WriteWhitelist restricts nobody, however
+// many pubkeys the deployment has granted a WoT bypass.
+func TestWriteWhitelistIsNotTheWoTBypassList(t *testing.T) {
+	const stranger = "cccc000000000000000000000000000000000000000000000000000000000003"
 
-// TestRequireAuthForWrite_NilWhitelist tests that nil whitelist allows all authenticated users
-func TestRequireAuthForWrite_NilWhitelist(t *testing.T) {
-	t.Skip("Requires khatru context - test in integration tests")
+	cfg := &Config{Policy: PolicyAuthWrite} // WriteWhitelist deliberately unset
+	handler := requireAuthForWrite(cfg)
+	if handler == nil {
+		t.Fatal("requireAuthForWrite returned nil")
+	}
+
+	reject, msg := evaluateWrite(map[int]bool{}, whitelistOf(), stranger,
+		&nostr.Event{Kind: 30078, PubKey: stranger})
+	if reject {
+		t.Fatalf("an authenticated stranger was refused with %q; the hosted relay "+
+			"must accept writes when no write whitelist is configured", msg)
+	}
 }
 
 // TestGetAuthenticatedPubkey_Authenticated tests getting authenticated pubkey

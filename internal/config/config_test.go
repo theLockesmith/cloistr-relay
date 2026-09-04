@@ -388,3 +388,44 @@ func clearEnv(t *testing.T) {
 		_ = os.Unsetenv(env)
 	}
 }
+
+// WRITE_WHITELIST_PUBKEYS must be independent of ALLOWED_PUBKEYS. Setting the WoT
+// bypass list alone must leave the restrictive whitelist empty -- that is the
+// whole point of the split, and reading one from the other is the defect.
+func TestLoad_WriteWhitelistIsIndependentOfAllowedPubkeys(t *testing.T) {
+	t.Setenv("ALLOWED_PUBKEYS", "wotbypass1,wotbypass2")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.AllowedPubkeys) != 2 {
+		t.Errorf("AllowedPubkeys length = %d, want 2", len(cfg.AllowedPubkeys))
+	}
+	if len(cfg.WriteWhitelistPubkeys) != 0 {
+		t.Fatalf("WriteWhitelistPubkeys = %v, want empty: setting the WoT bypass "+
+			"list must never restrict who may write", cfg.WriteWhitelistPubkeys)
+	}
+}
+
+func TestLoad_WriteWhitelistOverride(t *testing.T) {
+	t.Setenv("WRITE_WHITELIST_PUBKEYS", " pubkeyA , pubkeyB ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	expected := []string{"pubkeyA", "pubkeyB"}
+	if len(cfg.WriteWhitelistPubkeys) != len(expected) {
+		t.Fatalf("WriteWhitelistPubkeys length = %d, want %d",
+			len(cfg.WriteWhitelistPubkeys), len(expected))
+	}
+	for i, pk := range expected {
+		if cfg.WriteWhitelistPubkeys[i] != pk {
+			t.Errorf("WriteWhitelistPubkeys[%d] = %s, want %s",
+				i, cfg.WriteWhitelistPubkeys[i], pk)
+		}
+	}
+}
