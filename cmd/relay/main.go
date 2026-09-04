@@ -750,8 +750,11 @@ func main() {
 // parseAuthConfig converts config auth settings to auth.Config
 func parseAuthConfig(cfg *config.Config) *auth.Config {
 	authCfg := &auth.Config{
-		Policy:         auth.PolicyOpen,
-		AllowedPubkeys: cfg.AllowedPubkeys,
+		Policy: auth.PolicyOpen,
+		// NOT cfg.AllowedPubkeys. That list is the WoT bypass and is passed to the
+		// WoT gate above; feeding it here as well is what refused every user who
+		// was not hand-listed.
+		WriteWhitelist: cfg.WriteWhitelistPubkeys,
 		ExemptKinds:    cfg.AuthExemptKinds,
 	}
 

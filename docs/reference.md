@@ -15,7 +15,8 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 | `RELAY_PORT` | 3334 | Port |
 | `RELAY_NAME` | - | Relay name |
 | `AUTH_POLICY` | open | open, auth-read, auth-write, auth-all |
-| `ALLOWED_PUBKEYS` | - | Comma-separated whitelist |
+| `ALLOWED_PUBKEYS` | - | Comma-separated. **Grants** these pubkeys a bypass of the WoT trust gate (PoW, follow-graph, rate policy). Adds privileges; restricts nobody. |
+| `WRITE_WHITELIST_PUBKEYS` | - | Comma-separated. **Restricts**: when set, only these pubkeys may write. Empty (default) means anyone authenticated may write. Set this for a single-user or invite-only relay. |
 | `DB_HOST/PORT/NAME/USER/PASSWORD` | - | PostgreSQL connection |
 
 ### Event Validation (NIP-22/13)
