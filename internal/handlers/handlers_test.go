@@ -149,6 +149,16 @@ func TestRejectTimestampOutOfRange_PastTimestampWithLimit(t *testing.T) {
 	}
 }
 
+
+// testFilterConfig returns a config with default filter limits for testing
+func testFilterConfig() *config.Config {
+	return &config.Config{
+		FilterMaxAuthors: 100,
+		FilterMaxIDs:     500,
+		FilterMaxKinds:   50,
+	}
+}
+
 // TestRejectComplexFilters_ValidFilter tests that reasonable filters are accepted
 func TestRejectComplexFilters_ValidFilter(t *testing.T) {
 	ctx := context.Background()
@@ -158,7 +168,7 @@ func TestRejectComplexFilters_ValidFilter(t *testing.T) {
 		Kinds:   []int{1, 2, 3},
 	}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if reject {
 		t.Errorf("Valid filter was rejected: %s", msg)
 	}
@@ -169,7 +179,7 @@ func TestRejectComplexFilters_EmptyFilter(t *testing.T) {
 	ctx := context.Background()
 	filter := nostr.Filter{}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if reject {
 		t.Errorf("Empty filter was rejected: %s", msg)
 	}
@@ -187,12 +197,12 @@ func TestRejectComplexFilters_TooManyAuthors(t *testing.T) {
 
 	filter := nostr.Filter{Authors: authors}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if !reject {
 		t.Error("Filter with too many authors was not rejected")
 	}
-	if msg != "error: too many authors in filter" {
-		t.Errorf("Wrong rejection message: got %s, want 'error: too many authors in filter'", msg)
+	if msg != "error: too many authors in filter (max 100)" {
+		t.Errorf("Wrong rejection message: got %s, want 'error: too many authors in filter (max 100)'", msg)
 	}
 }
 
@@ -208,7 +218,7 @@ func TestRejectComplexFilters_ExactlyMaxAuthors(t *testing.T) {
 
 	filter := nostr.Filter{Authors: authors}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if reject {
 		t.Errorf("Filter with exactly max authors was rejected: %s", msg)
 	}
@@ -226,12 +236,12 @@ func TestRejectComplexFilters_TooManyIDs(t *testing.T) {
 
 	filter := nostr.Filter{IDs: ids}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if !reject {
 		t.Error("Filter with too many IDs was not rejected")
 	}
-	if msg != "error: too many ids in filter" {
-		t.Errorf("Wrong rejection message: got %s, want 'error: too many ids in filter'", msg)
+	if msg != "error: too many ids in filter (max 500)" {
+		t.Errorf("Wrong rejection message: got %s, want 'error: too many ids in filter (max 500)'", msg)
 	}
 }
 
@@ -247,7 +257,7 @@ func TestRejectComplexFilters_ExactlyMaxIDs(t *testing.T) {
 
 	filter := nostr.Filter{IDs: ids}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if reject {
 		t.Errorf("Filter with exactly max IDs was rejected: %s", msg)
 	}
@@ -257,20 +267,20 @@ func TestRejectComplexFilters_ExactlyMaxIDs(t *testing.T) {
 func TestRejectComplexFilters_TooManyKinds(t *testing.T) {
 	ctx := context.Background()
 
-	// Create filter with 21 kinds (limit is 20)
-	kinds := make([]int, 21)
-	for i := 0; i < 21; i++ {
+	// Create filter with 51 kinds (limit is 50)
+	kinds := make([]int, 51)
+	for i := 0; i < 51; i++ {
 		kinds[i] = i
 	}
 
 	filter := nostr.Filter{Kinds: kinds}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if !reject {
 		t.Error("Filter with too many kinds was not rejected")
 	}
-	if msg != "error: too many kinds in filter" {
-		t.Errorf("Wrong rejection message: got %s, want 'error: too many kinds in filter'", msg)
+	if msg != "error: too many kinds in filter (max 50)" {
+		t.Errorf("Wrong rejection message: got %s, want 'error: too many kinds in filter (max 50)'", msg)
 	}
 }
 
@@ -278,15 +288,15 @@ func TestRejectComplexFilters_TooManyKinds(t *testing.T) {
 func TestRejectComplexFilters_ExactlyMaxKinds(t *testing.T) {
 	ctx := context.Background()
 
-	// Create filter with exactly 20 kinds (at the limit)
-	kinds := make([]int, 20)
-	for i := 0; i < 20; i++ {
+	// Create filter with exactly 50 kinds (at the limit)
+	kinds := make([]int, 50)
+	for i := 0; i < 50; i++ {
 		kinds[i] = i
 	}
 
 	filter := nostr.Filter{Kinds: kinds}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if reject {
 		t.Errorf("Filter with exactly max kinds was rejected: %s", msg)
 	}
@@ -307,8 +317,8 @@ func TestRejectComplexFilters_MultipleViolations(t *testing.T) {
 		ids[i] = generateRandomHex(64)
 	}
 
-	kinds := make([]int, 21)
-	for i := 0; i < 21; i++ {
+	kinds := make([]int, 51)
+	for i := 0; i < 51; i++ {
 		kinds[i] = i
 	}
 
@@ -318,12 +328,12 @@ func TestRejectComplexFilters_MultipleViolations(t *testing.T) {
 		Kinds:   kinds,
 	}
 
-	reject, msg := rejectComplexFilters(ctx, filter)
+	reject, msg := rejectComplexFilters(testFilterConfig())(ctx, filter)
 	if !reject {
 		t.Error("Filter with multiple violations was not rejected")
 	}
 	// Should fail on first check (authors)
-	if msg != "error: too many authors in filter" {
+	if msg != "error: too many authors in filter (max 100)" {
 		t.Errorf("Wrong rejection message: got %s", msg)
 	}
 }

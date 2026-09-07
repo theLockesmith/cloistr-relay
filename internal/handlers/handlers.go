@@ -72,7 +72,7 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 	}
 
 	// Reject filters based on custom policies
-	relay.RejectFilter = append(relay.RejectFilter, rejectComplexFilters)
+	relay.RejectFilter = append(relay.RejectFilter, rejectComplexFilters(cfg))
 
 	// Additional filter protection from khatru policies
 	relay.RejectFilter = append(relay.RejectFilter, policies.NoComplexFilters)
@@ -168,24 +168,28 @@ func rejectTimestampOutOfRange(cfg *config.Config) func(context.Context, *nostr.
 	}
 }
 
-// rejectComplexFilters prevents resource-intensive queries
-func rejectComplexFilters(ctx context.Context, filter nostr.Filter) (reject bool, msg string) {
-	// Limit the number of authors in a single filter
-	if len(filter.Authors) > 100 {
-		return true, "error: too many authors in filter"
-	}
+// rejectComplexFilters returns a handler that prevents resource-intensive queries.
+// Limits are read from config (FILTER_MAX_AUTHORS, FILTER_MAX_IDS, FILTER_MAX_KINDS).
+func rejectComplexFilters(cfg *config.Config) func(context.Context, nostr.Filter) (bool, string) {
+	maxAuthors := cfg.FilterMaxAuthors
+	maxIDs := cfg.FilterMaxIDs
+	maxKinds := cfg.FilterMaxKinds
 
-	// Limit the number of IDs in a single filter
-	if len(filter.IDs) > 500 {
-		return true, "error: too many ids in filter"
-	}
+	return func(ctx context.Context, filter nostr.Filter) (reject bool, msg string) {
+		if len(filter.Authors) > maxAuthors {
+			return true, fmt.Sprintf("error: too many authors in filter (max %d)", maxAuthors)
+		}
 
-	// Limit the number of kinds in a single filter
-	if len(filter.Kinds) > 20 {
-		return true, "error: too many kinds in filter"
-	}
+		if len(filter.IDs) > maxIDs {
+			return true, fmt.Sprintf("error: too many ids in filter (max %d)", maxIDs)
+		}
 
-	return false, ""
+		if len(filter.Kinds) > maxKinds {
+			return true, fmt.Sprintf("error: too many kinds in filter (max %d)", maxKinds)
+		}
+
+		return false, ""
+	}
 }
 
 // NIP-40: rejectExpiredEvents rejects events that are already expired on publish
