@@ -24,6 +24,7 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/eventcache"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/giftwrap"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/groups"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
@@ -566,12 +567,18 @@ func main() {
 		if cfg.GroupsSecretKey == "" {
 			log.Printf("Warning: NIP-29 groups enabled but GROUPS_SECRET_KEY not set - groups will not work properly")
 		} else {
-			// Initialize relay29 state
+			// Initialize relay29 state with ownership-enforcing roles.
+			// Group creators become admins automatically.
 			groupsState := relay29.New(relay29.Options{
-				Domain:    strings.TrimPrefix(strings.TrimPrefix(cfg.GroupsRelayURL, "wss://"), "ws://"),
-				DB:        db,
-				SecretKey: cfg.GroupsSecretKey,
+				Domain:                  strings.TrimPrefix(strings.TrimPrefix(cfg.GroupsRelayURL, "wss://"), "ws://"),
+				DB:                      db,
+				SecretKey:               cfg.GroupsSecretKey,
+				DefaultRoles:            groups.Roles,
+				GroupCreatorDefaultRole: groups.AdminRole,
 			})
+
+			// Wire the role-based moderation policy (see internal/groups/ownership.go).
+			groupsState.AllowAction = groups.AllowAction
 
 			// Configure state options
 			groupsState.AllowPrivateGroups = cfg.GroupsAllowPrivate
@@ -581,8 +588,6 @@ func main() {
 			groupsState.GetAuthed = khatru.GetAuthed
 
 			// Add relay29 handlers to the relay
-			// Note: We already have StoreEvent, QueryEvents, DeleteEvent from relay.NewRelayWithOptions
-			// Add relay29's query handlers for group-specific queries
 			r.QueryEvents = append(r.QueryEvents,
 				groupsState.NormalEventQuery,
 				groupsState.MetadataQueryHandler,
@@ -597,6 +602,7 @@ func main() {
 				groupsState.RequireHTagForExistingGroup,
 				groupsState.RequireModerationEventsToBeRecent,
 				groupsState.RestrictWritesBasedOnGroupRules,
+				groups.GroupCreationGate(cfg.GroupsAdminPubkeys, cfg.GroupsAllowPublicCreation),
 				groupsState.RestrictInvalidModerationActions,
 				groupsState.PreventWritingOfEventsJustDeleted,
 				groupsState.CheckPreviousTag,
