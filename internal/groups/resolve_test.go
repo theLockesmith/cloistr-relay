@@ -343,3 +343,50 @@ func TestGetTagValue_ShortTag(t *testing.T) {
 		t.Errorf("expected empty for single-element tag, got %q", got)
 	}
 }
+
+// --- Space admin tag format (permissions at index 2, no role label) ---
+
+func TestIsAuthorizedMetadataWriter_SpaceTagFormats(t *testing.T) {
+	owner := "abcdef0123456789" + "0000111122223333"
+	admin := "dddd000000000000" + "aaaa111122223333"
+	dtag := "my-space-abcdef0123456789-a1b2c3d4"
+
+	// Space's buildAdminTags writes ["p", pubkey, ...permissions] with no
+	// role label. These are the shapes that appear in production.
+	cases := []struct {
+		name    string
+		tag     nostr.Tag
+		allowed bool
+	}{
+		{"space: both member perms",
+			nostr.Tag{"p", admin, "add-user", "remove-user"}, true},
+		{"space: add-user only",
+			nostr.Tag{"p", admin, "add-user"}, true},
+		{"space: remove-user only",
+			nostr.Tag{"p", admin, "remove-user"}, true},
+		{"space: member perms plus extras",
+			nostr.Tag{"p", admin, "add-user", "remove-user", "edit-metadata"}, true},
+		{"nip29 shape with role label",
+			nostr.Tag{"p", admin, "admin", "add-user", "remove-user"}, true},
+		{"only edit-metadata (no member write perm)",
+			nostr.Tag{"p", admin, "edit-metadata"}, false},
+	}
+
+	for _, c := range cases {
+		store := newMockStore()
+		store.addEvent(metadataEvt(39000, owner, dtag, 1000))
+		store.addEvent(metadataEvt(39001, owner, dtag, 1001, c.tag))
+
+		ok, err := IsAuthorizedMetadataWriter(context.Background(), store, dtag, 39002, admin)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", c.name, err)
+		}
+		if ok != c.allowed {
+			if c.allowed {
+				t.Errorf("%s: expected admin to be authorized for 39002, but was refused", c.name)
+			} else {
+				t.Errorf("%s: expected admin to be refused for 39002, but was authorized", c.name)
+			}
+		}
+	}
+}

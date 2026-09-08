@@ -150,8 +150,12 @@ func isDelegatedMemberWriter(ctx context.Context, q EventQuerier, dTag string, p
 		return false, nil // no admin list from the owner
 	}
 
-	// Parse the admin list. NIP-29 39001 uses "p" tags:
-	//   ["p", pubkey, role, permission1, permission2, ...]
+	// Parse the admin list. Two tag formats exist in the wild:
+	//   NIP-29 spec: ["p", pubkey, role, permission1, permission2, ...]
+	//   Space:       ["p", pubkey, permission1, permission2, ...]
+	// Space's buildAdminTags (permissions.ts:172) omits the role label,
+	// so permissions start at index 2. The scan below covers both formats
+	// by checking every element from index 2 onward.
 	for _, tag := range adminEvent.Tags {
 		if len(tag) < 2 || tag[0] != "p" {
 			continue
@@ -159,16 +163,10 @@ func isDelegatedMemberWriter(ctx context.Context, q EventQuerier, dTag string, p
 		if tag[1] != pubkey {
 			continue
 		}
-		// Check permissions starting at index 3 (index 2 is the role label).
-		for i := 3; i < len(tag); i++ {
+		for i := 2; i < len(tag); i++ {
 			if memberWritePermissions[tag[i]] {
 				return true, nil
 			}
-		}
-		// Also check index 2 in case the role label is omitted and permissions
-		// start immediately (defensive).
-		if len(tag) >= 3 && memberWritePermissions[tag[2]] {
-			return true, nil
 		}
 	}
 
