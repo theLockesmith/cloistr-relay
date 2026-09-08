@@ -562,6 +562,18 @@ func main() {
 	// Suppress unused variable warning for single-owner system (used in defer)
 	_ = havenSystem
 
+	// Always reject externally-submitted NIP-29 group metadata (39000-39009).
+	// These kinds are relay-generated per the NIP-29 spec. Without this guard,
+	// a relay with GROUPS_ENABLED=false stores them as ordinary addressable
+	// events, letting anyone claim admin/member status for any group.
+	{
+		var groupsRelayPubkey string
+		if cfg.GroupsSecretKey != "" {
+			groupsRelayPubkey, _ = nostr.GetPublicKey(cfg.GroupsSecretKey)
+		}
+		r.RejectEvent = append(r.RejectEvent, groups.RejectExternalMetadata(groupsRelayPubkey))
+	}
+
 	// Initialize NIP-29 relay-based groups using relay29 (if enabled)
 	if cfg.GroupsEnabled {
 		if cfg.GroupsSecretKey == "" {
