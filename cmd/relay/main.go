@@ -571,7 +571,7 @@ func main() {
 		if cfg.GroupsSecretKey != "" {
 			groupsRelayPubkey, _ = nostr.GetPublicKey(cfg.GroupsSecretKey)
 		}
-		r.RejectEvent = append(r.RejectEvent, groups.RejectExternalMetadata(groupsRelayPubkey))
+		r.RejectEvent = append(r.RejectEvent, groups.RejectExternalMetadata(groupsRelayPubkey, db))
 	}
 
 	// Initialize NIP-29 relay-based groups using relay29 (if enabled)
