@@ -155,7 +155,7 @@ func testFilterConfig() *config.Config {
 	return &config.Config{
 		FilterMaxAuthors: 100,
 		FilterMaxIDs:     500,
-		FilterMaxKinds:   50,
+		FilterMaxKinds:   150,
 	}
 }
 
@@ -267,9 +267,9 @@ func TestRejectComplexFilters_ExactlyMaxIDs(t *testing.T) {
 func TestRejectComplexFilters_TooManyKinds(t *testing.T) {
 	ctx := context.Background()
 
-	// Create filter with 51 kinds (limit is 50)
-	kinds := make([]int, 51)
-	for i := 0; i < 51; i++ {
+	// Create filter with 151 kinds (limit is 150)
+	kinds := make([]int, 151)
+	for i := 0; i < 151; i++ {
 		kinds[i] = i
 	}
 
@@ -279,8 +279,8 @@ func TestRejectComplexFilters_TooManyKinds(t *testing.T) {
 	if !reject {
 		t.Error("Filter with too many kinds was not rejected")
 	}
-	if msg != "error: too many kinds in filter (max 50)" {
-		t.Errorf("Wrong rejection message: got %s, want 'error: too many kinds in filter (max 50)'", msg)
+	if msg != "error: too many kinds in filter (max 150)" {
+		t.Errorf("Wrong rejection message: got %s, want 'error: too many kinds in filter (max 150)'", msg)
 	}
 }
 
@@ -288,9 +288,9 @@ func TestRejectComplexFilters_TooManyKinds(t *testing.T) {
 func TestRejectComplexFilters_ExactlyMaxKinds(t *testing.T) {
 	ctx := context.Background()
 
-	// Create filter with exactly 50 kinds (at the limit)
-	kinds := make([]int, 50)
-	for i := 0; i < 50; i++ {
+	// Create filter with exactly 150 kinds (at the limit)
+	kinds := make([]int, 150)
+	for i := 0; i < 150; i++ {
 		kinds[i] = i
 	}
 
@@ -317,8 +317,8 @@ func TestRejectComplexFilters_MultipleViolations(t *testing.T) {
 		ids[i] = generateRandomHex(64)
 	}
 
-	kinds := make([]int, 51)
-	for i := 0; i < 51; i++ {
+	kinds := make([]int, 151)
+	for i := 0; i < 151; i++ {
 		kinds[i] = i
 	}
 
