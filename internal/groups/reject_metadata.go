@@ -3,23 +3,13 @@ package groups
 import (
 	"context"
 	"fmt"
-	"regexp"
 
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// ownerPattern matches the Space group identifier format:
-//
-//	{slug}-{16-hex-pubkey-prefix}-{8-hex-random}
-//
-// The captured group is the 16-character hex prefix of the owner's pubkey.
-// Groups created before this scheme have no pubkey in their d-tag and will
-// not match; those are allowed through (see RejectExternalMetadata).
-var ownerPattern = regexp.MustCompile(`^[a-z0-9-]+-([0-9a-f]{16})-[0-9a-f]{8}$`)
-
 // RejectExternalMetadata is a khatru RejectEvent handler that refuses
 // externally-submitted NIP-29 group metadata events (kinds 39000-39009)
-// unless the author is the group's owner.
+// unless the author is authorized to write them.
 //
 // Per NIP-29, these kinds are relay-generated: the relay publishes them in
 // response to moderation actions, and external clients should never submit
@@ -27,23 +17,25 @@ var ownerPattern = regexp.MustCompile(`^[a-z0-9-]+-([0-9a-f]{16})-[0-9a-f]{8}$`)
 // unset) stores them as ordinary addressable events with no ownership check,
 // letting anyone claim admin status for any group.
 //
-// Ownership is derived from the event's d-tag, which encodes a 16-character
-// hex prefix of the owner's pubkey (the Space identifier format). If the
-// event author's pubkey starts with that prefix, the event is allowed.
-// Forging this requires finding a secp256k1 keypair whose pubkey shares a
-// 16-hex (64-bit) prefix with the target, which is computationally infeasible.
+// Authorization follows Space's trust model (trustedWriters.ts):
+//   - 39000 (metadata), 39001 (admin list): current owner only.
+//   - 39002 (member list): current owner, or a delegated admin with
+//     add-user or remove-user permission in the latest owner-signed 39001.
+//   - 39003-39009: current owner only (conservative default).
 //
-// Legacy groups whose d-tag does not match the owner pattern are allowed
-// through. The three groups on production today (test-project-t9mn5b1,
-// my-group-3cxnejl, test-77qwa6p) predate the scheme and have no derivable
-// owner. Refusing writes to groups a user can still see is a worse failure
-// than the status-quo gap on test fixtures.
+// Ownership is resolved from the d-tag's embedded pubkey prefix, then by
+// walking the kind-39000 transfer chain in the store. Legacy groups whose
+// d-tag has no embedded prefix are allowed through.
 //
 // relayPubkey is the relay's own public key. Events signed by the relay
 // itself are always exempt (relay29 publishes metadata under the relay key
 // when GROUPS_ENABLED is true).
-func RejectExternalMetadata(relayPubkey string) func(context.Context, *nostr.Event) (bool, string) {
-	return func(_ context.Context, event *nostr.Event) (bool, string) {
+//
+// store may be nil. When nil, the handler falls back to prefix-only
+// ownership (no transfer chain, no delegated admin check). This keeps the
+// handler functional in tests and during startup before the store is ready.
+func RejectExternalMetadata(relayPubkey string, store EventQuerier) func(context.Context, *nostr.Event) (bool, string) {
+	return func(ctx context.Context, event *nostr.Event) (bool, string) {
 		if !IsGroupMetadataKind(event.Kind) {
 			return false, ""
 		}
@@ -62,6 +54,23 @@ func RejectExternalMetadata(relayPubkey string) func(context.Context, *nostr.Eve
 			return true, fmt.Sprintf("blocked: kind %d events require a d-tag", event.Kind)
 		}
 
+		// If we have a store, use the full ownership resolver (transfer chain
+		// + delegated admin check for 39002).
+		if store != nil {
+			authorized, err := IsAuthorizedMetadataWriter(ctx, store, dTag, event.Kind, event.PubKey)
+			if err != nil {
+				// Store error: reject with a generic message rather than
+				// allowing potentially unauthorized writes.
+				return true, fmt.Sprintf("blocked: kind %d authorization check failed", event.Kind)
+			}
+			if authorized {
+				return false, ""
+			}
+			return true, fmt.Sprintf("blocked: kind %d can only be published by an authorized writer", event.Kind)
+		}
+
+		// Fallback: no store available. Use prefix-only matching (genesis
+		// owner only, no transfer chain, no delegated admin).
 		match := ownerPattern.FindStringSubmatch(dTag)
 		if match == nil {
 			// Legacy identifier format with no embedded pubkey. Allow it
@@ -70,7 +79,6 @@ func RejectExternalMetadata(relayPubkey string) func(context.Context, *nostr.Eve
 			return false, ""
 		}
 
-		// The 16-hex prefix in the d-tag must match the event author.
 		ownerPrefix := match[1]
 		if len(event.PubKey) >= 16 && event.PubKey[:16] == ownerPrefix {
 			return false, ""
