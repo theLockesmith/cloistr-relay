@@ -56,6 +56,11 @@ type Config struct {
 	RateLimitExemptKinds       []int    // Kinds exempt from event rate limiting (e.g., 24133 for NIP-46)
 	RateLimitExemptPubkeys     []string // Pubkeys exempt from all rate limiting
 
+	// Filter complexity limits
+	FilterMaxAuthors int // Max authors in a single filter (default 100)
+	FilterMaxIDs     int // Max IDs in a single filter (default 500)
+	FilterMaxKinds   int // Max kinds in a single filter (default 50)
+
 	// NIP-86 Management API
 	AdminPubkeys []string // Pubkeys authorized to use management API
 
@@ -178,6 +183,9 @@ func Load() (*Config, error) {
 		RateLimitEventsPerSec:      10,  // 10 events/sec per IP
 		RateLimitFiltersPerSec:     20,  // 20 queries/sec per IP
 		RateLimitConnectionsPerSec: 5,   // 5 connections/sec per IP
+		FilterMaxAuthors:           100, // Per-filter author cap
+		FilterMaxIDs:               500, // Per-filter ID cap
+		FilterMaxKinds:             50,  // Per-filter kind cap (clients commonly request 25-40)
 		// Database pool defaults (tuned for typical relay workload)
 		DBMaxOpenConns:    25,               // Balance between throughput and DB load
 		DBMaxIdleConns:    10,               // Keep connections warm
@@ -311,6 +319,23 @@ func Load() (*Config, error) {
 	// Rate limit exempt pubkeys (comma-separated hex pubkeys)
 	if exemptPubkeys := os.Getenv("RATE_LIMIT_EXEMPT_PUBKEYS"); exemptPubkeys != "" {
 		cfg.RateLimitExemptPubkeys = parseCommaSeparated(exemptPubkeys)
+	}
+
+	// Filter complexity limits
+	if v := os.Getenv("FILTER_MAX_AUTHORS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.FilterMaxAuthors = n
+		}
+	}
+	if v := os.Getenv("FILTER_MAX_IDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.FilterMaxIDs = n
+		}
+	}
+	if v := os.Getenv("FILTER_MAX_KINDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.FilterMaxKinds = n
+		}
 	}
 
 	// NIP-86 Management API
