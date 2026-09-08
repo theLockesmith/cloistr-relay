@@ -3,7 +3,7 @@ module git.aegis-hq.xyz/coldforge/cloistr-relay
 go 1.26.6
 
 require (
-	github.com/fiatjaf/eventstore v0.17.12
+	github.com/fiatjaf/eventstore v0.17.13
 	github.com/fiatjaf/khatru v0.19.1
 	github.com/fiatjaf/relay29 v0.5.1
 	github.com/jmoiron/sqlx v1.4.0
