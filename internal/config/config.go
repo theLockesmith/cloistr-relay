@@ -59,7 +59,7 @@ type Config struct {
 	// Filter complexity limits
 	FilterMaxAuthors int // Max authors in a single filter (default 100)
 	FilterMaxIDs     int // Max IDs in a single filter (default 500)
-	FilterMaxKinds   int // Max kinds in a single filter (default 50)
+	FilterMaxKinds   int // Max kinds in a single filter (default 150)
 
 	// NIP-86 Management API
 	AdminPubkeys []string // Pubkeys authorized to use management API
@@ -185,7 +185,7 @@ func Load() (*Config, error) {
 		RateLimitConnectionsPerSec: 5,   // 5 connections/sec per IP
 		FilterMaxAuthors:           100, // Per-filter author cap
 		FilterMaxIDs:               500, // Per-filter ID cap
-		FilterMaxKinds:             50,  // Per-filter kind cap (clients commonly request 25-40)
+		FilterMaxKinds:             150, // Per-filter kind cap (live traffic peaks at 75-127 kinds)
 		// Database pool defaults (tuned for typical relay workload)
 		DBMaxOpenConns:    25,               // Balance between throughput and DB load
 		DBMaxIdleConns:    10,               // Keep connections warm
