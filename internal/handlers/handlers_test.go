@@ -280,7 +280,7 @@ func TestRejectComplexFilters_TooManyKinds(t *testing.T) {
 		t.Error("Filter with too many kinds was not rejected")
 	}
 	if msg != "error: too many kinds in filter (max 150)" {
-		t.Errorf("Wrong rejection message: got %s, want 'error: too many kinds in filter (max 50)'", msg)
+		t.Errorf("Wrong rejection message: got %s, want 'error: too many kinds in filter (max 150)'", msg)
 	}
 }
 
