@@ -259,9 +259,9 @@ func TestRejectExternalMetadata_DelegatedAdminMemberWrite(t *testing.T) {
 	// Owner's 39000 (establishes ownership).
 	store.addEvent(metadataEvent(39000, ownerPubkey, dtag, 1000))
 
-	// Owner's 39001 (admin list) grants admin add-user and remove-user.
+	// Owner's 39001 (admin list) grants add-user and remove-user (Space format, no role label).
 	store.addEvent(metadataEvent(39001, ownerPubkey, dtag, 1001,
-		nostr.Tag{"p", adminPubkey, "admin", "add-user", "remove-user"},
+		nostr.Tag{"p", adminPubkey, "add-user", "remove-user"},
 	))
 
 	reject := RejectExternalMetadata("relay-pubkey", store)
