@@ -236,15 +236,48 @@ func TestIsAuthorizedMetadataWriter_NoDelegation(t *testing.T) {
 	}
 }
 
-func TestIsAuthorizedMetadataWriter_LegacyAllowsAnyone(t *testing.T) {
+func TestIsAuthorizedMetadataWriter_LegacyNoEventsRejects(t *testing.T) {
 	store := newMockStore()
 
 	ok, err := IsAuthorizedMetadataWriter(context.Background(), store, "test-77qwa6p", 39000, "anyone")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if ok {
+		t.Error("legacy d-tag with no 39000 events should reject (no ownership to verify)")
+	}
+}
+
+func TestIsAuthorizedMetadataWriter_LegacyOwnerAllowed(t *testing.T) {
+	store := newMockStore()
+	owner := "abcdef0123456789" + "0000111122223333"
+	dtag := "test-77qwa6p"
+
+	store.addEvent(metadataEvt(39000, owner, dtag, 1000))
+
+	ok, err := IsAuthorizedMetadataWriter(context.Background(), store, dtag, 39000, owner)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !ok {
-		t.Error("legacy d-tag should allow anyone through")
+		t.Error("legacy d-tag owner (earliest 39000 author) should be authorized")
+	}
+}
+
+func TestIsAuthorizedMetadataWriter_LegacyNonOwnerRejected(t *testing.T) {
+	store := newMockStore()
+	owner := "abcdef0123456789" + "0000111122223333"
+	stranger := "ffff000000000000" + "1111222233334444"
+	dtag := "test-77qwa6p"
+
+	store.addEvent(metadataEvt(39000, owner, dtag, 1000))
+
+	ok, err := IsAuthorizedMetadataWriter(context.Background(), store, dtag, 39000, stranger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("stranger should be rejected for legacy d-tag group")
 	}
 }
 
@@ -341,6 +374,92 @@ func TestGetTagValue_ShortTag(t *testing.T) {
 	got := getTagValue(evt, "d")
 	if got != "" {
 		t.Errorf("expected empty for single-element tag, got %q", got)
+	}
+}
+
+// --- Legacy d-tag ownership resolution ---
+
+func TestResolveOwner_LegacyWithEvents(t *testing.T) {
+	store := newMockStore()
+	owner := "abcdef0123456789" + "0000111122223333"
+	dtag := "test-project-t9mn5b1"
+
+	store.addEvent(metadataEvt(39000, owner, dtag, 1000))
+
+	got, err := ResolveOwner(context.Background(), store, dtag)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != owner {
+		t.Errorf("expected owner %s for legacy d-tag, got %s", owner, got)
+	}
+}
+
+func TestResolveOwner_LegacyMultipleAuthorsUsesEarliest(t *testing.T) {
+	store := newMockStore()
+	realOwner := "abcdef0123456789" + "0000111122223333"
+	latecomer := "ffff000000000000" + "1111222233334444"
+	dtag := "test-project-t9mn5b1"
+
+	store.addEvent(metadataEvt(39000, realOwner, dtag, 1000))
+	store.addEvent(metadataEvt(39000, latecomer, dtag, 2000))
+
+	got, err := ResolveOwner(context.Background(), store, dtag)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != realOwner {
+		t.Errorf("expected earliest author %s, got %s", realOwner, got)
+	}
+}
+
+func TestResolveOwner_LegacyWithTransfer(t *testing.T) {
+	store := newMockStore()
+	owner1 := "abcdef0123456789" + "0000111122223333"
+	owner2 := "bbbb000000000000" + "cccc111122223333"
+	dtag := "my-group-3cxnejl"
+
+	store.addEvent(metadataEvt(39000, owner1, dtag, 1000,
+		nostr.Tag{"transfer-to", owner2},
+	))
+
+	got, err := ResolveOwner(context.Background(), store, dtag)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != owner2 {
+		t.Errorf("expected transferred owner %s, got %s", owner2, got)
+	}
+}
+
+func TestEarliestEvent_Basic(t *testing.T) {
+	events := []*nostr.Event{
+		{CreatedAt: 300, ID: "aaa"},
+		{CreatedAt: 100, ID: "bbb"},
+		{CreatedAt: 200, ID: "ccc"},
+	}
+	got := earliestEvent(events)
+	if got.ID != "bbb" {
+		t.Errorf("expected event bbb (lowest created_at), got %s", got.ID)
+	}
+}
+
+func TestEarliestEvent_TiebreakByID(t *testing.T) {
+	events := []*nostr.Event{
+		{CreatedAt: 100, ID: "zzz"},
+		{CreatedAt: 100, ID: "aaa"},
+		{CreatedAt: 100, ID: "mmm"},
+	}
+	got := earliestEvent(events)
+	if got.ID != "aaa" {
+		t.Errorf("expected event aaa (lowest ID tiebreak), got %s", got.ID)
+	}
+}
+
+func TestEarliestEvent_Nil(t *testing.T) {
+	got := earliestEvent(nil)
+	if got != nil {
+		t.Errorf("expected nil for empty slice, got %v", got)
 	}
 }
 

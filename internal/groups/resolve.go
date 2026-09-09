@@ -43,14 +43,15 @@ var memberWritePermissions = map[string]bool{
 //  3. Walking the transfer chain: each owner's latest 39000 may carry a
 //     ["transfer-to", successorPubkey] tag, which moves ownership forward.
 //
-// Returns ("", nil) for legacy d-tags with no embedded prefix.
+// For new-format d-tags ({slug}-{16-hex-prefix}-{8-hex-random}), the genesis
+// owner is identified by prefix match. For legacy d-tags (no embedded prefix),
+// the genesis owner is the author of the earliest kind 39000 event in the store.
+//
+// Returns ("", nil) only when no ownership can be determined: legacy d-tags
+// with no kind 39000 events in the store.
 // Returns the resolved owner pubkey on success.
 func ResolveOwner(ctx context.Context, q EventQuerier, dTag string) (string, error) {
 	match := ownerPattern.FindStringSubmatch(dTag)
-	if match == nil {
-		return "", nil // legacy identifier, no derivable owner
-	}
-	prefix := match[1]
 
 	// Fetch all kind 39000 events for this d-tag.
 	events, err := queryGroupEvents(ctx, q, KindGroupMetadata, dTag)
@@ -58,25 +59,44 @@ func ResolveOwner(ctx context.Context, q EventQuerier, dTag string) (string, err
 		return "", err
 	}
 
-	// Find the genesis owner: the pubkey whose first 16 hex chars match the
-	// prefix embedded in the d-tag.
-	currentOwner := ""
-	for _, evt := range events {
-		if len(evt.PubKey) >= 16 && evt.PubKey[:16] == prefix {
-			currentOwner = evt.PubKey
-			break
+	if match != nil {
+		// New-format d-tag: genesis owner prefix is embedded.
+		prefix := match[1]
+
+		// Find the genesis owner: the pubkey whose first 16 hex chars match
+		// the prefix embedded in the d-tag.
+		currentOwner := ""
+		for _, evt := range events {
+			if len(evt.PubKey) >= 16 && evt.PubKey[:16] == prefix {
+				currentOwner = evt.PubKey
+				break
+			}
 		}
-	}
-	if currentOwner == "" {
-		// No event from the genesis owner exists yet. The d-tag embeds a
-		// prefix, so the only pubkey that can legitimately publish is one
-		// matching that prefix (the genesis case, before any 39000 is stored).
-		// Return the prefix as a partial match signal: callers compare it
-		// against the event author's prefix.
-		return "prefix:" + prefix, nil
+		if currentOwner == "" {
+			// No event from the genesis owner exists yet. The d-tag embeds a
+			// prefix, so the only pubkey that can legitimately publish is one
+			// matching that prefix (the genesis case, before any 39000 is stored).
+			// Return the prefix as a partial match signal: callers compare it
+			// against the event author's prefix.
+			return "prefix:" + prefix, nil
+		}
+
+		return walkTransferChain(events, currentOwner), nil
 	}
 
-	// Walk the transfer chain.
+	// Legacy d-tag: no embedded pubkey prefix. Derive the genesis owner from
+	// the earliest kind 39000 event in the store.
+	if len(events) == 0 {
+		return "", nil // no ownership data available
+	}
+
+	genesis := earliestEvent(events)
+	return walkTransferChain(events, genesis.PubKey), nil
+}
+
+// walkTransferChain follows transfer-to tags from currentOwner through the
+// event list, returning the final owner pubkey.
+func walkTransferChain(events []*nostr.Event, currentOwner string) string {
 	visited := map[string]bool{currentOwner: true}
 	for depth := 0; depth < maxTransferDepth; depth++ {
 		latest := latestEventFrom(events, currentOwner)
@@ -93,8 +113,24 @@ func ResolveOwner(ctx context.Context, q EventQuerier, dTag string) (string, err
 		visited[successor] = true
 		currentOwner = successor
 	}
+	return currentOwner
+}
 
-	return currentOwner, nil
+// earliestEvent returns the event with the lowest created_at timestamp.
+// On ties, the lowest event ID wins (deterministic).
+func earliestEvent(events []*nostr.Event) *nostr.Event {
+	if len(events) == 0 {
+		return nil
+	}
+	earliest := events[0]
+	for _, evt := range events[1:] {
+		if evt.CreatedAt < earliest.CreatedAt {
+			earliest = evt
+		} else if evt.CreatedAt == earliest.CreatedAt && evt.ID < earliest.ID {
+			earliest = evt
+		}
+	}
+	return earliest
 }
 
 // IsAuthorizedMetadataWriter checks whether pubkey is allowed to publish
@@ -111,9 +147,12 @@ func IsAuthorizedMetadataWriter(ctx context.Context, q EventQuerier, dTag string
 		return false, err
 	}
 
-	// Legacy d-tag: no derivable owner, allow through.
+	// No owner resolved. For legacy d-tags this means no kind 39000 events
+	// exist in the store, so there is no ownership to verify against. Reject:
+	// new groups should use the new d-tag format, and existing legacy groups
+	// already have 39000 events that establish ownership.
 	if owner == "" {
-		return true, nil
+		return false, nil
 	}
 
 	// Genesis case: no 39000 in the store yet, but the d-tag embeds the

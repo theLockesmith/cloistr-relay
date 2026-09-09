@@ -450,6 +450,46 @@ func TestRejectExternalMetadata_OwnerCanPublishMemberList(t *testing.T) {
 	}
 }
 
+// Store-backed legacy d-tag tests: ownership is resolved from earliest 39000.
+func TestRejectExternalMetadata_LegacyOwnerProtectedWithStore(t *testing.T) {
+	store := newMockStore()
+	owner := "abcdef0123456789" + "0000111122223333"
+	attacker := "ffff000000000000" + "1111222233334444"
+	dtag := "test-project-t9mn5b1"
+
+	// Owner published a 39000 for this legacy group.
+	store.addEvent(metadataEvent(39000, owner, dtag, 1000))
+
+	reject := RejectExternalMetadata("relay-pubkey", store)
+
+	// Owner is allowed.
+	event := &nostr.Event{Kind: 39000, PubKey: owner, Tags: nostr.Tags{nostr.Tag{"d", dtag}}}
+	blocked, msg := reject(context.Background(), event)
+	if blocked {
+		t.Errorf("legacy d-tag owner should be allowed with store, got blocked: %s", msg)
+	}
+
+	// Attacker is rejected.
+	event2 := &nostr.Event{Kind: 39000, PubKey: attacker, Tags: nostr.Tags{nostr.Tag{"d", dtag}}}
+	blocked, _ = reject(context.Background(), event2)
+	if !blocked {
+		t.Error("non-owner should be rejected for legacy d-tag group with store")
+	}
+}
+
+func TestRejectExternalMetadata_LegacyNoEventsInStoreRejected(t *testing.T) {
+	store := newMockStore() // empty
+
+	reject := RejectExternalMetadata("relay-pubkey", store)
+
+	// With a store but no 39000 events, legacy d-tag should be rejected.
+	event := &nostr.Event{Kind: 39000, PubKey: "anyone", Tags: nostr.Tags{nostr.Tag{"d", "test-project-t9mn5b1"}}}
+	blocked, _ := reject(context.Background(), event)
+	if !blocked {
+		t.Error("legacy d-tag with empty store should be rejected (no ownership to verify)")
+	}
+}
+
 func TestRejectExternalMetadata_GenesisOwnerNoStoredEvents(t *testing.T) {
 	store := newMockStore() // empty store
 
