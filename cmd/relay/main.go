@@ -310,6 +310,17 @@ func main() {
 		log.Fatalf("Failed to initialize membership store: %v", err)
 	}
 
+	// Initialize payment store (pending_payments table) when payments enabled.
+	var paymentStore *membership.PaymentStore
+	if cfg.PaymentsEnabled {
+		paymentStore = membership.NewPaymentStore(rawDB)
+		if err := paymentStore.InitSchema(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize payment store: %v", err)
+		}
+		log.Println("Payment store initialized (pending_payments table)")
+	}
+	_ = paymentStore // used by invoice/webhook handlers in Phase 4
+
 	hasTrustRoots := cfg.WoTOwnerPubkey != "" || len(cfg.WoTTrustRoots) > 0
 	if cfg.WoTEnabled && !hasTrustRoots {
 		log.Println("Warning: WOT_ENABLED=true but no trust root configured (WOT_OWNER_PUBKEY / WOT_TRUST_ROOTS) -- WoT disabled")
