@@ -394,6 +394,35 @@ func main() {
 		zaps.RegisterHandlers(r, zapsCfg)
 	}
 
+	// Initialize NIP-43 join handler (if payments subsystem enabled)
+	if cfg.PaymentsEnabled {
+		// Resolve the relay signing key: prefer RELAY_SECRET_KEY, fall back
+		// to GROUPS_SECRET_KEY. NIP-43 kind 8000 notifications are signed by
+		// the relay and need a stable key.
+		signingKey := cfg.RelaySecretKey
+		if signingKey == "" {
+			signingKey = cfg.GroupsSecretKey
+		}
+		if signingKey == "" {
+			log.Println("Warning: PAYMENTS_ENABLED=true but no signing key (RELAY_SECRET_KEY or GROUPS_SECRET_KEY) -- NIP-43 join handler disabled")
+		} else {
+			joinHandler, err := membership.NewJoinHandler(membership.JoinHandlerConfig{
+				Store:         memberStore,
+				SecretKey:     signingKey,
+				RequireInvite: false, // open join for now; tighten later
+				AddEvent: func(ctx context.Context, evt *nostr.Event) (bool, error) {
+					return r.AddEvent(ctx, evt)
+				},
+			})
+			if err != nil {
+				log.Fatalf("Failed to initialize NIP-43 join handler: %v", err)
+			}
+			r.RejectEvent = append(r.RejectEvent, joinHandler.RejectJoinRequest())
+			r.OnEventSaved = append(r.OnEventSaved, joinHandler.OnJoinRequestSaved())
+			log.Println("NIP-43 join handler enabled (kind 28934 -> member + kind 8000 notify)")
+		}
+	}
+
 	// Initialize NIP-70 Protected Events (if enabled)
 	if cfg.ProtectedEventsEnabled {
 		protectedCfg := &protected.Config{

@@ -163,12 +163,12 @@ nostr_relay_payments_pending           (gauge)
 
 ## Implementation Status
 
-**Last Updated:** 2026-06-28
+**Last Updated:** 2026-09-10
 
 | Phase | Status |
 |-------|--------|
 | 1: LNbits client + config | ✅ Done — `internal/lightning/client.go`, config vars, httptest coverage |
-| 2: NIP-43 join handler | ⬜ Not started |
+| 2: NIP-43 join handler | ✅ Done — `internal/membership/handler.go`, wired in `main.go` behind `PAYMENTS_ENABLED`, unit tests |
 | 3: Pending-payments store | ⬜ Not started |
 | 4: Invoice + webhook HTTP | ⬜ Not started |
 | 5: Expiry scheduler | ⬜ Not started |
