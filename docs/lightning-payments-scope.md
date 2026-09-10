@@ -172,4 +172,4 @@ nostr_relay_payments_pending           (gauge)
 | 3: Pending-payments store | ✅ Done -- `internal/membership/payments.go`, table + CRUD + validation tests, wired in main.go |
 | 4: Invoice + webhook HTTP | ✅ Done -- `internal/membership/http.go`, NIP-98 user auth, LNbits verify, tier upgrade, wired in main.go |
 | 5: Expiry scheduler | ✅ Done -- `internal/membership/scheduler.go`, hourly tier downgrade + invoice expiry, wired in main.go |
-| 6: Metrics + wiring + docs | ⬜ Not started |
+| 6: Metrics + wiring + docs | ✅ Done -- `internal/metrics/payments.go`, Prometheus counters/gauges, reference.md updated |
