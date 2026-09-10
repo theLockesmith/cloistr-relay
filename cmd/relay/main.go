@@ -429,6 +429,16 @@ func main() {
 		zaps.RegisterHandlers(r, zapsCfg)
 	}
 
+	// Start expiry scheduler (tier downgrades + stale invoice cleanup)
+	if cfg.PaymentsEnabled {
+		expiryScheduler := membership.NewExpiryScheduler(membership.ExpirySchedulerConfig{
+			MemberStore:  memberStore,
+			PaymentStore: paymentStore, // nil-safe if paymentStore not initialized
+		})
+		expiryScheduler.Start()
+		defer expiryScheduler.Stop()
+	}
+
 	// Initialize NIP-43 join handler (if payments subsystem enabled)
 	if cfg.PaymentsEnabled {
 		// Resolve the relay signing key: prefer RELAY_SECRET_KEY, fall back
