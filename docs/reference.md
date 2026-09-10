@@ -68,6 +68,29 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 | `LOG_LEVEL` | info | debug, info, warn, error |
 | `LOG_FORMAT` | json | json, text |
 
+
+### Lightning Payments
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAYMENTS_ENABLED` | false | Master switch for the payment subsystem |
+| `LNBITS_URL` | - | Base URL of self-hosted LNbits |
+| `LNBITS_INVOICE_KEY` | - | Invoice/read key (X-Api-Key header) |
+| `LNBITS_WEBHOOK_SECRET` | - | Shared secret for webhook URL path |
+| `PAYMENTS_PUBLIC_URL` | - | Public base URL so LNbits can reach /payments/webhook |
+| `RELAY_SECRET_KEY` | - | Relay signing key for NIP-43 kind 8000 notifications (hex) |
+| `TIER_HYBRID_PRICE_SATS` | 0 | Price per period for hybrid tier (0 = not purchasable) |
+| `TIER_PREMIUM_PRICE_SATS` | 0 | Price per period for premium tier |
+| `TIER_ENTERPRISE_PRICE_SATS` | 0 | Price per period for enterprise tier (0 = manual/B2B) |
+| `TIER_PERIOD_DAYS` | 30 | Default subscription period in days |
+
+#### Payment Endpoints
+
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/payments/invoice` | POST | NIP-98 | Create BOLT-11 invoice for tier upgrade |
+| `/payments/webhook[/<secret>]` | POST | Shared secret | LNbits settlement callback |
+
 ### Database Pool
 
 | Variable | Default | Description |

@@ -12,6 +12,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/lightning"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 )
 
 // PaymentHandler serves the invoice and webhook HTTP endpoints that connect
@@ -162,6 +163,8 @@ func (h *PaymentHandler) handleInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("payments: invoice created for %s tier=%s hash=%s sats=%d", pubkey[:8], tier, invoice.PaymentHash[:8], price)
+	metrics.PaymentsInvoicesCreated.WithLabelValues(string(tier)).Inc()
+	metrics.PaymentsPending.Inc()
 
 	writeJSON(w, http.StatusOK, invoiceResponse{
 		PaymentHash: invoice.PaymentHash,
@@ -214,6 +217,7 @@ func (h *PaymentHandler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	status, err := h.lnClient.CheckPayment(r.Context(), body.PaymentHash)
 	if err != nil {
 		log.Printf("payments: LNbits check failed for %s: %v", body.PaymentHash[:8], err)
+		metrics.PaymentsFailed.WithLabelValues("lnbits_check").Inc()
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
@@ -226,6 +230,7 @@ func (h *PaymentHandler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify amount matches (prevent underpayment).
 	if status.AmountSats < payment.AmountSats {
 		log.Printf("payments: underpayment for %s: got %d sats, want %d", body.PaymentHash[:8], status.AmountSats, payment.AmountSats)
+		metrics.PaymentsFailed.WithLabelValues("underpayment").Inc()
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -259,6 +264,9 @@ func (h *PaymentHandler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("payments: settled! %s upgraded to %s until %s (hash=%s)",
 		payment.Pubkey[:8], payment.Tier, newExpiry.Format(time.DateOnly), body.PaymentHash[:8])
+	metrics.PaymentsSettled.WithLabelValues(string(payment.Tier)).Inc()
+	metrics.TierUpgrades.WithLabelValues(string(payment.Tier)).Inc()
+	metrics.PaymentsPending.Dec()
 
 	w.WriteHeader(http.StatusOK)
 }

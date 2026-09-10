@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 )
 
 // ExpiryScheduler periodically downgrades expired tiers and marks stale
@@ -91,6 +93,7 @@ func (s *ExpiryScheduler) sweep() {
 			log.Printf("expiry-scheduler: ResetExpiredTiers error: %v", err)
 		} else if n > 0 {
 			log.Printf("expiry-scheduler: downgraded %d expired tier(s) to free", n)
+			metrics.TierExpirations.Add(float64(n))
 		}
 	}
 
@@ -101,6 +104,7 @@ func (s *ExpiryScheduler) sweep() {
 			log.Printf("expiry-scheduler: MarkExpired error: %v", err)
 		} else if n > 0 {
 			log.Printf("expiry-scheduler: expired %d stale pending invoice(s)", n)
+			metrics.PaymentsPending.Sub(float64(n))
 		}
 	}
 }

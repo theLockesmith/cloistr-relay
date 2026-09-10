@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 )
 
 // JoinHandler processes NIP-43 join requests (kind 28934) and publishes
@@ -150,6 +152,7 @@ func (h *JoinHandler) OnJoinRequestSaved() func(ctx context.Context, event *nost
 		}
 
 		log.Printf("membership: added %s as free-tier member (invite=%q)", pubkey[:8], inviteCode)
+		metrics.MembersJoined.Inc()
 
 		// Publish kind 8000 add-member notification.
 		notification := CreateAddMemberEvent(h.pubkey, pubkey)
