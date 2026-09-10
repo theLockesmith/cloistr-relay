@@ -44,6 +44,7 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 |----------|---------|-------------|
 | `WOT_ENABLED` | false | Enable WoT filtering |
 | `WOT_OWNER_PUBKEY` | - | Relay owner pubkey (trust level 0) |
+| `WOT_TRUST_ROOTS` | - | Comma-separated pubkeys for multi-root trust (overrides WOT_OWNER_PUBKEY) |
 | `WOT_UNKNOWN_POW_BITS` | 8 | PoW bits required for unknown pubkeys |
 | `WOT_UNKNOWN_RATE_LIMIT` | 5 | Events/sec for unknown pubkeys |
 | `WOT_USE_PAGERANK` | false | Use PageRank-based trust (requires cache) |

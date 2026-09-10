@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore/postgresql"
@@ -301,7 +302,19 @@ func main() {
 	authCfg := parseAuthConfig(cfg)
 	auth.RegisterAuthHandlers(r, authCfg)
 
-	if cfg.WoTEnabled && cfg.WoTOwnerPubkey != "" {
+	// Initialize membership store unconditionally — it wraps the existing DB
+	// connection and the schema migration is idempotent (IF NOT EXISTS). The
+	// store is needed by both WoT (paid-member bypass) and HAVEN (tier lookups).
+	memberStore := membership.NewStore(rawDB)
+	if err := memberStore.InitSchema(context.Background()); err != nil {
+		log.Fatalf("Failed to initialize membership store: %v", err)
+	}
+
+	hasTrustRoots := cfg.WoTOwnerPubkey != "" || len(cfg.WoTTrustRoots) > 0
+	if cfg.WoTEnabled && !hasTrustRoots {
+		log.Println("Warning: WOT_ENABLED=true but no trust root configured (WOT_OWNER_PUBKEY / WOT_TRUST_ROOTS) -- WoT disabled")
+	}
+	if cfg.WoTEnabled && hasTrustRoots {
 		wotStore := wot.NewStore(rawDB, 5*time.Minute)
 		if err := wotStore.Init(); err != nil {
 			log.Fatalf("Failed to initialize WoT store: %v", err)
@@ -317,11 +330,13 @@ func main() {
 		wotCfg := &wot.Config{
 			Enabled:        true,
 			OwnerPubkey:    cfg.WoTOwnerPubkey,
+			TrustRoots:     cfg.WoTTrustRoots,
 			Policies:       wot.DefaultPolicies(),
 			CacheTTL:       5 * time.Minute,
 			MaxFollowDepth: 2,
 			UsePageRank:    cfg.WoTUsePageRank,
 			AllowedPubkeys: cfg.AllowedPubkeys, // Bypass WoT for whitelisted pubkeys
+			IsPaidMember:   newPaidMemberChecker(memberStore),
 		}
 
 		// Set PageRank interval (default 60 minutes)
@@ -429,11 +444,7 @@ func main() {
 		// Multi-user mode: per-user HAVEN boxes with shared worker pools
 		log.Println("HAVEN: initializing multi-user mode")
 
-		// Initialize membership store (required for tier lookups)
-		memberStore := membership.NewStore(rawDB)
-		if err := memberStore.InitSchema(context.Background()); err != nil {
-			log.Fatalf("Failed to initialize membership store: %v", err)
-		}
+		// memberStore already initialized above (shared with WoT)
 
 		// Initialize HAVEN user settings store
 		havenUserSettings := haven.NewUserSettingsStore(rawDB)
@@ -789,4 +800,34 @@ func parseAuthConfig(cfg *config.Config) *auth.Config {
 	}
 
 	return authCfg
+}
+
+// newPaidMemberChecker returns a function that checks whether a pubkey holds
+// an active paid tier (any tier above free with a non-expired expiration).
+// Results are cached for 5 minutes so the check does not hit the database on
+// every event — the WoT trust cache handles repeat lookups for the same
+// pubkey within its own TTL, and this cache covers the paid-status portion.
+//
+// On tier lapse: GetEffectiveTier returns TierFree the moment tier_expires_at
+// passes. The worst-case staleness is this cache's TTL (5 min), after which
+// the pubkey falls back to graph trust.
+func newPaidMemberChecker(store *membership.Store) func(string) bool {
+	type entry struct {
+		paid bool
+		at   time.Time
+	}
+	var paidCache sync.Map
+	const ttl = 5 * time.Minute
+
+	return func(pubkey string) bool {
+		if v, ok := paidCache.Load(pubkey); ok {
+			if e := v.(*entry); time.Since(e.at) < ttl {
+				return e.paid
+			}
+		}
+		member, err := store.GetMember(context.Background(), pubkey)
+		paid := err == nil && member != nil && member.GetEffectiveTier() != membership.TierFree
+		paidCache.Store(pubkey, &entry{paid: paid, at: time.Now()})
+		return paid
+	}
 }

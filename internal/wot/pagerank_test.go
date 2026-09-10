@@ -9,8 +9,8 @@ func TestPageRankCalculator_GetTrustLevelFromPageRank(t *testing.T) {
 	// Create a calculator with no store (for testing threshold logic only)
 	cfg := DefaultPageRankConfig()
 	calc := &PageRankCalculator{
-		ownerPubkey: "owner123",
-		config:      cfg,
+		trustRoots: map[string]struct{}{"owner123": {}},
+		config:     cfg,
 		scores: map[string]float64{
 			"owner123":     1.0,   // Owner
 			"high_trust":   0.05,  // Above follow threshold
@@ -61,8 +61,8 @@ func TestDefaultPageRankConfig(t *testing.T) {
 
 func TestPageRankCalculator_GetPageRank(t *testing.T) {
 	calc := &PageRankCalculator{
-		ownerPubkey: "owner",
-		config:      DefaultPageRankConfig(),
+		trustRoots: map[string]struct{}{"owner": {}},
+		config:     DefaultPageRankConfig(),
 		scores: map[string]float64{
 			"alice": 0.5,
 			"bob":   0.25,
