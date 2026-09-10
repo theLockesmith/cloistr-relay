@@ -65,12 +65,13 @@ type Config struct {
 	AdminPubkeys []string // Pubkeys authorized to use management API
 
 	// Web of Trust (WoT) Filtering
-	WoTEnabled          bool   // Enable WoT filtering
-	WoTOwnerPubkey      string // Owner pubkey (trust level 0)
-	WoTUnknownPoWBits   int    // PoW bits required for unknown pubkeys (default 8)
-	WoTUnknownRateLimit int    // Events/sec for unknown pubkeys (default 5)
-	WoTUsePageRank      bool   // Use PageRank-based trust scoring (Tier 2)
-	WoTPageRankInterval int    // PageRank recompute interval in minutes (default 60)
+	WoTEnabled          bool     // Enable WoT filtering
+	WoTOwnerPubkey      string   // Owner pubkey (trust level 0) — backward-compat single root
+	WoTTrustRoots       []string // Multiple trust roots (overrides WoTOwnerPubkey when non-empty)
+	WoTUnknownPoWBits   int      // PoW bits required for unknown pubkeys (default 8)
+	WoTUnknownRateLimit int      // Events/sec for unknown pubkeys (default 5)
+	WoTUsePageRank      bool     // Use PageRank-based trust scoring (Tier 2)
+	WoTPageRankInterval int      // PageRank recompute interval in minutes (default 60)
 
 	// Cache (Redis/Dragonfly)
 	CacheURL string // Redis/Dragonfly URL (e.g., redis://dragonfly:6379)
@@ -349,6 +350,11 @@ func Load() (*Config, error) {
 	}
 	if wotOwner := os.Getenv("WOT_OWNER_PUBKEY"); wotOwner != "" {
 		cfg.WoTOwnerPubkey = wotOwner
+	}
+	// WOT_TRUST_ROOTS overrides WOT_OWNER_PUBKEY when set. Comma-separated
+	// list of hex pubkeys that anchor the follow graph (trust level 0).
+	if wotRoots := os.Getenv("WOT_TRUST_ROOTS"); wotRoots != "" {
+		cfg.WoTTrustRoots = parseCommaSeparated(wotRoots)
 	}
 	if wotPoW := os.Getenv("WOT_UNKNOWN_POW_BITS"); wotPoW != "" {
 		if v, err := strconv.Atoi(wotPoW); err == nil {
