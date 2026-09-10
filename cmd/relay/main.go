@@ -29,6 +29,7 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/lightning"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/membership"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/protected"
@@ -319,7 +320,30 @@ func main() {
 		}
 		log.Println("Payment store initialized (pending_payments table)")
 	}
-	_ = paymentStore // used by invoice/webhook handlers in Phase 4
+	// Initialize payment HTTP handler (invoice + webhook endpoints).
+	var paymentHTTPHandler *membership.PaymentHandler
+	if cfg.PaymentsEnabled && paymentStore != nil && cfg.LNbitsURL != "" && cfg.LNbitsInvoiceKey != "" {
+		lnClient := lightning.NewClient(cfg.LNbitsURL, cfg.LNbitsInvoiceKey)
+		tierPrices := make(map[membership.MemberTier]int64)
+		if cfg.TierHybridPriceSats > 0 {
+			tierPrices[membership.TierHybrid] = cfg.TierHybridPriceSats
+		}
+		if cfg.TierPremiumPriceSats > 0 {
+			tierPrices[membership.TierPremium] = cfg.TierPremiumPriceSats
+		}
+		if cfg.TierEnterprisePriceSats > 0 {
+			tierPrices[membership.TierEnterprise] = cfg.TierEnterprisePriceSats
+		}
+		paymentHTTPHandler = membership.NewPaymentHandler(membership.PaymentHandlerConfig{
+			MemberStore:   memberStore,
+			PaymentStore:  paymentStore,
+			LNClient:      lnClient,
+			WebhookSecret: cfg.LNbitsWebhookSecret,
+			PublicURL:     cfg.PaymentsPublicURL,
+			TierPrices:    tierPrices,
+			PeriodDays:    cfg.TierPeriodDays,
+		})
+	}
 
 	hasTrustRoots := cfg.WoTOwnerPubkey != "" || len(cfg.WoTTrustRoots) > 0
 	if cfg.WoTEnabled && !hasTrustRoots {
@@ -742,6 +766,11 @@ func main() {
 		} else {
 			log.Println("RSS/Atom feeds disabled: no owner pubkey configured")
 		}
+	}
+
+	// Payment endpoints (invoice + webhook)
+	if paymentHTTPHandler != nil {
+		paymentHTTPHandler.RegisterRoutes(mux)
 	}
 
 	// NIP-86 management API endpoint
