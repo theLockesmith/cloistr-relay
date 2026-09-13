@@ -12,26 +12,39 @@ import (
 
 // TrustCalculator calculates trust levels for pubkeys
 type TrustCalculator struct {
-	store       *Store
-	ownerPubkey string
-	maxDepth    int
+	store      *Store
+	trustRoots map[string]struct{} // set of pubkeys at trust level 0
+	maxDepth   int
 }
 
-// NewTrustCalculator creates a new trust calculator
-func NewTrustCalculator(store *Store, ownerPubkey string, maxDepth int) *TrustCalculator {
+// NewTrustCalculator creates a new trust calculator.
+// trustRoots are the pubkeys that anchor the graph (trust level 0).
+// For a single-owner relay, pass one; for multi-tenant, pass several.
+func NewTrustCalculator(store *Store, trustRoots []string, maxDepth int) *TrustCalculator {
 	if maxDepth <= 0 {
 		maxDepth = 2 // Default to 2 levels (follows and follows-of-follows)
 	}
+	roots := make(map[string]struct{}, len(trustRoots))
+	for _, r := range trustRoots {
+		if r != "" {
+			roots[r] = struct{}{}
+		}
+	}
 	return &TrustCalculator{
-		store:       store,
-		ownerPubkey: ownerPubkey,
-		maxDepth:    maxDepth,
+		store:      store,
+		trustRoots: roots,
+		maxDepth:   maxDepth,
 	}
 }
 
 // GetTrustLevel calculates the trust level for a pubkey
 // Uses BFS to find the shortest path from owner to the pubkey through the follow graph
 func (tc *TrustCalculator) GetTrustLevel(pubkey string) TrustLevel {
+	if tc.store == nil {
+		// No store: can still resolve root membership, nothing else.
+		return tc.calculateTrustLevel(pubkey)
+	}
+
 	// Check cache first
 	if cached, ok := tc.store.GetCachedTrust(pubkey); ok {
 		return cached.TrustLevel
@@ -46,43 +59,47 @@ func (tc *TrustCalculator) GetTrustLevel(pubkey string) TrustLevel {
 	return level
 }
 
-// calculateTrustLevel performs BFS to find trust level
+// calculateTrustLevel performs BFS from all trust roots to find trust level
 func (tc *TrustCalculator) calculateTrustLevel(pubkey string) TrustLevel {
-	// Owner is always trust level 0
-	if pubkey == tc.ownerPubkey {
+	// Any trust root is owner-level
+	if _, isRoot := tc.trustRoots[pubkey]; isRoot {
 		return TrustLevelOwner
 	}
 
-	// Check if directly followed by owner (trust level 1)
-	isFollowed, err := tc.store.IsFollowing(tc.ownerPubkey, pubkey)
-	if err != nil {
-		log.Printf("WoT: error checking follow status: %v", err)
-		return TrustLevelUnknown
-	}
-	if isFollowed {
-		return TrustLevelFollow
-	}
-
-	// For depth 2, check if followed by anyone the owner follows
-	if tc.maxDepth >= 2 {
-		ownerFollows, err := tc.store.GetFollows(tc.ownerPubkey)
+	// Check if directly followed by any trust root (trust level 1)
+	for root := range tc.trustRoots {
+		isFollowed, err := tc.store.IsFollowing(root, pubkey)
 		if err != nil {
-			log.Printf("WoT: error getting owner follows: %v", err)
-			return TrustLevelUnknown
+			log.Printf("WoT: error checking follow status for root %s: %v", truncatePubkey(root), err)
+			continue
 		}
+		if isFollowed {
+			return TrustLevelFollow
+		}
+	}
 
-		for _, follow := range ownerFollows {
-			isFollowedByFollow, err := tc.store.IsFollowing(follow, pubkey)
+	// For depth 2, check if followed by anyone any root follows
+	if tc.maxDepth >= 2 {
+		for root := range tc.trustRoots {
+			rootFollows, err := tc.store.GetFollows(root)
 			if err != nil {
+				log.Printf("WoT: error getting follows for root %s: %v", truncatePubkey(root), err)
 				continue
 			}
-			if isFollowedByFollow {
-				return TrustLevelFollowOfFollow
+
+			for _, follow := range rootFollows {
+				isFollowedByFollow, err := tc.store.IsFollowing(follow, pubkey)
+				if err != nil {
+					continue
+				}
+				if isFollowedByFollow {
+					return TrustLevelFollowOfFollow
+				}
 			}
 		}
 	}
 
-	// Not found in follow graph
+	// Not found in follow graph from any root
 	return TrustLevelUnknown
 }
 
@@ -94,10 +111,12 @@ type Handler struct {
 	usePageRank    bool
 	policies       map[TrustLevel]TrustPolicy
 	allowedPubkeys map[string]struct{} // Fast lookup for whitelisted pubkeys
+	isPaidMember   func(string) bool   // nil when no membership integration
 }
 
-// NewHandler creates a new WoT handler
-func NewHandler(store *Store, ownerPubkey string, cfg *Config) *Handler {
+// NewHandler creates a new WoT handler.
+// trustRoots are the pubkeys at trust level 0 (see Config.TrustRoots).
+func NewHandler(store *Store, trustRoots []string, cfg *Config) *Handler {
 	policies := cfg.Policies
 	if policies == nil {
 		policies = DefaultPolicies()
@@ -111,10 +130,11 @@ func NewHandler(store *Store, ownerPubkey string, cfg *Config) *Handler {
 
 	h := &Handler{
 		store:          store,
-		calculator:     NewTrustCalculator(store, ownerPubkey, cfg.MaxFollowDepth),
+		calculator:     NewTrustCalculator(store, trustRoots, cfg.MaxFollowDepth),
 		usePageRank:    cfg.UsePageRank,
 		policies:       policies,
 		allowedPubkeys: allowedMap,
+		isPaidMember:   cfg.IsPaidMember,
 	}
 
 	// Initialize PageRank if enabled
@@ -125,7 +145,7 @@ func NewHandler(store *Store, ownerPubkey string, cfg *Config) *Handler {
 		}
 		prCfg := DefaultPageRankConfig()
 		prCfg.ComputeInterval = prInterval
-		h.pagerank = NewPageRankCalculator(store, ownerPubkey, prCfg)
+		h.pagerank = NewPageRankCalculator(store, trustRoots, prCfg)
 	}
 
 	return h
@@ -215,8 +235,26 @@ func (h *Handler) GetTrustContext(pubkey string) TrustLevel {
 	return h.getTrustLevel(pubkey)
 }
 
-// getTrustLevel returns the trust level using either PageRank or simple follow distance
+// getTrustLevel returns the trust level, checking paid status first, then
+// dispatching to PageRank or simple follow distance.
+//
+// Paid membership is an independent axis that short-circuits the graph:
+// "Even if someone is 100 steps removed from me, if they pay for the relay,
+// they should absolutely not be limited anymore." On lapse the graph takes
+// over with no grace period — GetEffectiveTier returns Free the moment
+// tier_expires_at passes.
 func (h *Handler) getTrustLevel(pubkey string) TrustLevel {
+	// Trust roots are always owner-level, regardless of paid status.
+	// Checked here so a root that also holds a paid tier is not demoted
+	// from Owner (100 ev/s) to Paid (50 ev/s).
+	if _, isRoot := h.calculator.trustRoots[pubkey]; isRoot {
+		return TrustLevelOwner
+	}
+
+	// Paid members short-circuit the graph entirely
+	if h.isPaidMember != nil && h.isPaidMember(pubkey) {
+		return TrustLevelPaid
+	}
 	if h.usePageRank && h.pagerank != nil {
 		return h.pagerank.GetTrustLevelFromPageRank(pubkey)
 	}
@@ -225,7 +263,13 @@ func (h *Handler) getTrustLevel(pubkey string) TrustLevel {
 
 // RegisterHandlers registers WoT handlers with the relay
 func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
-	handler := NewHandler(store, cfg.OwnerPubkey, cfg)
+	// Build trust roots: prefer explicit list, fall back to single owner pubkey
+	trustRoots := cfg.TrustRoots
+	if len(trustRoots) == 0 && cfg.OwnerPubkey != "" {
+		trustRoots = []string{cfg.OwnerPubkey}
+	}
+
+	handler := NewHandler(store, trustRoots, cfg)
 
 	// Add trust-based event rejection
 	relay.RejectEvent = append(relay.RejectEvent, handler.RejectEventByTrust())
@@ -239,11 +283,20 @@ func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
 		log.Printf("WoT PageRank enabled (recompute every %v)", cfg.PageRankInterval)
 	}
 
-	log.Printf("WoT filtering enabled for owner %s (mode: %s)", cfg.OwnerPubkey[:8], handler.getMode())
+	// Log trust root configuration
+	if len(trustRoots) == 1 {
+		log.Printf("WoT filtering enabled for owner %s (mode: %s)", truncatePubkey(trustRoots[0]), handler.getMode())
+	} else {
+		log.Printf("WoT filtering enabled with %d trust roots (mode: %s)", len(trustRoots), handler.getMode())
+	}
 	if len(cfg.AllowedPubkeys) > 0 {
 		log.Printf("WoT allowed pubkeys (bypass PoW): %d pubkeys configured", len(cfg.AllowedPubkeys))
 	}
-	log.Printf("WoT policies: owner=%d/s, follow=%d/s, follow2=%d/s, unknown=%d/s (PoW: %d bits)",
+	if cfg.IsPaidMember != nil {
+		log.Printf("WoT paid-member bypass enabled (independent trust axis)")
+	}
+	log.Printf("WoT policies: paid=%d/s, owner=%d/s, follow=%d/s, follow2=%d/s, unknown=%d/s (PoW: %d bits)",
+		handler.policies[TrustLevelPaid].EventsPerSecond,
 		handler.policies[TrustLevelOwner].EventsPerSecond,
 		handler.policies[TrustLevelFollow].EventsPerSecond,
 		handler.policies[TrustLevelFollowOfFollow].EventsPerSecond,

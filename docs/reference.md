@@ -44,6 +44,7 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 |----------|---------|-------------|
 | `WOT_ENABLED` | false | Enable WoT filtering |
 | `WOT_OWNER_PUBKEY` | - | Relay owner pubkey (trust level 0) |
+| `WOT_TRUST_ROOTS` | - | Comma-separated pubkeys for multi-root trust (overrides WOT_OWNER_PUBKEY) |
 | `WOT_UNKNOWN_POW_BITS` | 8 | PoW bits required for unknown pubkeys |
 | `WOT_UNKNOWN_RATE_LIMIT` | 5 | Events/sec for unknown pubkeys |
 | `WOT_USE_PAGERANK` | false | Use PageRank-based trust (requires cache) |
@@ -66,6 +67,29 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 | `PPROF_ENABLED` | false | Enable pprof endpoints at /debug/pprof/ |
 | `LOG_LEVEL` | info | debug, info, warn, error |
 | `LOG_FORMAT` | json | json, text |
+
+
+### Lightning Payments
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAYMENTS_ENABLED` | false | Master switch for the payment subsystem |
+| `LNBITS_URL` | - | Base URL of self-hosted LNbits |
+| `LNBITS_INVOICE_KEY` | - | Invoice/read key (X-Api-Key header) |
+| `LNBITS_WEBHOOK_SECRET` | - | Shared secret for webhook URL path |
+| `PAYMENTS_PUBLIC_URL` | - | Public base URL so LNbits can reach /payments/webhook |
+| `RELAY_SECRET_KEY` | - | Relay signing key for NIP-43 kind 8000 notifications (hex) |
+| `TIER_HYBRID_PRICE_SATS` | 0 | Price per period for hybrid tier (0 = not purchasable) |
+| `TIER_PREMIUM_PRICE_SATS` | 0 | Price per period for premium tier |
+| `TIER_ENTERPRISE_PRICE_SATS` | 0 | Price per period for enterprise tier (0 = manual/B2B) |
+| `TIER_PERIOD_DAYS` | 30 | Default subscription period in days |
+
+#### Payment Endpoints
+
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/payments/invoice` | POST | NIP-98 | Create BOLT-11 invoice for tier upgrade |
+| `/payments/webhook[/<secret>]` | POST | Shared secret | LNbits settlement callback |
 
 ### Database Pool
 

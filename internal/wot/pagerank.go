@@ -51,9 +51,9 @@ func DefaultPageRankConfig() *PageRankConfig {
 
 // PageRankCalculator computes PageRank-based trust scores
 type PageRankCalculator struct {
-	store       *Store
-	ownerPubkey string
-	config      *PageRankConfig
+	store      *Store
+	trustRoots map[string]struct{} // set of pubkeys at trust level 0
+	config     *PageRankConfig
 
 	// In-memory PageRank scores (also cached externally)
 	scores   map[string]float64
@@ -66,17 +66,24 @@ type PageRankCalculator struct {
 	stopCh chan struct{}
 }
 
-// NewPageRankCalculator creates a new PageRank calculator
-func NewPageRankCalculator(store *Store, ownerPubkey string, cfg *PageRankConfig) *PageRankCalculator {
+// NewPageRankCalculator creates a new PageRank calculator.
+// trustRoots are the pubkeys that anchor the graph (trust level 0).
+func NewPageRankCalculator(store *Store, trustRoots []string, cfg *PageRankConfig) *PageRankCalculator {
 	if cfg == nil {
 		cfg = DefaultPageRankConfig()
 	}
+	roots := make(map[string]struct{}, len(trustRoots))
+	for _, r := range trustRoots {
+		if r != "" {
+			roots[r] = struct{}{}
+		}
+	}
 	return &PageRankCalculator{
-		store:       store,
-		ownerPubkey: ownerPubkey,
-		config:      cfg,
-		scores:      make(map[string]float64),
-		stopCh:      make(chan struct{}),
+		store:      store,
+		trustRoots: roots,
+		config:     cfg,
+		scores:     make(map[string]float64),
+		stopCh:     make(chan struct{}),
 	}
 }
 
@@ -127,8 +134,8 @@ func (pr *PageRankCalculator) GetPageRank(pubkey string) float64 {
 
 // GetTrustLevelFromPageRank converts a PageRank score to a trust level
 func (pr *PageRankCalculator) GetTrustLevelFromPageRank(pubkey string) TrustLevel {
-	// Owner is always level 0
-	if pubkey == pr.ownerPubkey {
+	// Trust roots are always level 0
+	if _, isRoot := pr.trustRoots[pubkey]; isRoot {
 		return TrustLevelOwner
 	}
 
@@ -186,9 +193,11 @@ func (pr *PageRankCalculator) computePageRank(ctx context.Context) {
 		scores[node] = initialScore
 	}
 
-	// Give owner a boost in initial score
-	if nodes[pr.ownerPubkey] {
-		scores[pr.ownerPubkey] *= pr.config.OwnerBoost
+	// Give all trust roots a boost in initial score
+	for root := range pr.trustRoots {
+		if nodes[root] {
+			scores[root] *= pr.config.OwnerBoost
+		}
 	}
 
 	// Iterate until convergence
