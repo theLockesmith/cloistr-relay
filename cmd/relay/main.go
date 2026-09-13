@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore/postgresql"
@@ -28,6 +29,7 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/lightning"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/membership"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/protected"
@@ -301,7 +303,53 @@ func main() {
 	authCfg := parseAuthConfig(cfg)
 	auth.RegisterAuthHandlers(r, authCfg)
 
-	if cfg.WoTEnabled && cfg.WoTOwnerPubkey != "" {
+	// Initialize membership store unconditionally — it wraps the existing DB
+	// connection and the schema migration is idempotent (IF NOT EXISTS). The
+	// store is needed by both WoT (paid-member bypass) and HAVEN (tier lookups).
+	memberStore := membership.NewStore(rawDB)
+	if err := memberStore.InitSchema(context.Background()); err != nil {
+		log.Fatalf("Failed to initialize membership store: %v", err)
+	}
+
+	// Initialize payment store (pending_payments table) when payments enabled.
+	var paymentStore *membership.PaymentStore
+	if cfg.PaymentsEnabled {
+		paymentStore = membership.NewPaymentStore(rawDB)
+		if err := paymentStore.InitSchema(context.Background()); err != nil {
+			log.Fatalf("Failed to initialize payment store: %v", err)
+		}
+		log.Println("Payment store initialized (pending_payments table)")
+	}
+	// Initialize payment HTTP handler (invoice + webhook endpoints).
+	var paymentHTTPHandler *membership.PaymentHandler
+	if cfg.PaymentsEnabled && paymentStore != nil && cfg.LNbitsURL != "" && cfg.LNbitsInvoiceKey != "" {
+		lnClient := lightning.NewClient(cfg.LNbitsURL, cfg.LNbitsInvoiceKey)
+		tierPrices := make(map[membership.MemberTier]int64)
+		if cfg.TierHybridPriceSats > 0 {
+			tierPrices[membership.TierHybrid] = cfg.TierHybridPriceSats
+		}
+		if cfg.TierPremiumPriceSats > 0 {
+			tierPrices[membership.TierPremium] = cfg.TierPremiumPriceSats
+		}
+		if cfg.TierEnterprisePriceSats > 0 {
+			tierPrices[membership.TierEnterprise] = cfg.TierEnterprisePriceSats
+		}
+		paymentHTTPHandler = membership.NewPaymentHandler(membership.PaymentHandlerConfig{
+			MemberStore:   memberStore,
+			PaymentStore:  paymentStore,
+			LNClient:      lnClient,
+			WebhookSecret: cfg.LNbitsWebhookSecret,
+			PublicURL:     cfg.PaymentsPublicURL,
+			TierPrices:    tierPrices,
+			PeriodDays:    cfg.TierPeriodDays,
+		})
+	}
+
+	hasTrustRoots := cfg.WoTOwnerPubkey != "" || len(cfg.WoTTrustRoots) > 0
+	if cfg.WoTEnabled && !hasTrustRoots {
+		log.Println("Warning: WOT_ENABLED=true but no trust root configured (WOT_OWNER_PUBKEY / WOT_TRUST_ROOTS) -- WoT disabled")
+	}
+	if cfg.WoTEnabled && hasTrustRoots {
 		wotStore := wot.NewStore(rawDB, 5*time.Minute)
 		if err := wotStore.Init(); err != nil {
 			log.Fatalf("Failed to initialize WoT store: %v", err)
@@ -317,11 +365,13 @@ func main() {
 		wotCfg := &wot.Config{
 			Enabled:        true,
 			OwnerPubkey:    cfg.WoTOwnerPubkey,
+			TrustRoots:     cfg.WoTTrustRoots,
 			Policies:       wot.DefaultPolicies(),
 			CacheTTL:       5 * time.Minute,
 			MaxFollowDepth: 2,
 			UsePageRank:    cfg.WoTUsePageRank,
 			AllowedPubkeys: cfg.AllowedPubkeys, // Bypass WoT for whitelisted pubkeys
+			IsPaidMember:   newPaidMemberChecker(memberStore),
 		}
 
 		// Set PageRank interval (default 60 minutes)
@@ -379,6 +429,45 @@ func main() {
 		zaps.RegisterHandlers(r, zapsCfg)
 	}
 
+	// Start expiry scheduler (tier downgrades + stale invoice cleanup)
+	if cfg.PaymentsEnabled {
+		expiryScheduler := membership.NewExpiryScheduler(membership.ExpirySchedulerConfig{
+			MemberStore:  memberStore,
+			PaymentStore: paymentStore, // nil-safe if paymentStore not initialized
+		})
+		expiryScheduler.Start()
+		defer expiryScheduler.Stop()
+	}
+
+	// Initialize NIP-43 join handler (if payments subsystem enabled)
+	if cfg.PaymentsEnabled {
+		// Resolve the relay signing key: prefer RELAY_SECRET_KEY, fall back
+		// to GROUPS_SECRET_KEY. NIP-43 kind 8000 notifications are signed by
+		// the relay and need a stable key.
+		signingKey := cfg.RelaySecretKey
+		if signingKey == "" {
+			signingKey = cfg.GroupsSecretKey
+		}
+		if signingKey == "" {
+			log.Println("Warning: PAYMENTS_ENABLED=true but no signing key (RELAY_SECRET_KEY or GROUPS_SECRET_KEY) -- NIP-43 join handler disabled")
+		} else {
+			joinHandler, err := membership.NewJoinHandler(membership.JoinHandlerConfig{
+				Store:         memberStore,
+				SecretKey:     signingKey,
+				RequireInvite: false, // open join for now; tighten later
+				AddEvent: func(ctx context.Context, evt *nostr.Event) (bool, error) {
+					return r.AddEvent(ctx, evt)
+				},
+			})
+			if err != nil {
+				log.Fatalf("Failed to initialize NIP-43 join handler: %v", err)
+			}
+			r.RejectEvent = append(r.RejectEvent, joinHandler.RejectJoinRequest())
+			r.OnEventSaved = append(r.OnEventSaved, joinHandler.OnJoinRequestSaved())
+			log.Println("NIP-43 join handler enabled (kind 28934 -> member + kind 8000 notify)")
+		}
+	}
+
 	// Initialize NIP-70 Protected Events (if enabled)
 	if cfg.ProtectedEventsEnabled {
 		protectedCfg := &protected.Config{
@@ -429,11 +518,7 @@ func main() {
 		// Multi-user mode: per-user HAVEN boxes with shared worker pools
 		log.Println("HAVEN: initializing multi-user mode")
 
-		// Initialize membership store (required for tier lookups)
-		memberStore := membership.NewStore(rawDB)
-		if err := memberStore.InitSchema(context.Background()); err != nil {
-			log.Fatalf("Failed to initialize membership store: %v", err)
-		}
+		// memberStore already initialized above (shared with WoT)
 
 		// Initialize HAVEN user settings store
 		havenUserSettings := haven.NewUserSettingsStore(rawDB)
@@ -693,6 +778,11 @@ func main() {
 		}
 	}
 
+	// Payment endpoints (invoice + webhook)
+	if paymentHTTPHandler != nil {
+		paymentHTTPHandler.RegisterRoutes(mux)
+	}
+
 	// NIP-86 management API endpoint
 	if mgmtStore != nil {
 		mgmtHandler := management.NewHandler(mgmtStore, cfg.AdminPubkeys)
@@ -789,4 +879,34 @@ func parseAuthConfig(cfg *config.Config) *auth.Config {
 	}
 
 	return authCfg
+}
+
+// newPaidMemberChecker returns a function that checks whether a pubkey holds
+// an active paid tier (any tier above free with a non-expired expiration).
+// Results are cached for 5 minutes so the check does not hit the database on
+// every event — the WoT trust cache handles repeat lookups for the same
+// pubkey within its own TTL, and this cache covers the paid-status portion.
+//
+// On tier lapse: GetEffectiveTier returns TierFree the moment tier_expires_at
+// passes. The worst-case staleness is this cache's TTL (5 min), after which
+// the pubkey falls back to graph trust.
+func newPaidMemberChecker(store *membership.Store) func(string) bool {
+	type entry struct {
+		paid bool
+		at   time.Time
+	}
+	var paidCache sync.Map
+	const ttl = 5 * time.Minute
+
+	return func(pubkey string) bool {
+		if v, ok := paidCache.Load(pubkey); ok {
+			if e := v.(*entry); time.Since(e.at) < ttl {
+				return e.paid
+			}
+		}
+		member, err := store.GetMember(context.Background(), pubkey)
+		paid := err == nil && member != nil && member.GetEffectiveTier() != membership.TierFree
+		paidCache.Store(pubkey, &entry{paid: paid, at: time.Now()})
+		return paid
+	}
 }
