@@ -384,6 +384,7 @@ func main() {
 		// Apply custom policy overrides if configured
 		if cfg.WoTUnknownPoWBits > 0 {
 			policy := wotCfg.Policies[wot.TrustLevelUnknown]
+			policy.RequirePoW = true
 			policy.MinPoWDifficulty = cfg.WoTUnknownPoWBits
 			wotCfg.Policies[wot.TrustLevelUnknown] = policy
 		}
@@ -873,9 +874,10 @@ func parseAuthConfig(cfg *config.Config) *auth.Config {
 		authCfg.Policy = auth.PolicyAuthWrite
 	case "auth-all":
 		authCfg.Policy = auth.PolicyAuthAll
-	default:
-		// Default to open
+	case "open", "":
 		authCfg.Policy = auth.PolicyOpen
+	default:
+		log.Fatalf("AUTH_POLICY=%q is not a recognized value (valid: open, auth-read, auth-write, auth-all); refusing to start", cfg.AuthPolicy)
 	}
 
 	return authCfg

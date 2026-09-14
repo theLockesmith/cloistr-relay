@@ -125,10 +125,15 @@ func DefaultPolicies() map[TrustLevel]TrustPolicy {
 			RequirePoW:       false,
 			MinPoWDifficulty: 0,
 		},
+		// Default: no PoW. The override at cmd/relay/main.go sets RequirePoW=true
+		// when WOT_UNKNOWN_POW_BITS > 0. Setting the env var to 0 (or omitting it)
+		// means "no proof of work", not "keep the compiled-in default of 8". That
+		// was the landmine: the > 0 guard skipped the override, leaving RequirePoW
+		// true at difficulty 8, so "zero" meant the opposite of what it read.
 		TrustLevelUnknown: {
 			EventsPerSecond:  5,
-			RequirePoW:       true,
-			MinPoWDifficulty: 8,
+			RequirePoW:       false,
+			MinPoWDifficulty: 0,
 		},
 	}
 }

@@ -50,9 +50,10 @@ func TestDefaultPolicies(t *testing.T) {
 			t.Errorf("Trust level %s should not require PoW", level)
 		}
 
-		// Unknown should require PoW
-		if level == TrustLevelUnknown && !policy.RequirePoW {
-			t.Errorf("Trust level %s should require PoW", level)
+		// Unknown should NOT require PoW by default (the env var override
+		// sets RequirePoW=true when WOT_UNKNOWN_POW_BITS > 0).
+		if level == TrustLevelUnknown && policy.RequirePoW {
+			t.Errorf("Trust level %s should not require PoW by default", level)
 		}
 	}
 }

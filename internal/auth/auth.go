@@ -85,6 +85,14 @@ func RegisterAuthHandlers(relay *khatru.Relay, cfg *Config) {
 		relay.RejectEvent = append(relay.RejectEvent, requireAuthForWrite(cfg))
 	}
 
+	// The write whitelist (WRITE_WHITELIST_PUBKEYS) is checked inside
+	// requireAuthForWrite, which is only registered for PolicyAuthWrite and
+	// PolicyAuthAll. Under any other policy the whitelist is silently ignored.
+	if len(cfg.WriteWhitelist) > 0 && cfg.Policy != PolicyAuthWrite && cfg.Policy != PolicyAuthAll {
+		log.Printf("WARNING: WRITE_WHITELIST_PUBKEYS has %d entries but AUTH_POLICY=%v does not register the write handler — the whitelist is ignored",
+			len(cfg.WriteWhitelist), cfg.Policy)
+	}
+
 	log.Printf("NIP-42 authentication handlers registered (policy: %v)", cfg.Policy)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/khatru"
@@ -112,6 +113,68 @@ type Handler struct {
 	policies       map[TrustLevel]TrustPolicy
 	allowedPubkeys map[string]struct{} // Fast lookup for whitelisted pubkeys
 	isPaidMember   func(string) bool   // nil when no membership integration
+	rateBuckets    sync.Map            // pubkey -> *rateBucket, per-pubkey event rate limiting
+}
+
+// rateBucket is a token-bucket rate limiter for one pubkey. Tokens refill at
+// `limit` per second up to a burst of 2× limit (two seconds' worth). A
+// publish attempt costs one token; when the bucket is empty the event is
+// rejected with "rate-limited".
+type rateBucket struct {
+	mu       sync.Mutex
+	tokens   float64
+	lastTime time.Time
+	limit    float64
+}
+
+func (b *rateBucket) allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	elapsed := now.Sub(b.lastTime).Seconds()
+	b.lastTime = now
+	b.tokens += elapsed * b.limit
+	burst := b.limit * 2 // two seconds' worth
+	if b.tokens > burst {
+		b.tokens = burst
+	}
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+func (h *Handler) getOrCreateBucket(pubkey string, eventsPerSec int) *rateBucket {
+	if v, ok := h.rateBuckets.Load(pubkey); ok {
+		return v.(*rateBucket)
+	}
+	b := &rateBucket{
+		tokens:   float64(eventsPerSec), // start full
+		lastTime: time.Now(),
+		limit:    float64(eventsPerSec),
+	}
+	actual, _ := h.rateBuckets.LoadOrStore(pubkey, b)
+	return actual.(*rateBucket)
+}
+
+// sweepStaleBuckets removes rate-limit buckets that haven't been touched in
+// maxIdle. Runs as a background goroutine started by RegisterHandlers.
+func (h *Handler) sweepStaleBuckets(interval, maxIdle time.Duration) {
+	for {
+		time.Sleep(interval)
+		cutoff := time.Now().Add(-maxIdle)
+		h.rateBuckets.Range(func(key, value any) bool {
+			b := value.(*rateBucket)
+			b.mu.Lock()
+			idle := b.lastTime.Before(cutoff)
+			b.mu.Unlock()
+			if idle {
+				h.rateBuckets.Delete(key)
+			}
+			return true
+		})
+	}
 }
 
 // NewHandler creates a new WoT handler.
@@ -154,42 +217,45 @@ func NewHandler(store *Store, trustRoots []string, cfg *Config) *Handler {
 // RejectEventByTrust returns a handler that rejects events based on WoT trust level
 func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool, string) {
 	return func(ctx context.Context, event *nostr.Event) (bool, string) {
-		// NIP-46 Nostr Connect events (kind 24133) are exempt from POW requirements
-		// These are ephemeral events used for remote signer communication
+		// NIP-46 Nostr Connect events (kind 24133) are exempt from all trust gates.
 		if event.Kind == 24133 {
 			return false, ""
 		}
 
-		// Allowed pubkeys bypass all WoT requirements
+		// Allowed pubkeys bypass all WoT requirements (rate, PoW, trust level).
 		if _, allowed := h.allowedPubkeys[event.PubKey]; allowed {
-			return false, ""
-		}
-
-		// An author who has AUTHENTICATED (NIP-42) as this very pubkey is not an
-		// unknown. PoW exists to price anonymous spam; it buys nothing against
-		// someone who has already proven they hold the key, and the relay runs
-		// AUTH_POLICY=auth-write, so every write is authenticated anyway.
-		//
-		// Without this, first-party Cloistr data was gated as though it were
-		// spam from a stranger: stash publishes its file and folder metadata as
-		// kind 30078/30079, the relay answered
-		//   "pow: low trust requires proof of work (got 0, need 8)"
-		// and stash hung forever on "Connecting to your account…". Every user
-		// not hand-listed in ALLOWED_PUBKEYS was locked out of the product, which
-		// on a multi-user service is everyone but the operator.
-		//
-		// Anonymous and third-party writes are unaffected and still face the
-		// full trust policy.
-		if authorIsAuthenticated(khatru.GetAuthed(ctx), event.PubKey) {
 			return false, ""
 		}
 
 		level := h.getTrustLevel(event.PubKey)
 		policy := h.policies[level]
 
-		// Check PoW requirement. The rejection carries the required difficulty so a
-		// client can mine to the exact target and retry (NIP-13 nonce), rather than
-		// guessing. Format matches the global gate (handlers.go) so clients parse one
+		// Per-pubkey rate limiting based on trust level. Applies to ALL writers
+		// including authenticated ones: the auth bypass below is specifically
+		// for PoW, not rate limits. Per-pubkey complements the per-IP limiter
+		// in handlers.go — one caps an address, the other caps an identity.
+		if policy.EventsPerSecond > 0 {
+			bucket := h.getOrCreateBucket(event.PubKey, policy.EventsPerSecond)
+			if !bucket.allow() {
+				return true, fmt.Sprintf("rate-limited: trust level %s allows %d events/sec",
+					level, policy.EventsPerSecond)
+			}
+		}
+
+		// An author who has AUTHENTICATED (NIP-42) as this very pubkey is not
+		// unknown for PoW purposes. PoW exists to price anonymous spam; it
+		// buys nothing against someone who has already proven they hold the
+		// key. The relay runs AUTH_POLICY=auth-write so every write is
+		// authenticated anyway.
+		//
+		// This bypass is for PoW only. Rate limiting (above) still applies.
+		if authorIsAuthenticated(khatru.GetAuthed(ctx), event.PubKey) {
+			return false, ""
+		}
+
+		// Check PoW requirement. The rejection carries the required difficulty
+		// so a client can mine to the exact target and retry (NIP-13 nonce).
+		// Format matches the global gate (handlers.go) so clients parse one
 		// shape: "pow: ... (got N, need M)".
 		if policy.RequirePoW && policy.MinPoWDifficulty > 0 {
 			difficulty := countLeadingZeroBits(event.ID)
@@ -303,6 +369,12 @@ func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
 		handler.policies[TrustLevelUnknown].EventsPerSecond,
 		handler.policies[TrustLevelUnknown].MinPoWDifficulty,
 	)
+	log.Println("WoT per-pubkey rate limiting active (complements per-IP limiter in handlers)")
+
+	// Sweep stale rate-limit buckets every 5 minutes; discard any that have
+	// been idle for 10 minutes. This keeps memory bounded without affecting
+	// active publishers.
+	go handler.sweepStaleBuckets(5*time.Minute, 10*time.Minute)
 
 	return handler
 }
