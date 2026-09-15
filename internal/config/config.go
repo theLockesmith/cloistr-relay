@@ -45,6 +45,12 @@ type Config struct {
 	MaxCreatedAtFuture int64 // Max seconds into future for created_at (default: 300 = 5 min)
 	MaxCreatedAtPast   int64 // Max seconds into past for created_at (0 = unlimited, default)
 
+	// WebSocket message size limit (bytes). Khatru's default is 512,000.
+	// This is the ceiling on the entire WebSocket message, not just the event
+	// content. A client that exceeds it gets its connection closed (WebSocket
+	// 1009 "message too big"); there is no relay-level error before the close.
+	MaxMessageSize int64 // MAX_MESSAGE_SIZE env var (default: 512000)
+
 	// NIP-13 Proof of Work
 	MinPoWDifficulty int // Minimum PoW difficulty required (0 = disabled, default)
 
@@ -179,8 +185,9 @@ func Load() (*Config, error) {
 		DBPort:                     5432,
 		DBName:                     "nostr",
 		DBUser:                     "postgres",
-		MaxCreatedAtFuture:         300, // 5 minutes (NIP-22)
-		MaxCreatedAtPast:           0,   // Unlimited by default
+		MaxCreatedAtFuture:         300,    // 5 minutes (NIP-22)
+		MaxCreatedAtPast:           0,      // Unlimited by default
+		MaxMessageSize:             512000, // khatru default; explicit so it is a choice
 		RateLimitEventsPerSec:      10,  // 10 events/sec per IP
 		RateLimitFiltersPerSec:     20,  // 20 queries/sec per IP
 		RateLimitConnectionsPerSec: 5,   // 5 connections/sec per IP
@@ -275,6 +282,13 @@ func Load() (*Config, error) {
 	if maxPast := os.Getenv("MAX_CREATED_AT_PAST"); maxPast != "" {
 		if v, err := strconv.ParseInt(maxPast, 10, 64); err == nil {
 			cfg.MaxCreatedAtPast = v
+		}
+	}
+
+	// WebSocket message size limit
+	if maxMsg := os.Getenv("MAX_MESSAGE_SIZE"); maxMsg != "" {
+		if v, err := strconv.ParseInt(maxMsg, 10, 64); err == nil && v > 0 {
+			cfg.MaxMessageSize = v
 		}
 	}
 

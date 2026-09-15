@@ -7,6 +7,7 @@ import (
 	"github.com/fiatjaf/eventstore/postgresql"
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip11"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/eventcache"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
@@ -59,6 +60,10 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	relay.Info.SupportedNIPs = supportedNIPs(cfg)
 	relay.Info.Software = "https://git.aegis-hq.xyz/coldforge/cloistr-relay"
 	relay.Info.Version = Version
+	relay.Info.Limitation = buildLimitation(cfg)
+
+	// WebSocket message size: explicit rather than inheriting khatru's default.
+	relay.MaxMessageSize = cfg.MaxMessageSize
 
 	// Enable NIP-77 Negentropy sync
 	relay.Negentropy = true
@@ -133,6 +138,10 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 	relay.Info.SupportedNIPs = supportedNIPs(cfg)
 	relay.Info.Software = "https://git.aegis-hq.xyz/coldforge/cloistr-relay"
 	relay.Info.Version = Version
+	relay.Info.Limitation = buildLimitation(cfg)
+
+	// WebSocket message size: explicit rather than inheriting khatru's default.
+	relay.MaxMessageSize = cfg.MaxMessageSize
 
 	// Enable NIP-77 Negentropy sync
 	relay.Negentropy = true
@@ -224,4 +233,33 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 	}
 
 	return relay
+}
+
+// buildLimitation constructs the NIP-11 limitation object from config. Every
+// field reflects an actually-enforced ceiling so a client can learn the relay's
+// limits from the document rather than hitting them at runtime.
+func buildLimitation(cfg *config.Config) *nip11.RelayLimitationDocument {
+	lim := &nip11.RelayLimitationDocument{
+		MaxMessageLength: int(cfg.MaxMessageSize),
+		MinPowDifficulty: cfg.MinPoWDifficulty,
+	}
+
+	// auth_required: true when any write or read requires NIP-42.
+	switch cfg.AuthPolicy {
+	case "auth-write", "auth-read", "auth-all":
+		lim.AuthRequired = true
+	}
+
+	// created_at_upper_limit is an offset (seconds into the future). NIP-11
+	// documents it as a relative value, matching our config directly.
+	if cfg.MaxCreatedAtFuture > 0 {
+		lim.CreatedAtUpperLimit = cfg.MaxCreatedAtFuture
+	}
+
+	// restricted_writes: true when a non-empty write whitelist is in effect.
+	if len(cfg.WriteWhitelistPubkeys) > 0 {
+		lim.RestrictedWrites = true
+	}
+
+	return lim
 }
