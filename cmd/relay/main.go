@@ -170,6 +170,17 @@ func main() {
 		log.Printf("Warning: Failed to optimize indexes: %v", err)
 	}
 
+	// Tombstones: deleted event ids, so a saved copy cannot be republished.
+	//
+	// FATAL on failure, unlike the index optimisation directly above it. That
+	// difference is deliberate. A missing index costs query time. A missing
+	// tombstone table makes every deletion look permanent while being reversible
+	// by anyone who kept a copy, with the relay reporting healthy throughout.
+	// Refusing to start is the honest behaviour for a guard that cannot guard.
+	if err := storage.EnsureTombstoneTable(rawDB); err != nil {
+		log.Fatalf("Failed to create tombstone table: %v", err)
+	}
+
 	// Initialize cache (Dragonfly/Redis)
 	var cacheClient *cache.Client
 	if cfg.CacheURL != "" {
@@ -216,6 +227,20 @@ func main() {
 
 	// Create the relay (with optional event cache and write-ahead log)
 	r := relay.NewRelayWithOptions(cfg, db, searchBackend, evtCache, wal)
+
+	// Tombstone wiring lives here rather than inside NewRelayWithOptions because
+	// this is where the raw *sql.DB is in scope; the relay constructor only takes
+	// the eventstore backend. Recording runs AFTER the backend's own delete, so a
+	// failed delete does not leave a tombstone for an event that is still present.
+	r.DeleteEvent = append(r.DeleteEvent, func(ctx context.Context, evt *nostr.Event) error {
+		return storage.RecordTombstone(ctx, rawDB, evt.ID, evt.Kind, time.Now().Unix())
+	})
+	rejectRepublish := storage.RejectRepublishedDeletion(func(ctx context.Context, id string) (bool, error) {
+		return storage.IsTombstoned(ctx, rawDB, id)
+	})
+	r.RejectEvent = append(r.RejectEvent, func(ctx context.Context, evt *nostr.Event) (bool, string) {
+		return rejectRepublish(ctx, evt.ID)
+	})
 
 	// Initialize cross-pod event pub/sub (if enabled and cache available)
 	var eventPubSub *pubsub.PubSub
