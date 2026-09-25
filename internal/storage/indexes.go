@@ -92,6 +92,20 @@ func OptimizeIndexes(db *sql.DB) error {
 			name: "event_labels_idx",
 			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_labels_idx ON event (pubkey, created_at DESC) WHERE kind = 1985`,
 		},
+		// TAG LOOKUPS. Every index above this one is on kind, pubkey or created_at,
+		// and there was nothing at all for tags. The eventstore builds a tag filter
+		// as `tagvalues && ARRAY[...]`, a Postgres array-overlap test, which GIN
+		// indexes and btree cannot help with at all.
+		//
+		// This matters now because Cloistr threads are read ENTIRELY by tag: a
+		// member finds its messages by a bucket tag it shares with a crowd of
+		// unrelated threads, and downloads that whole bucket every window. That is
+		// the design's core cost, and without this index every one of those reads
+		// is a sequential scan of the event table.
+		{
+			name: "event_tagvalues_gin_idx",
+			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_tagvalues_gin_idx ON event USING GIN (tagvalues)`,
+		},
 	}
 
 	for _, idx := range indexes {
