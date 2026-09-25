@@ -5,9 +5,26 @@
 // - Seal (kind 13): Wraps the rumor with sender's key
 // - Gift Wrap (kind 1059): Wraps sealed event with ephemeral key
 //
-// Relay responsibilities:
+// Relay responsibilities, in one of TWO modes:
+//
+//   RequireAuthForGiftWrap = true  (the NIP-59 recommendation)
+//     Serve a wrap only to the key named in its p tag, and only to an
+//     authenticated connection.
+//
+//   RequireAuthForGiftWrap = false (what Cloistr threads require)
+//     Treat 1059 as an ordinary kind: serve it by any tag filter, to any
+//     reader, with no login.
+//
+// The second mode exists because a thread message under the bucketed-mailbox
+// design carries NO p tag at all. It is addressed to a thread key, not to a
+// person, and members find it by a bucket tag shared with a crowd of unrelated
+// threads. Under mode one such an event is accepted, stored, and served to
+// nobody, not even the key that published it. Privacy comes from the encryption
+// and the crowd, never from the relay choosing who may read, because a relay we
+// do not run will not make that choice for us and the one we do run can read
+// everything anyway.
+//
 // - Accept kind 13 and kind 1059 events
-// - Only serve kind 1059 events to tagged recipients (auth required)
 // - Support deletion by the original signer
 package giftwrap
 
@@ -147,8 +164,10 @@ func (h *Handler) OnEventSaved() func(context.Context, *nostr.Event) {
 		case KindSeal:
 			log.Printf("NIP-59: Seal stored from %s", event.PubKey[:8])
 		case KindGiftWrap:
-			recipient := getRecipient(event)
-			log.Printf("NIP-59: Gift wrap stored for recipient %s", recipient)
+			// Deliberately NOT logging the recipient. A log line naming who
+			// received a wrap is the same metadata the design removes from the
+			// event, recorded somewhere an operator reads casually.
+			log.Printf("NIP-59: Gift wrap stored")
 		}
 	}
 }
@@ -170,16 +189,28 @@ func getRecipient(event *nostr.Event) string {
 func RegisterHandlers(relay *khatru.Relay, cfg *Config) *Handler {
 	handler := NewHandler(cfg)
 
-	// Restrict gift wrap queries to authenticated recipients
-	relay.RejectFilter = append(relay.RejectFilter, handler.RejectGiftWrapFilter())
+	// BOTH restrictions are registered together or not at all. Gating only the
+	// reject handler on the config would leave the overwrite handler rewriting
+	// every authenticated reader's #p filter to their own pubkey, so anonymous
+	// readers would work and logged-in ones would silently get nothing. That
+	// half-state passes a casual check and is the exact shape of bug this
+	// codebase keeps shipping, so the two are bound here deliberately.
+	if cfg.RequireAuthForGiftWrap {
+		// Restrict gift wrap queries to authenticated recipients
+		relay.RejectFilter = append(relay.RejectFilter, handler.RejectGiftWrapFilter())
 
-	// Overwrite gift wrap filters to enforce recipient matching
-	relay.OverwriteFilter = append(relay.OverwriteFilter, handler.OverwriteGiftWrapFilter())
+		// Overwrite gift wrap filters to enforce recipient matching
+		relay.OverwriteFilter = append(relay.OverwriteFilter, handler.OverwriteGiftWrapFilter())
+	}
 
 	// Log gift wrap events
 	relay.OnEventSaved = append(relay.OnEventSaved, handler.OnEventSaved())
 
-	log.Printf("NIP-59 gift wrap enabled (auth required: %v)", cfg.RequireAuthForGiftWrap)
+	if cfg.RequireAuthForGiftWrap {
+		log.Printf("NIP-59 gift wrap enabled: recipient-gated, auth required to query")
+	} else {
+		log.Printf("NIP-59 gift wrap enabled: served by tag to any reader, no auth (threads mode)")
+	}
 
 	return handler
 }
