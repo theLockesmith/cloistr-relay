@@ -14,9 +14,17 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 )
 
-// RegisterHandlers registers all event handlers with the relay
-// Set useDistributedRateLimit to true to skip in-memory rate limiting (when using distributed rate limiter)
-func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRateLimit bool) {
+// RateLimitExemptChecker checks whether a pubkey is dynamically exempt from rate limiting.
+// Implemented by management.Store.
+type RateLimitExemptChecker interface {
+	IsRateLimitExempt(pubkey string) bool
+}
+
+// RegisterHandlers registers all event handlers with the relay.
+// Set useDistributedRateLimit to true to skip in-memory rate limiting (when using distributed rate limiter).
+// exemptChecker, when non-nil, is consulted for dynamic (DB-backed) rate-limit exemptions
+// in addition to the static env-var list.
+func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRateLimit bool, exemptChecker RateLimitExemptChecker) {
 	// Reject events based on custom policies
 	relay.RejectEvent = append(relay.RejectEvent, rejectInvalidEvents)
 
@@ -49,18 +57,8 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 			exemptPubkeys[pk] = true
 		}
 
-		// Wrap rate limiter to exempt certain kinds and pubkeys
-		relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
-			// Exempt specific pubkeys from rate limiting
-			if exemptPubkeys[event.PubKey] {
-				return false, ""
-			}
-			// Exempt specific kinds from rate limiting
-			if exemptKinds[event.Kind] {
-				return false, ""
-			}
-			return baseLimiter(ctx, event)
-		})
+		relay.RejectEvent = append(relay.RejectEvent,
+			buildRateLimitRejecter(exemptPubkeys, exemptKinds, exemptChecker, baseLimiter))
 
 		if len(cfg.RateLimitExemptPubkeys) > 0 {
 			log.Printf("Rate limit (in-memory): %d events/sec per IP (exempt kinds: %v, exempt pubkeys: %d)",
@@ -111,6 +109,32 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 	})
 
 	log.Println("Event handlers registered")
+}
+
+// buildRateLimitRejecter returns a RejectEvent handler that exempts certain pubkeys
+// and kinds from rate limiting. Static exemptions come from the env-var maps;
+// dynamic exemptions come from the DB-backed checker (may be nil).
+func buildRateLimitRejecter(
+	exemptPubkeys map[string]bool,
+	exemptKinds map[int]bool,
+	dynamicChecker RateLimitExemptChecker,
+	baseLimiter func(context.Context, *nostr.Event) (bool, string),
+) func(context.Context, *nostr.Event) (bool, string) {
+	return func(ctx context.Context, event *nostr.Event) (bool, string) {
+		if exemptPubkeys[event.PubKey] {
+			return false, ""
+		}
+		if dynamicChecker != nil && dynamicChecker.IsRateLimitExempt(event.PubKey) {
+			return false, ""
+		}
+		if exemptKinds[event.Kind] {
+			return false, ""
+		}
+		if baseLimiter != nil {
+			return baseLimiter(ctx, event)
+		}
+		return false, ""
+	}
 }
 
 // getRecipient extracts the recipient pubkey from event tags

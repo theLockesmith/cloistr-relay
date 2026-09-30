@@ -58,6 +58,12 @@ func (h *MethodHandler) Dispatch(method string, params []json.RawMessage) (inter
 		return h.UnblockIP(params)
 	case "listblockedips":
 		return h.ListBlockedIPs(params)
+	case "exemptpubkeyfromratelimit":
+		return h.ExemptPubkeyFromRateLimit(params)
+	case "removeexemptpubkey":
+		return h.RemoveExemptPubkey(params)
+	case "listratelimitexemptions":
+		return h.ListRateLimitExemptions(params)
 	default:
 		return nil, fmt.Errorf("unsupported method: %s", method)
 	}
@@ -317,6 +323,53 @@ func (h *MethodHandler) UnblockIP(params []json.RawMessage) (interface{}, error)
 func (h *MethodHandler) ListBlockedIPs(params []json.RawMessage) (interface{}, error) {
 	limit, offset := parseListParams(params)
 	return h.store.ListBlockedIPs(limit, offset)
+}
+
+// ExemptPubkeyFromRateLimit adds a pubkey to the rate-limit exemption list
+func (h *MethodHandler) ExemptPubkeyFromRateLimit(params []json.RawMessage) (interface{}, error) {
+	if len(params) < 1 {
+		return nil, fmt.Errorf("missing pubkey parameter")
+	}
+
+	var pubkey string
+	if err := json.Unmarshal(params[0], &pubkey); err != nil {
+		return nil, fmt.Errorf("invalid pubkey parameter: %w", err)
+	}
+
+	reason := ""
+	if len(params) > 1 {
+		_ = json.Unmarshal(params[1], &reason)
+	}
+
+	if err := h.store.ExemptPubkeyFromRateLimit(pubkey, reason); err != nil {
+		return nil, fmt.Errorf("failed to exempt pubkey: %w", err)
+	}
+
+	return true, nil
+}
+
+// RemoveExemptPubkey removes a pubkey from the rate-limit exemption list
+func (h *MethodHandler) RemoveExemptPubkey(params []json.RawMessage) (interface{}, error) {
+	if len(params) < 1 {
+		return nil, fmt.Errorf("missing pubkey parameter")
+	}
+
+	var pubkey string
+	if err := json.Unmarshal(params[0], &pubkey); err != nil {
+		return nil, fmt.Errorf("invalid pubkey parameter: %w", err)
+	}
+
+	if err := h.store.RemoveRateLimitExemption(pubkey); err != nil {
+		return nil, fmt.Errorf("failed to remove exemption: %w", err)
+	}
+
+	return true, nil
+}
+
+// ListRateLimitExemptions returns the list of rate-limit exempt pubkeys
+func (h *MethodHandler) ListRateLimitExemptions(params []json.RawMessage) (interface{}, error) {
+	limit, offset := parseListParams(params)
+	return h.store.ListRateLimitExemptions(limit, offset)
 }
 
 // parseListParams extracts limit and offset from params

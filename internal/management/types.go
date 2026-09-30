@@ -46,6 +46,13 @@ type ModerationItem struct {
 	Status     string          `json:"status"`
 }
 
+// RateLimitExemptPubkey represents a pubkey exempt from rate limiting
+type RateLimitExemptPubkey struct {
+	Pubkey    string    `json:"pubkey"`
+	Reason    string    `json:"reason,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // BlockedIP represents a blocked IP address
 type BlockedIP struct {
 	IP        string    `json:"ip"`
@@ -120,4 +127,7 @@ var SupportedMethods = []string{
 	"blockip",
 	"unblockip",
 	"listblockedips",
+	"exemptpubkeyfromratelimit",
+	"removeexemptpubkey",
+	"listratelimitexemptions",
 }

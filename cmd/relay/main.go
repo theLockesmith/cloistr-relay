@@ -259,10 +259,27 @@ func main() {
 		log.Println("Cross-pod event pub/sub enabled (Dragonfly/Redis)")
 	}
 
-	// Register custom handlers (validation, filtering)
-	// Pass whether distributed rate limiting is active so in-memory rate limiting can be skipped
+	// Initialize NIP-86 management store early so it can be passed to the
+	// rate limiter as a dynamic exemption checker. The store itself is safe to
+	// create before handlers — it only needs the DB connection.
+	var mgmtStore *management.Store
+	if len(cfg.AdminPubkeys) > 0 {
+		mgmtStore = management.NewStore(rawDB)
+		if err := mgmtStore.Init(); err != nil {
+			log.Fatalf("Failed to initialize management store: %v", err)
+		}
+		log.Printf("NIP-86 management API enabled for %d admin pubkeys", len(cfg.AdminPubkeys))
+	}
+
+	// Register custom handlers (validation, filtering).
+	// A nil mgmtStore must stay a nil interface, not a non-nil interface wrapping
+	// a nil pointer, so build the interface value explicitly.
 	useDistributedRateLimit := cacheClient != nil && cfg.RateLimitDistributed
-	handlers.RegisterHandlers(r, cfg, useDistributedRateLimit)
+	var exemptChecker handlers.RateLimitExemptChecker
+	if mgmtStore != nil {
+		exemptChecker = mgmtStore
+	}
+	handlers.RegisterHandlers(r, cfg, useDistributedRateLimit, exemptChecker)
 
 	// Register distributed rate limiting (if enabled)
 	if useDistributedRateLimit {
@@ -278,16 +295,10 @@ func main() {
 		log.Println("Distributed rate limiting enabled (Dragonfly/Redis)")
 	}
 
-	// Initialize NIP-86 management API
-	var mgmtStore *management.Store
-	if len(cfg.AdminPubkeys) > 0 {
-		mgmtStore = management.NewStore(rawDB)
-		if err := mgmtStore.Init(); err != nil {
-			log.Fatalf("Failed to initialize management store: %v", err)
-		}
-		// Register ban checking handlers
+	// Register ban checking handlers (must come after handler registration
+	// for correct khatru execution order)
+	if mgmtStore != nil {
 		management.RegisterBanHandlers(r, mgmtStore)
-		log.Printf("NIP-86 management API enabled for %d admin pubkeys", len(cfg.AdminPubkeys))
 	}
 
 	// Arbiter claim enforcement (kind 30078, d="arbiter:claim:*").
