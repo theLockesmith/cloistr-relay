@@ -66,6 +66,13 @@ func (s *Store) Init() error {
 			value TEXT
 		);
 
+		-- Rate-limit exempt pubkeys (dynamic, admin-managed via NIP-86)
+		CREATE TABLE IF NOT EXISTS management_rate_limit_exempt_pubkeys (
+			pubkey TEXT PRIMARY KEY,
+			reason TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+
 		-- Create indexes for faster lookups
 		CREATE INDEX IF NOT EXISTS idx_moderation_status ON management_moderation_queue(status);
 	`
@@ -426,6 +433,62 @@ func (s *Store) SetSetting(key, value string) error {
 		key, value,
 	)
 	return err
+}
+
+// ExemptPubkeyFromRateLimit adds a pubkey to the rate-limit exemption list
+func (s *Store) ExemptPubkeyFromRateLimit(pubkey, reason string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO management_rate_limit_exempt_pubkeys (pubkey, reason)
+		 VALUES ($1, $2)
+		 ON CONFLICT (pubkey) DO UPDATE SET reason = $2`,
+		pubkey, reason,
+	)
+	return err
+}
+
+// RemoveRateLimitExemption removes a pubkey from the rate-limit exemption list
+func (s *Store) RemoveRateLimitExemption(pubkey string) error {
+	_, err := s.db.Exec(`DELETE FROM management_rate_limit_exempt_pubkeys WHERE pubkey = $1`, pubkey)
+	return err
+}
+
+// IsRateLimitExempt checks if a pubkey is exempt from rate limiting
+func (s *Store) IsRateLimitExempt(pubkey string) bool {
+	var exists bool
+	err := s.db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM management_rate_limit_exempt_pubkeys WHERE pubkey = $1)`,
+		pubkey,
+	).Scan(&exists)
+	return err == nil && exists
+}
+
+// ListRateLimitExemptions returns all rate-limit exempt pubkeys
+func (s *Store) ListRateLimitExemptions(limit, offset int) ([]RateLimitExemptPubkey, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.db.Query(
+		`SELECT pubkey, COALESCE(reason, ''), created_at
+		 FROM management_rate_limit_exempt_pubkeys
+		 ORDER BY created_at DESC
+		 LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []RateLimitExemptPubkey
+	for rows.Next() {
+		var ep RateLimitExemptPubkey
+		if err := rows.Scan(&ep.Pubkey, &ep.Reason, &ep.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, ep)
+	}
+	return result, rows.Err()
 }
 
 // DB returns the underlying database connection for advanced queries
