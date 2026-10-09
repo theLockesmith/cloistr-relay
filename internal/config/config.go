@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -76,6 +77,8 @@ type Config struct {
 	WoTTrustRoots       []string // Multiple trust roots (overrides WoTOwnerPubkey when non-empty)
 	WoTUnknownPoWBits   int      // PoW bits required for unknown pubkeys (default 8)
 	WoTUnknownRateLimit int      // Events/sec for unknown pubkeys (default 5)
+	WoTCollabKinds      []int    // Live-collaboration kinds rate-limited in their own per-pubkey bucket
+	WoTCollabRateLimit  int      // Events/sec floor for the collab bucket at every trust level (0 = share the general bucket)
 	WoTUsePageRank      bool     // Use PageRank-based trust scoring (Tier 2)
 	WoTPageRankInterval int      // PageRank recompute interval in minutes (default 60)
 
@@ -189,6 +192,10 @@ func Load() (*Config, error) {
 		MaxCreatedAtPast:           0,      // Unlimited by default
 		MaxMessageSize:             512000, // khatru default; explicit so it is a choice
 		RateLimitEventsPerSec:      10,  // 10 events/sec per IP
+		// Collab sync (25078 update, 25079 heartbeat) is one event per
+		// keystroke; see WOT_COLLAB_RATE_LIMIT in docs/reference.md.
+		WoTCollabKinds:             []int{25078, 25079},
+		WoTCollabRateLimit:         20,
 		RateLimitFiltersPerSec:     20,  // 20 queries/sec per IP
 		RateLimitConnectionsPerSec: 5,   // 5 connections/sec per IP
 		FilterMaxAuthors:           100, // Per-filter author cap
@@ -378,6 +385,28 @@ func Load() (*Config, error) {
 	if wotRate := os.Getenv("WOT_UNKNOWN_RATE_LIMIT"); wotRate != "" {
 		if v, err := strconv.Atoi(wotRate); err == nil {
 			cfg.WoTUnknownRateLimit = v
+		}
+	}
+	if collabKinds := os.Getenv("WOT_COLLAB_KINDS"); collabKinds != "" {
+		var kinds []int
+		for _, kindStr := range parseCommaSeparated(collabKinds) {
+			if kind, err := strconv.Atoi(kindStr); err == nil {
+				kinds = append(kinds, kind)
+			} else {
+				log.Printf("WOT_COLLAB_KINDS: ignoring unrecognised value %q", kindStr)
+			}
+		}
+		if len(kinds) > 0 {
+			cfg.WoTCollabKinds = kinds
+		} else {
+			log.Printf("WOT_COLLAB_KINDS=%q has no valid kinds; keeping default %v", collabKinds, cfg.WoTCollabKinds)
+		}
+	}
+	if collabRate := os.Getenv("WOT_COLLAB_RATE_LIMIT"); collabRate != "" {
+		if v, err := strconv.Atoi(collabRate); err == nil && v >= 0 {
+			cfg.WoTCollabRateLimit = v
+		} else {
+			log.Printf("WOT_COLLAB_RATE_LIMIT=%q is not a non-negative integer; keeping default %d", collabRate, cfg.WoTCollabRateLimit)
 		}
 	}
 	if wotPageRank := os.Getenv("WOT_USE_PAGERANK"); wotPageRank == "true" || wotPageRank == "1" {

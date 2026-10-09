@@ -92,6 +92,17 @@ type Config struct {
 	// by the trust cache). Nil means no paid-membership integration.
 	IsPaidMember func(pubkey string) bool
 
+	// CollabKinds are live-collaboration kinds (CRDT sync updates and
+	// presence heartbeats) that are rate-limited in their own per-pubkey
+	// bucket instead of the general one. Collaborative editors publish one
+	// event per keystroke, so sharing a bucket lets typing starve the
+	// document's snapshot save.
+	CollabKinds []int
+	// CollabEventsPerSecond is the floor rate of the collab bucket at every
+	// trust level: the bucket runs at max(level rate, this). 0 disables the
+	// separate bucket and collab kinds share the general one.
+	CollabEventsPerSecond int
+
 	// PageRank settings (Tier 2)
 	// UsePageRank enables PageRank-based trust scoring instead of simple follow distance
 	UsePageRank bool

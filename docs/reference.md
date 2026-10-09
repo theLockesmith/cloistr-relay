@@ -47,6 +47,8 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 | `WOT_TRUST_ROOTS` | - | Comma-separated pubkeys for multi-root trust (overrides WOT_OWNER_PUBKEY) |
 | `WOT_UNKNOWN_POW_BITS` | 8 | PoW bits required for unknown pubkeys |
 | `WOT_UNKNOWN_RATE_LIMIT` | 5 | Events/sec for unknown pubkeys |
+| `WOT_COLLAB_KINDS` | 25078,25079 | Live-collaboration kinds (CRDT sync, presence) rate-limited in their own per-pubkey bucket, so typing cannot starve snapshot saves |
+| `WOT_COLLAB_RATE_LIMIT` | 20 | Events/sec floor for the collab bucket at every trust level (burst 2x). 0 = collab kinds share the general bucket |
 | `WOT_USE_PAGERANK` | false | Use PageRank-based trust (requires cache) |
 | `WOT_PAGERANK_INTERVAL` | 60 | PageRank recompute interval in minutes |
 
