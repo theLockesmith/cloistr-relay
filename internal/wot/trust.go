@@ -113,8 +113,14 @@ type Handler struct {
 	policies       map[TrustLevel]TrustPolicy
 	allowedPubkeys map[string]struct{} // Fast lookup for whitelisted pubkeys
 	isPaidMember   func(string) bool   // nil when no membership integration
-	rateBuckets    sync.Map            // pubkey -> *rateBucket, per-pubkey event rate limiting
+	rateBuckets    sync.Map            // pubkey (or collabBucketPrefix+pubkey) -> *rateBucket
+	collabKinds    map[int]struct{}    // kinds that draw from the collab bucket
+	collabRate     int                 // collab bucket floor rate; 0 = no separate bucket
 }
+
+// collabBucketPrefix keys a pubkey's collab bucket apart from its general
+// bucket in rateBuckets, so the stale-bucket sweep covers both.
+const collabBucketPrefix = "collab:"
 
 // rateBucket is a token-bucket rate limiter for one pubkey. Tokens refill at
 // `limit` per second up to a burst of 2× limit (two seconds' worth). A
@@ -145,8 +151,8 @@ func (b *rateBucket) allow() bool {
 	return true
 }
 
-func (h *Handler) getOrCreateBucket(pubkey string, eventsPerSec int) *rateBucket {
-	if v, ok := h.rateBuckets.Load(pubkey); ok {
+func (h *Handler) getOrCreateBucket(key string, eventsPerSec int) *rateBucket {
+	if v, ok := h.rateBuckets.Load(key); ok {
 		return v.(*rateBucket)
 	}
 	b := &rateBucket{
@@ -154,7 +160,7 @@ func (h *Handler) getOrCreateBucket(pubkey string, eventsPerSec int) *rateBucket
 		lastTime: time.Now(),
 		limit:    float64(eventsPerSec),
 	}
-	actual, _ := h.rateBuckets.LoadOrStore(pubkey, b)
+	actual, _ := h.rateBuckets.LoadOrStore(key, b)
 	return actual.(*rateBucket)
 }
 
@@ -191,6 +197,11 @@ func NewHandler(store *Store, trustRoots []string, cfg *Config) *Handler {
 		allowedMap[pk] = struct{}{}
 	}
 
+	collabKinds := make(map[int]struct{}, len(cfg.CollabKinds))
+	for _, k := range cfg.CollabKinds {
+		collabKinds[k] = struct{}{}
+	}
+
 	h := &Handler{
 		store:          store,
 		calculator:     NewTrustCalculator(store, trustRoots, cfg.MaxFollowDepth),
@@ -198,6 +209,8 @@ func NewHandler(store *Store, trustRoots []string, cfg *Config) *Handler {
 		policies:       policies,
 		allowedPubkeys: allowedMap,
 		isPaidMember:   cfg.IsPaidMember,
+		collabKinds:    collabKinds,
+		collabRate:     cfg.CollabEventsPerSecond,
 	}
 
 	// Initialize PageRank if enabled
@@ -234,7 +247,26 @@ func (h *Handler) RejectEventByTrust() func(context.Context, *nostr.Event) (bool
 		// including authenticated ones: the auth bypass below is specifically
 		// for PoW, not rate limits. Per-pubkey complements the per-IP limiter
 		// in handlers.go — one caps an address, the other caps an identity.
-		if policy.EventsPerSecond > 0 {
+		//
+		// Live-collaboration kinds draw from a separate bucket. An editor
+		// publishes one sync event per keystroke, so with one shared bucket a
+		// new (unknown-trust) user typing at an ordinary pace drains it and
+		// the document's snapshot save is refused. Splitting them means typing
+		// can never starve the save. Collab events never touch the general
+		// bucket; that is safe because the default collab kinds are ephemeral
+		// (never stored), so the general bucket still caps everything stored.
+		//
+		// EventsPerSecond == 0 means unlimited on both paths.
+		if _, isCollab := h.collabKinds[event.Kind]; isCollab && h.collabRate > 0 {
+			if policy.EventsPerSecond > 0 {
+				rate := max(policy.EventsPerSecond, h.collabRate)
+				bucket := h.getOrCreateBucket(collabBucketPrefix+event.PubKey, rate)
+				if !bucket.allow() {
+					return true, fmt.Sprintf("rate-limited: trust level %s allows %d collaboration events/sec",
+						level, rate)
+				}
+			}
+		} else if policy.EventsPerSecond > 0 {
 			bucket := h.getOrCreateBucket(event.PubKey, policy.EventsPerSecond)
 			if !bucket.allow() {
 				return true, fmt.Sprintf("rate-limited: trust level %s allows %d events/sec",
@@ -369,6 +401,10 @@ func RegisterHandlers(relay *khatru.Relay, store *Store, cfg *Config) *Handler {
 		handler.policies[TrustLevelUnknown].EventsPerSecond,
 		handler.policies[TrustLevelUnknown].MinPoWDifficulty,
 	)
+	if handler.collabRate > 0 && len(handler.collabKinds) > 0 {
+		log.Printf("WoT collab bucket: kinds %v at >= %d/s per pubkey, separate from the general bucket",
+			cfg.CollabKinds, handler.collabRate)
+	}
 	log.Println("WoT per-pubkey rate limiting active (complements per-IP limiter in handlers)")
 
 	// Sweep stale rate-limit buckets every 5 minutes; discard any that have

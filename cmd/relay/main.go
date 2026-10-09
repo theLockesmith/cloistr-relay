@@ -408,6 +408,9 @@ func main() {
 			UsePageRank:    cfg.WoTUsePageRank,
 			AllowedPubkeys: cfg.AllowedPubkeys, // Bypass WoT for whitelisted pubkeys
 			IsPaidMember:   newPaidMemberChecker(memberStore),
+
+			CollabKinds:           cfg.WoTCollabKinds,
+			CollabEventsPerSecond: cfg.WoTCollabRateLimit,
 		}
 
 		// Set PageRank interval (default 60 minutes)
