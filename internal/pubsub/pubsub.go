@@ -10,8 +10,19 @@ import (
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 )
+
+// publishDropped counts events this pod failed to hand to other pods because
+// the async publish buffer was full. A dropped event never reaches
+// subscribers on the other replicas (for ephemerals such as NIP-46 replies,
+// it is lost outright). Scraped per pod.
+var publishDropped = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "nostr_relay_pubsub_publish_dropped_total",
+	Help: "Events not broadcast to other relay pods because the publish buffer was full",
+})
 
 const (
 	// ChannelName is the Redis pub/sub channel for relay events
@@ -215,6 +226,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *nostr.Event) error {
 	select {
 	case ps.publishCh <- event:
 	default:
+		publishDropped.Inc()
 		log.Printf("Pub/sub: publish buffer full, dropping event %s", event.ID[:8])
 	}
 
