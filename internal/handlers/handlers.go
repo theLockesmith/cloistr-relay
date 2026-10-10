@@ -12,6 +12,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/ratelimit"
 )
 
 // RateLimitExemptChecker checks whether a pubkey is dynamically exempt from rate limiting.
@@ -45,7 +46,7 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 
 	// Rate limiting for events (per IP) - skip if using distributed rate limiter
 	if !useDistributedRateLimit && cfg.RateLimitEventsPerSec > 0 {
-		baseLimiter := policies.EventIPRateLimiter(cfg.RateLimitEventsPerSec, time.Second, cfg.RateLimitEventsPerSec*5)
+		baseLimiter := ratelimit.EventIPRateLimiter(cfg.RateLimitEventsPerSec, time.Second, cfg.RateLimitEventsPerSec*5)
 
 		// Build exempt sets for O(1) lookup
 		exemptKinds := make(map[int]bool)
@@ -78,14 +79,14 @@ func RegisterHandlers(relay *khatru.Relay, cfg *config.Config, useDistributedRat
 	// Rate limiting for filters/queries (per IP) - skip if using distributed rate limiter
 	if !useDistributedRateLimit && cfg.RateLimitFiltersPerSec > 0 {
 		relay.RejectFilter = append(relay.RejectFilter,
-			policies.FilterIPRateLimiter(cfg.RateLimitFiltersPerSec, time.Second, cfg.RateLimitFiltersPerSec*5))
+			ratelimit.FilterIPRateLimiter(cfg.RateLimitFiltersPerSec, time.Second, cfg.RateLimitFiltersPerSec*5))
 		log.Printf("Rate limit (in-memory): %d filters/sec per IP", cfg.RateLimitFiltersPerSec)
 	}
 
 	// Rate limiting for new connections (per IP) - skip if using distributed rate limiter
 	if !useDistributedRateLimit && cfg.RateLimitConnectionsPerSec > 0 {
 		relay.RejectConnection = append(relay.RejectConnection,
-			policies.ConnectionRateLimiter(cfg.RateLimitConnectionsPerSec, time.Second, cfg.RateLimitConnectionsPerSec*5))
+			ratelimit.ConnectionRateLimiter(cfg.RateLimitConnectionsPerSec, time.Second, cfg.RateLimitConnectionsPerSec*5))
 		log.Printf("Rate limit (in-memory): %d connections/sec per IP", cfg.RateLimitConnectionsPerSec)
 	}
 
