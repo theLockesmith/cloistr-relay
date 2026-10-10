@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestEventMessage_Marshal(t *testing.T) {
@@ -116,5 +118,22 @@ func TestCreateStoreEventHook(t *testing.T) {
 	err := hook(context.Background(), event)
 	if err != nil {
 		t.Errorf("Hook should return nil error, got %v", err)
+	}
+}
+
+// With the publish loop not running, the buffer fills after PublishBufferSize
+// events; every further Publish is dropped and must be counted.
+func TestPublish_BufferFullIncrementsDropCounter(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"}) // never dialled: Start is not called
+	defer rdb.Close()
+	ps := New(rdb, nil, nil)
+
+	before := testutil.ToFloat64(publishDropped)
+	ev := &nostr.Event{ID: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Kind: 24133}
+	for i := 0; i < PublishBufferSize+7; i++ {
+		_ = ps.Publish(context.Background(), ev)
+	}
+	if got := testutil.ToFloat64(publishDropped) - before; got != 7 {
+		t.Fatalf("drop counter rose by %v, want 7", got)
 	}
 }
