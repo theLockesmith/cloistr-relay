@@ -17,6 +17,7 @@ import (
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/redis/go-redis/v9"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/clientip"
 )
 
 // Config holds rate limiter configuration
@@ -128,7 +129,7 @@ func (l *Limiter) RejectEventByRateLimit() func(context.Context, *nostr.Event) (
 			return false, ""
 		}
 
-		ip := khatru.GetIP(ctx)
+		ip := clientip.FromContext(ctx)
 		if ip == "" {
 			return false, "" // Can't rate limit without IP
 		}
@@ -154,7 +155,7 @@ func (l *Limiter) RejectFilterByRateLimit() func(context.Context, nostr.Filter) 
 			return false, ""
 		}
 
-		ip := khatru.GetIP(ctx)
+		ip := clientip.FromContext(ctx)
 		if ip == "" {
 			return false, ""
 		}
@@ -180,7 +181,7 @@ func (l *Limiter) RejectConnectionByRateLimit() func(*http.Request) bool {
 			return false // Don't reject
 		}
 
-		ip := khatru.GetIPFromRequest(r)
+		ip := clientip.FromRequest(r)
 		if ip == "" {
 			return false
 		}

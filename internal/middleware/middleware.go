@@ -4,9 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"net"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -14,6 +12,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/logging"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/tracing"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/clientip"
 )
 
 var connectionCounter uint64
@@ -151,40 +150,16 @@ func RegisterObservability(relay *khatru.Relay) {
 	})
 }
 
-// getClientIP extracts client IP from khatru context
+// getClientIP returns the client IP of the khatru connection in ctx.
+// See internal/clientip for why this never reads X-Forwarded-For.
 func getClientIP(ctx context.Context) string {
-	// Try to get from khatru's context
-	if ip := khatru.GetIP(ctx); ip != "" {
+	if ip := clientip.FromContext(ctx); ip != "" {
 		return ip
 	}
 	return "unknown"
 }
 
-// extractIP extracts the real client IP from request headers
+// extractIP returns the client IP for an HTTP request (see internal/clientip).
 func extractIP(r *http.Request) string {
-	// Check X-Forwarded-For header (from reverse proxies)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the chain
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// Check CF-Connecting-IP (Cloudflare)
-	if cfip := r.Header.Get("CF-Connecting-IP"); cfip != "" {
-		return cfip
-	}
-
-	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return clientip.FromRequest(r)
 }
