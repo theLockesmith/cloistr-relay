@@ -29,7 +29,7 @@ func testDBURL(t *testing.T) string {
 	if err != nil {
 		t.Skipf("cannot open test database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := db.Ping(); err != nil {
 		t.Skipf("cannot reach test database: %v", err)
 	}
@@ -54,19 +54,19 @@ func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open second conn: %v", err)
 	}
-	defer db2.Close()
+	defer func() { _ = db2.Close() }()
 	conn2, err := db2.Conn(ctx)
 	if err != nil {
 		t.Fatalf("second conn: %v", err)
 	}
-	defer conn2.Close()
+	defer func() { _ = conn2.Close() }()
 
 	var held bool
 	if err := conn2.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
 		t.Fatalf("try lock while held: %v", err)
 	}
 	if held {
-		conn2.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
+		_, _ = conn2.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
 		t.Fatal("second session acquired lock while first still holds it")
 	}
 
@@ -80,7 +80,7 @@ func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 	if !held {
 		t.Fatal("second session could not acquire after Unlock; unlock did not release")
 	}
-	conn2.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
+	_, _ = conn2.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
 
 	lock.Close()
 }
@@ -102,15 +102,15 @@ func TestDDLLock_ConcurrentCIC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup conn: %v", err)
 	}
-	defer setup.Close()
+	defer func() { _ = setup.Close() }()
 
-	setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx")
-	setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl")
+	_, _ = setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx")
+	_, _ = setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl")
 	if _, err := setup.Exec("CREATE TABLE ddllock_test_tbl (id serial PRIMARY KEY, val text)"); err != nil {
 		t.Fatalf("create test table: %v", err)
 	}
-	defer setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl")
-	defer setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx")
+	defer func() { _, _ = setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl") }()
+	defer func() { _, _ = setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx") }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -135,7 +135,7 @@ func TestDDLLock_ConcurrentCIC(t *testing.T) {
 				errs <- fmt.Errorf("replica %d open: %w", replica, err)
 				return
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			_, err = db.ExecContext(ctx, "CREATE INDEX CONCURRENTLY IF NOT EXISTS ddllock_test_idx ON ddllock_test_tbl (val)")
 			if err != nil {

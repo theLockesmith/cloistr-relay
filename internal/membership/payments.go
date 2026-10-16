@@ -155,7 +155,7 @@ func (s *PaymentStore) ListByPubkey(ctx context.Context, pubkey string) ([]Pendi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanPayments(rows)
 }
@@ -169,7 +169,7 @@ func (s *PaymentStore) ListPending(ctx context.Context) ([]PendingPayment, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanPayments(rows)
 }
@@ -182,7 +182,7 @@ func (s *PaymentStore) CountByStatus(ctx context.Context) (map[PaymentStatus]int
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := make(map[PaymentStatus]int)
 	for rows.Next() {
