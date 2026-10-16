@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS deleted_event (
 
 var tombstoneAttemptTimeout = 5 * time.Second
 
+const maxInflightTombstoneLookups = 4
+
+var tombstoneLookupSem = make(chan struct{}, maxInflightTombstoneLookups)
+
 var tombstoneLookupFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "nostr_relay_tombstone_lookup_failures_total",
 	Help: "Tombstone lookup failures by cause",
@@ -139,8 +143,19 @@ type lookupResult struct {
 func lookupWithDeadline(parent context.Context, lookup TombstoneLookup, id string) (bool, error) {
 	ctx, cancel := context.WithTimeout(parent, tombstoneAttemptTimeout)
 	defer cancel()
+
+	// Each abandoned goroutine holds a pool connection until the socket dies
+	// (~30s with TCP_USER_TIMEOUT). Cap in-flight lookups so a DB blip
+	// cannot exhaust the pool and stall every other rawDB user.
+	select {
+	case tombstoneLookupSem <- struct{}{}:
+	default:
+		return false, context.DeadlineExceeded
+	}
+
 	ch := make(chan lookupResult, 1)
 	go func() {
+		defer func() { <-tombstoneLookupSem }()
 		deleted, err := lookup(ctx, id)
 		ch <- lookupResult{deleted, err}
 	}()

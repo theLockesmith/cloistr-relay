@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -312,8 +313,9 @@ func TestIsConnError(t *testing.T) {
 // handshake, then blocks on the query forever -- simulating the exact
 // production failure where lib/pq's ctx cancel never unblocks the read.
 type fakePGServer struct {
-	ln net.Listener
-	t  *testing.T
+	ln   net.Listener
+	t    *testing.T
+	done chan struct{}
 }
 
 func newFakePGServer(t *testing.T) *fakePGServer {
@@ -322,11 +324,14 @@ func newFakePGServer(t *testing.T) *fakePGServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fakePGServer{ln: ln, t: t}
+	return &fakePGServer{ln: ln, t: t, done: make(chan struct{})}
 }
 
 func (s *fakePGServer) addr() string { return s.ln.Addr().String() }
-func (s *fakePGServer) close()       { s.ln.Close() }
+func (s *fakePGServer) close() {
+	close(s.done)
+	_ = s.ln.Close()
+}
 
 func (s *fakePGServer) acceptLoop() {
 	for {
@@ -339,7 +344,7 @@ func (s *fakePGServer) acceptLoop() {
 }
 
 func (s *fakePGServer) handleConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
@@ -358,7 +363,7 @@ func (s *fakePGServer) handleConn(conn net.Conn) {
 
 	// StartupMessage -- complete the handshake.
 	// AuthenticationOk
-	conn.Write([]byte{'R', 0, 0, 0, 8, 0, 0, 0, 0})
+	_, _ = conn.Write([]byte{'R', 0, 0, 0, 8, 0, 0, 0, 0})
 
 	writePGParam(conn, "server_version", "14.0")
 	writePGParam(conn, "client_encoding", "UTF8")
@@ -372,10 +377,10 @@ func (s *fakePGServer) handleConn(conn net.Conn) {
 	binary.BigEndian.PutUint32(kd[1:5], 12)
 	binary.BigEndian.PutUint32(kd[5:9], 1)
 	binary.BigEndian.PutUint32(kd[9:13], 1)
-	conn.Write(kd)
+	_, _ = conn.Write(kd)
 
 	// ReadyForQuery
-	conn.Write([]byte{'Z', 0, 0, 0, 5, 'I'})
+	_, _ = conn.Write([]byte{'Z', 0, 0, 0, 5, 'I'})
 
 	// Read the Query message (type byte + length + body).
 	typeBuf := make([]byte, 1)
@@ -391,8 +396,9 @@ func (s *fakePGServer) handleConn(conn net.Conn) {
 		return
 	}
 
-	// Block forever. The abandon wrapper must return without this goroutine.
-	select {}
+	// Block until the server is shut down. The abandon wrapper must return
+	// without waiting for this goroutine.
+	<-s.done
 }
 
 func writePGParam(conn net.Conn, name, value string) {
@@ -403,7 +409,7 @@ func writePGParam(conn net.Conn, name, value string) {
 	msg[0] = 'S'
 	binary.BigEndian.PutUint32(msg[1:5], uint32(4+len(payload)))
 	copy(msg[5:], payload)
-	conn.Write(msg)
+	_, _ = conn.Write(msg)
 }
 
 // TestRealPQ_AbandonOnDeadline proves, against the real lib/pq driver, that
@@ -429,7 +435,7 @@ func TestRealPQ_AbandonOnDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(4)
 
 	lookup := func(ctx context.Context, id string) (bool, error) {
@@ -453,5 +459,71 @@ func TestRealPQ_AbandonOnDeadline(t *testing.T) {
 	}
 	if !strings.Contains(msg, "timeout") {
 		t.Errorf("expected timeout cause, got %q", msg)
+	}
+}
+
+func TestRealPQ_SemaphorePreventPoolStarvation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires real TCP listener")
+	}
+
+	orig := tombstoneAttemptTimeout
+	tombstoneAttemptTimeout = 200 * time.Millisecond
+	defer func() { tombstoneAttemptTimeout = orig }()
+
+	srv := newFakePGServer(t)
+	go srv.acceptLoop()
+
+	dsn := fmt.Sprintf("postgres://test:test@%s/test?sslmode=disable&connect_timeout=2", srv.addr())
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(6)
+
+	lookup := func(ctx context.Context, id string) (bool, error) {
+		return IsTombstoned(ctx, db, id)
+	}
+
+	// Fire 8 concurrent tombstone lookups against a server that hangs on
+	// every query. Without the semaphore all 6 pool conns would be consumed
+	// by abandoned goroutines; with it, at most maxInflightTombstoneLookups
+	// are held, leaving headroom for other pool users.
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			RejectRepublishedDeletion(lookup)(context.Background(), fmt.Sprintf("id-%d", i))
+		}(i)
+	}
+	wg.Wait()
+
+	// Abandoned goroutines are still blocked on the fake server, holding
+	// pool connections. The semaphore should have capped how many.
+	stats := db.Stats()
+	if stats.InUse > maxInflightTombstoneLookups {
+		t.Errorf("InUse=%d exceeds semaphore cap %d; pool starvation not prevented",
+			stats.InUse, maxInflightTombstoneLookups)
+	}
+
+	// Another pool user should still be able to get a connection.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	poolConn, connErr := db.Conn(ctx)
+	cancel()
+	if connErr != nil {
+		t.Errorf("non-tombstone pool user blocked while abandoned lookups hold conns: %v", connErr)
+	} else {
+		_ = poolConn.Close()
+	}
+
+	// Kill the fake server so abandoned goroutines return and release conns.
+	srv.close()
+	time.Sleep(200 * time.Millisecond)
+
+	stats = db.Stats()
+	if stats.InUse != 0 {
+		t.Errorf("InUse=%d after server closed; want 0", stats.InUse)
 	}
 }
