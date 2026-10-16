@@ -109,6 +109,14 @@ func TestNewPostgresBackend_ConnectTimeout(t *testing.T) {
 		t.Skip("requires real TCP listener")
 	}
 
+	// Own deadline: if the tuned connector is removed, NewPostgresBackend
+	// blocks for the full TCP retransmission timeout. This kills the test
+	// in 3s rather than waiting for the package timeout.
+	timer := time.AfterFunc(3*time.Second, func() {
+		panic("TestNewPostgresBackend_ConnectTimeout: NewPostgresBackend did not return within 3s -- tuned connector may be missing")
+	})
+	defer timer.Stop()
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
