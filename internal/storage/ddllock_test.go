@@ -108,7 +108,7 @@ func TestDDLLock_ConcurrentCIC(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
-	deadline := 30 * time.Second
+	deadline := 10 * time.Second
 
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
