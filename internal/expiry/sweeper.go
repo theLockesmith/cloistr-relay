@@ -32,10 +32,11 @@ type KindCount struct {
 }
 
 type SweepResult struct {
-	Deleted   int64
-	Counts    []KindCount
-	Malformed int64
-	Elapsed   time.Duration
+	Deleted     int64
+	WouldDelete int64
+	Counts      []KindCount
+	Malformed   int64
+	Elapsed     time.Duration
 }
 
 type Sweeper struct {
@@ -80,7 +81,7 @@ func (s *Sweeper) dryRun(ctx context.Context, nowUnix, graceUnix int64, start ti
 	for _, kc := range counts {
 		total += kc.Count
 	}
-	result.Deleted = total
+	result.WouldDelete = total
 
 	log.Printf("expiry-sweeper [dry-run]: %d expired events across %d kinds, %d malformed tags (took %v)",
 		total, len(counts), malformed, result.Elapsed)
@@ -182,6 +183,11 @@ func (s *Sweeper) countExpired(ctx context.Context, nowUnix, graceUnix int64) ([
 			WHERE t->>0 = 'expiration'
 			  AND NOT (t->>1 ~ '^\d+$')
 		)
+		AND NOT EXISTS (
+			SELECT 1 FROM jsonb_array_elements(e.tags) AS t
+			WHERE t->>0 = 'expiration'
+			  AND t->>1 ~ '^\d+$'
+		)
 	`).Scan(&malformed)
 	if err != nil {
 		return counts, 0, err
@@ -216,6 +222,12 @@ func (s *Sweeper) deleteBatch(ctx context.Context, nowUnix, graceUnix int64, lim
 func (s *Sweeper) Start(ctx context.Context) {
 	log.Printf("expiry-sweeper: started (dry_run=%v interval=%v batch=%d gift_wrap_grace=%v)",
 		s.cfg.DryRun, s.cfg.Interval, s.cfg.BatchSize, s.cfg.GiftWrapGrace)
+
+	if ctx.Err() == nil {
+		if _, err := s.Sweep(ctx); err != nil {
+			log.Printf("expiry-sweeper: initial sweep error: %v", err)
+		}
+	}
 
 	ticker := time.NewTicker(s.cfg.Interval)
 	defer ticker.Stop()

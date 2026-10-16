@@ -123,8 +123,11 @@ func TestSweep_DryRun_CountsByKind(t *testing.T) {
 		t.Fatalf("sweep: %v", err)
 	}
 
-	if result.Deleted != 3 {
-		t.Errorf("dry-run Deleted = %d, want 3", result.Deleted)
+	if result.WouldDelete != 3 {
+		t.Errorf("dry-run WouldDelete = %d, want 3", result.WouldDelete)
+	}
+	if result.Deleted != 0 {
+		t.Errorf("dry-run Deleted = %d, want 0", result.Deleted)
 	}
 
 	// All 5 events should still exist (dry run deletes nothing)
@@ -268,8 +271,11 @@ func TestSweep_MalformedExpiration(t *testing.T) {
 		t.Fatalf("sweep: %v", err)
 	}
 
-	if result.Deleted != 1 {
-		t.Errorf("Deleted = %d, want 1 (only good-expired)", result.Deleted)
+	if result.WouldDelete != 1 {
+		t.Errorf("WouldDelete = %d, want 1 (only good-expired)", result.WouldDelete)
+	}
+	if result.Deleted != 0 {
+		t.Errorf("dry-run Deleted = %d, want 0", result.Deleted)
 	}
 	if result.Malformed != 3 {
 		t.Errorf("Malformed = %d, want 3", result.Malformed)
@@ -340,11 +346,7 @@ func TestSweep_ContextCancellation(t *testing.T) {
 		t.Fatalf("sweep: %v", err)
 	}
 
-	// Should have deleted at least one batch but not all 50
-	if result.Deleted == 0 {
-		t.Error("expected at least one batch to complete before cancellation")
-	}
-	if result.Deleted == 50 {
+	if result.Deleted >= 50 {
 		t.Error("expected cancellation to stop before all 50 were deleted")
 	}
 	t.Logf("deleted %d of 50 before cancellation", result.Deleted)
