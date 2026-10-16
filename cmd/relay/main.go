@@ -147,7 +147,7 @@ func main() {
 	// Serialize DDL across replicas. Two pods running CREATE INDEX CONCURRENTLY
 	// or backend.Init() at the same time race on PostgreSQL catalog rows and
 	// produce "pq: tuple concurrently updated (XX000)".
-	ddlRelease, err := storage.AcquireDDLLock(storage.GetDatabaseURL(cfg))
+	ddlLock, err := storage.AcquireDDLLock(storage.GetDatabaseURL(cfg))
 	if err != nil {
 		log.Fatalf("Failed to acquire DDL lock: %v", err)
 	}
@@ -155,7 +155,7 @@ func main() {
 	// Initialize PostgreSQL storage backend
 	db, err := storage.NewPostgresBackend(cfg)
 	if err != nil {
-		ddlRelease()
+		ddlLock.Close()
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
@@ -163,7 +163,7 @@ func main() {
 	// Initialize search backend (NIP-50)
 	rawDB, err := storage.NewRawConnection(cfg)
 	if err != nil {
-		ddlRelease()
+		ddlLock.Close()
 		log.Fatalf("Failed to initialize search database: %v", err)
 	}
 	defer func() { _ = rawDB.Close() }()
@@ -188,12 +188,13 @@ func main() {
 	// by anyone who kept a copy, with the relay reporting healthy throughout.
 	// Refusing to start is the honest behaviour for a guard that cannot guard.
 	if err := storage.EnsureTombstoneTable(rawDB); err != nil {
-		ddlRelease()
+		ddlLock.Close()
 		log.Fatalf("Failed to create tombstone table: %v", err)
 	}
 
 	// All DDL complete, release the advisory lock so other replicas can proceed.
-	ddlRelease()
+	ddlLock.Unlock()
+	ddlLock.Close()
 
 	// Initialize cache (Dragonfly/Redis)
 	var cacheClient *cache.Client

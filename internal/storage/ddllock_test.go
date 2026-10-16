@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,63 +36,126 @@ func testDBURL(t *testing.T) string {
 	return url
 }
 
-func TestAcquireDDLLock_UnlockReleases(t *testing.T) {
+// TestDDLLock_UnlockReleasesWhileConnOpen proves that Unlock releases the lock
+// on the dedicated connection BEFORE Close is called. A previous version passed
+// this test vacuously because closing the conn also releases the lock; this
+// version keeps the first conn open after Unlock and asserts a second session
+// can acquire at that point.
+func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 	dbURL := testDBURL(t)
 
-	// Acquire the lock.
-	release, err := storage.AcquireDDLLock(dbURL)
+	lock, err := storage.AcquireDDLLock(dbURL)
 	if err != nil {
 		t.Fatalf("first acquire: %v", err)
 	}
 
-	// A second acquire on a separate connection must block while the first
-	// holds the lock. We prove this by trying to acquire with a short timeout
-	// and expecting it to fail.
-	blocked := make(chan error, 1)
-	go func() {
-		db, err := sql.Open("postgres", dbURL)
-		if err != nil {
-			blocked <- err
-			return
-		}
-		defer db.Close()
-		conn, err := db.Conn(context.Background())
-		if err != nil {
-			blocked <- err
-			return
-		}
-		defer conn.Close()
+	db2, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open second conn: %v", err)
+	}
+	defer db2.Close()
+	conn2, err := db2.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("second conn: %v", err)
+	}
+	defer conn2.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		defer cancel()
-		// pg_try_advisory_lock returns false if the lock is held.
-		var acquired bool
-		err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&acquired)
-		if err != nil {
-			blocked <- err
-			return
-		}
-		if acquired {
-			// Clean up: unlock what we just took.
-			conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
-			blocked <- fmt.Errorf("acquired lock while first session still holds it")
-		} else {
-			blocked <- nil // expected: could not acquire
-		}
+	var held bool
+	if err := conn2.QueryRowContext(context.Background(), "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
+		t.Fatalf("try lock while held: %v", err)
+	}
+	if held {
+		conn2.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
+		t.Fatal("second session acquired lock while first still holds it")
+	}
+
+	// Unlock but do NOT Close. The dedicated conn stays open.
+	lock.Unlock()
+
+	// Second session must now acquire while first conn is still open.
+	if err := conn2.QueryRowContext(context.Background(), "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
+		t.Fatalf("try lock after unlock: %v", err)
+	}
+	if !held {
+		t.Fatal("second session could not acquire after Unlock; unlock did not release")
+	}
+	conn2.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
+
+	lock.Close()
+}
+
+// TestDDLLock_ConcurrentCIC proves two replicas can run CREATE INDEX
+// CONCURRENTLY under the advisory lock without deadlocking. The blocking
+// pg_advisory_lock version deadlocks because the waiter's snapshot prevents
+// CIC from finishing; the polling pg_try_advisory_lock version releases its
+// snapshot between polls so CIC completes.
+func TestDDLLock_ConcurrentCIC(t *testing.T) {
+	dbURL := testDBURL(t)
+
+	setup, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("setup conn: %v", err)
+	}
+	defer setup.Close()
+
+	setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx")
+	setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl")
+	if _, err := setup.Exec("CREATE TABLE ddllock_test_tbl (id serial PRIMARY KEY, val text)"); err != nil {
+		t.Fatalf("create test table: %v", err)
+	}
+	defer setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl")
+	defer setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx")
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	deadline := 30 * time.Second
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(replica int) {
+			defer wg.Done()
+
+			lock, err := storage.AcquireDDLLock(dbURL)
+			if err != nil {
+				errs <- fmt.Errorf("replica %d acquire: %w", replica, err)
+				return
+			}
+
+			db, err := sql.Open("postgres", dbURL)
+			if err != nil {
+				lock.Close()
+				errs <- fmt.Errorf("replica %d open: %w", replica, err)
+				return
+			}
+			defer db.Close()
+
+			_, err = db.Exec("CREATE INDEX CONCURRENTLY IF NOT EXISTS ddllock_test_idx ON ddllock_test_tbl (val)")
+			if err != nil {
+				lock.Unlock()
+				lock.Close()
+				errs <- fmt.Errorf("replica %d CIC: %w", replica, err)
+				return
+			}
+
+			lock.Unlock()
+			lock.Close()
+		}(i)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
 	}()
 
-	err = <-blocked
-	if err != nil {
-		t.Fatalf("second session while lock held: %v", err)
+	select {
+	case <-done:
+	case <-time.After(deadline):
+		t.Fatalf("deadlock: both replicas did not finish within %v", deadline)
 	}
 
-	// Release the first lock.
-	release()
-
-	// Now a second acquire must succeed immediately.
-	release2, err := storage.AcquireDDLLock(dbURL)
-	if err != nil {
-		t.Fatalf("second acquire after release: %v", err)
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
-	release2()
 }
