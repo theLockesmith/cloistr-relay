@@ -3,11 +3,15 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+
+	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 )
 
 // Tombstones record the ids of events this relay has deleted, so a saved copy
@@ -70,10 +74,27 @@ func IsTombstoned(ctx context.Context, db *sql.DB, id string) (bool, error) {
 // so it is testable without a database.
 type TombstoneLookup func(ctx context.Context, id string) (bool, error)
 
-// isConnError reports whether err looks like a closed or broken connection that
-// the pool handed out. A retry on a fresh connection from the pool is likely to
-// succeed.
+// connErrorSQLSTATEs lists specific SQLSTATE codes that indicate a retriable
+// connection problem outside class 08 (which is checked by prefix).
+var connErrorSQLSTATEs = map[pqerror.Code]bool{
+	pqerror.AdminShutdown:    true, // 57P01: "terminating connection due to administrator command"
+	pqerror.CrashShutdown:    true, // 57P02: "terminating connection due to crash of another server process"
+	pqerror.CannotConnectNow: true, // 57P03: "the database system is shutting down" / "starting up"
+}
+
+// isConnError reports whether err indicates a closed or broken connection that
+// the pool handed out. A retry on a fresh connection is likely to succeed.
+//
+// Classification is by type and SQLSTATE, not by message substring:
+//  1. driver.ErrBadConn -- the pool already knows the conn is dead
+//  2. io.EOF / io.ErrUnexpectedEOF -- TCP stream severed
+//  3. net.OpError -- OS-level network failure
+//  4. pq.Error with SQLSTATE class 08 (connection exception)
+//  5. pq.Error with SQLSTATE 57P01/57P02/57P03 (admin/crash shutdown, cannot connect)
 func isConnError(err error) bool {
+	if errors.Is(err, driver.ErrBadConn) {
+		return true
+	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
@@ -81,33 +102,12 @@ func isConnError(err error) bool {
 	if errors.As(err, &netErr) {
 		return true
 	}
-	// driver.ErrBadConn is wrapped by database/sql; the pool discards the
-	// connection and opens a new one on the next call.
-	msg := err.Error()
-	for _, substr := range []string{
-		"connection reset",
-		"connection refused",
-		"broken pipe",
-		"bad connection",
-		"the database system is shutting down",
-		"terminating connection",
-		"server closed the connection unexpectedly",
-		"SSL connection has been closed unexpectedly",
-	} {
-		if contains(msg, substr) {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		if pqErr.Code.Class() == pqerror.ClassConnectionException {
 			return true
 		}
-	}
-	return false
-}
-
-func contains(s, substr string) bool {
-	return len(substr) <= len(s) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
+		if connErrorSQLSTATEs[pqErr.Code] {
 			return true
 		}
 	}
