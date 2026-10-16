@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -147,8 +149,8 @@ func TestRejectRepublishedDeletion_ClientGoneNoRetry(t *testing.T) {
 	if !reject {
 		t.Error("admitted the write when client disconnected")
 	}
-	if calls.Load() != 1 {
-		t.Errorf("expected 1 call (no retry for client-gone), got %d", calls.Load())
+	if calls.Load() > 1 {
+		t.Errorf("expected at most 1 call (no retry for client-gone), got %d", calls.Load())
 	}
 	if !strings.HasPrefix(msg, "client-gone:") {
 		t.Errorf("message should start with 'client-gone:', got %q", msg)
@@ -195,6 +197,7 @@ func TestClassifyTombstoneError(t *testing.T) {
 		{"wrapped_timeout", bgCtx, fmt.Errorf("tombstone lookup abc: %w", context.DeadlineExceeded), "timeout"},
 		{"conn_error", bgCtx, &pq.Error{Code: pqerror.AdminShutdown}, "conn_error"},
 		{"conn_error_eof", bgCtx, io.EOF, "conn_error"},
+		{"57014_query_canceled", bgCtx, &pq.Error{Code: "57014", Message: "canceling statement due to user request"}, "timeout"},
 		{"other", bgCtx, errors.New("permission denied"), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -298,5 +301,157 @@ func TestIsConnError(t *testing.T) {
 				t.Errorf("isConnError(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fake PostgreSQL wire-protocol server for integration tests
+// ---------------------------------------------------------------------------
+
+// fakePGServer speaks enough PostgreSQL wire protocol to complete a startup
+// handshake, then blocks on the query forever -- simulating the exact
+// production failure where lib/pq's ctx cancel never unblocks the read.
+type fakePGServer struct {
+	ln net.Listener
+	t  *testing.T
+}
+
+func newFakePGServer(t *testing.T) *fakePGServer {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &fakePGServer{ln: ln, t: t}
+}
+
+func (s *fakePGServer) addr() string { return s.ln.Addr().String() }
+func (s *fakePGServer) close()       { s.ln.Close() }
+
+func (s *fakePGServer) acceptLoop() {
+	for {
+		conn, err := s.ln.Accept()
+		if err != nil {
+			return
+		}
+		go s.handleConn(conn)
+	}
+}
+
+func (s *fakePGServer) handleConn(conn net.Conn) {
+	defer conn.Close()
+
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return
+	}
+	msgLen := int(binary.BigEndian.Uint32(lenBuf))
+	rest := make([]byte, msgLen-4)
+	if _, err := io.ReadFull(conn, rest); err != nil {
+		return
+	}
+
+	// CancelRequest: length=16, code=80877102. Just close.
+	if msgLen == 16 && binary.BigEndian.Uint32(rest[:4]) == 80877102 {
+		return
+	}
+
+	// StartupMessage -- complete the handshake.
+	// AuthenticationOk
+	conn.Write([]byte{'R', 0, 0, 0, 8, 0, 0, 0, 0})
+
+	writePGParam(conn, "server_version", "14.0")
+	writePGParam(conn, "client_encoding", "UTF8")
+	writePGParam(conn, "DateStyle", "ISO, MDY")
+	writePGParam(conn, "standard_conforming_strings", "on")
+	writePGParam(conn, "integer_datetimes", "on")
+
+	// BackendKeyData
+	kd := make([]byte, 13)
+	kd[0] = 'K'
+	binary.BigEndian.PutUint32(kd[1:5], 12)
+	binary.BigEndian.PutUint32(kd[5:9], 1)
+	binary.BigEndian.PutUint32(kd[9:13], 1)
+	conn.Write(kd)
+
+	// ReadyForQuery
+	conn.Write([]byte{'Z', 0, 0, 0, 5, 'I'})
+
+	// Read the Query message (type byte + length + body).
+	typeBuf := make([]byte, 1)
+	if _, err := io.ReadFull(conn, typeBuf); err != nil {
+		return
+	}
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return
+	}
+	qLen := int(binary.BigEndian.Uint32(lenBuf)) - 4
+	qBuf := make([]byte, qLen)
+	if _, err := io.ReadFull(conn, qBuf); err != nil {
+		return
+	}
+
+	// Block forever. The abandon wrapper must return without this goroutine.
+	select {}
+}
+
+func writePGParam(conn net.Conn, name, value string) {
+	payload := append([]byte(name), 0)
+	payload = append(payload, []byte(value)...)
+	payload = append(payload, 0)
+	msg := make([]byte, 1+4+len(payload))
+	msg[0] = 'S'
+	binary.BigEndian.PutUint32(msg[1:5], uint32(4+len(payload)))
+	copy(msg[5:], payload)
+	conn.Write(msg)
+}
+
+// TestRealPQ_AbandonOnDeadline proves, against the real lib/pq driver, that
+// the abandon-on-deadline wrapper returns within the timeout even when the
+// server never responds to the query. This is the exact scenario where a
+// plain context.WithTimeout fails: pq's watchCancel sends a CancelRequest
+// on a new socket but never unblocks the blocked read on the original one.
+func TestRealPQ_AbandonOnDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires real TCP listener")
+	}
+
+	orig := tombstoneAttemptTimeout
+	tombstoneAttemptTimeout = 300 * time.Millisecond
+	defer func() { tombstoneAttemptTimeout = orig }()
+
+	srv := newFakePGServer(t)
+	defer srv.close()
+	go srv.acceptLoop()
+
+	dsn := fmt.Sprintf("postgres://test:test@%s/test?sslmode=disable&connect_timeout=2", srv.addr())
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(4)
+
+	lookup := func(ctx context.Context, id string) (bool, error) {
+		return IsTombstoned(ctx, db, id)
+	}
+
+	start := time.Now()
+	reject, msg := RejectRepublishedDeletion(lookup)(context.Background(), "test-event-id")
+	elapsed := time.Since(start)
+
+	if !reject {
+		t.Error("admitted the write when query hung on a dead connection")
+	}
+	// Two attempts (original + retry), each capped at 300ms, plus overhead.
+	maxAllowed := 2*tombstoneAttemptTimeout + 500*time.Millisecond
+	if elapsed > maxAllowed {
+		t.Errorf("took %v; want under %v (two attempts at %v each)", elapsed, maxAllowed, tombstoneAttemptTimeout)
+	}
+	if elapsed < tombstoneAttemptTimeout {
+		t.Errorf("finished in %v; should have waited at least one timeout (%v)", elapsed, tombstoneAttemptTimeout)
+	}
+	if !strings.Contains(msg, "timeout") {
+		t.Errorf("expected timeout cause, got %q", msg)
 	}
 }

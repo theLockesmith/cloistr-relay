@@ -124,10 +124,32 @@ func isConnError(err error) bool {
 	return false
 }
 
+type lookupResult struct {
+	deleted bool
+	err     error
+}
+
+// lookupWithDeadline runs the lookup in a goroutine and abandons it if the
+// deadline fires. lib/pq's ctx cancel sends a CancelRequest on a new socket
+// but never unblocks the blocked read on the original one, so a dead
+// connection hangs indefinitely despite context.WithTimeout. The goroutine +
+// select pattern returns ctx.Err() immediately on deadline, abandoning the
+// blocked goroutine. The goroutine's connection is marked bad by pq and will
+// be discarded by the pool when (if) the read eventually returns.
 func lookupWithDeadline(parent context.Context, lookup TombstoneLookup, id string) (bool, error) {
 	ctx, cancel := context.WithTimeout(parent, tombstoneAttemptTimeout)
 	defer cancel()
-	return lookup(ctx, id)
+	ch := make(chan lookupResult, 1)
+	go func() {
+		deleted, err := lookup(ctx, id)
+		ch <- lookupResult{deleted, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.deleted, r.err
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }
 
 func classifyTombstoneError(parentCtx context.Context, err error) string {
@@ -135,6 +157,14 @@ func classifyTombstoneError(parentCtx context.Context, err error) string {
 		return "client_gone"
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	// 57014 = query_canceled. Sent by PG when our CancelRequest is processed.
+	// The abandon wrapper normally returns ctx.Err() before this arrives, but
+	// if pq wins the race, the cancel was still ours (attempt deadline) and
+	// the right action is the same: retry.
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "57014" {
 		return "timeout"
 	}
 	if isConnError(err) {

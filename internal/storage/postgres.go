@@ -1,15 +1,39 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"net"
+	"time"
 
 	"github.com/fiatjaf/eventstore/postgresql"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 )
+
+// tunedDialer wraps net.Dialer to implement pq.Dialer with TCP keepalive and
+// TCP_USER_TIMEOUT, so the kernel reaps dead sockets instead of leaving them
+// for the full TCP retransmission timeout (~15 min on Linux defaults).
+type tunedDialer struct {
+	d net.Dialer
+}
+
+func (td *tunedDialer) Dial(network, address string) (net.Conn, error) {
+	return td.d.Dial(network, address)
+}
+
+func (td *tunedDialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return td.d.DialContext(ctx, network, address)
+}
+
+func (td *tunedDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return td.d.DialContext(ctx, network, address)
+}
 
 // NewPostgresBackend creates and initializes a PostgreSQL eventstore backend
 func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error) {
@@ -38,12 +62,12 @@ func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error)
 	// Create backend with pre-configured connection
 	backend := &postgresql.PostgresBackend{
 		DatabaseURL:       dbURL,
-		DB:                db, // Use our tuned connection
-		QueryLimit:        1000, // Max events per query
-		QueryIDsLimit:     500,  // Max IDs in a filter
-		QueryAuthorsLimit: 500,  // Max authors in a filter
-		QueryKindsLimit:   50,   // Max kinds in a filter
-		QueryTagsLimit:    1000, // Max tag values in filters (for Amethyst compatibility)
+		DB:                db,
+		QueryLimit:        1000,
+		QueryIDsLimit:     500,
+		QueryAuthorsLimit: 500,
+		QueryKindsLimit:   50,
+		QueryTagsLimit:    1000,
 	}
 
 	// Initialize schema (won't create new connection since DB is already set)
@@ -70,21 +94,34 @@ func GetDatabaseURL(cfg *config.Config) string {
 	)
 }
 
-// NewRawConnection creates a raw database/sql connection for advanced queries
+// NewRawConnection creates a raw database/sql connection for advanced queries.
+// It uses a tuned pq connector with connect_timeout, TCP keepalive, and
+// TCP_USER_TIMEOUT (Linux) so dead sockets are reaped by the kernel rather
+// than blocking for the full TCP retransmission timeout.
 func NewRawConnection(cfg *config.Config) (*sql.DB, error) {
 	dbURL := GetDatabaseURL(cfg)
-	db, err := sql.Open("postgres", dbURL)
+	pqCfg, err := pq.NewConfig(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
+	pqCfg.ConnectTimeout = 5 * time.Second
 
-	// Apply connection pool tuning
+	connector, err := pq.NewConnectorConfig(pqCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connector: %w", err)
+	}
+	connector.Dialer(&tunedDialer{d: net.Dialer{
+		KeepAlive: 30 * time.Second,
+		Control:   tcpUserTimeoutControl(30 * time.Second),
+	}})
+
+	db := sql.OpenDB(connector)
+
 	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
 	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
 	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
 	db.SetConnMaxIdleTime(cfg.DBConnMaxIdleTime)
 
-	// Test the connection
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
