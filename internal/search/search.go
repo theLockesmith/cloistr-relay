@@ -28,31 +28,28 @@ func NewSearchBackend(db *sql.DB, kinds []int) *SearchBackend {
 	return &SearchBackend{db: db, kinds: kinds}
 }
 
-// InitSchema sets up the search_tsv column, trigger, and partial GIN index.
-// Runs under the relay's DDL advisory lock so only one instance executes at a time.
 func (s *SearchBackend) InitSchema() error {
 	kindsSQL := kindsList(s.kinds)
 
-	_, err := s.db.Exec(`DROP INDEX IF EXISTS content_search_idx`)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return fmt.Errorf("begin DDL transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`SET LOCAL lock_timeout = '5s'`); err != nil {
+		return fmt.Errorf("set lock_timeout: %w", err)
+	}
+
+	if _, err := tx.Exec(`DROP INDEX IF EXISTS content_search_idx`); err != nil {
 		return fmt.Errorf("drop legacy index: %w", err)
 	}
 
-	_, err = s.db.Exec(`ALTER TABLE event ADD COLUMN IF NOT EXISTS search_tsv tsvector`)
-	if err != nil {
+	if _, err := tx.Exec(`ALTER TABLE event ADD COLUMN IF NOT EXISTS search_tsv tsvector`); err != nil {
 		return fmt.Errorf("add search_tsv column: %w", err)
 	}
 
-	_, err = s.db.Exec(`
-		CREATE INDEX IF NOT EXISTS search_tsv_idx
-		ON event USING GIN (search_tsv)
-		WHERE search_tsv IS NOT NULL
-	`)
-	if err != nil {
-		return fmt.Errorf("create search_tsv index: %w", err)
-	}
-
-	_, err = s.db.Exec(fmt.Sprintf(`
+	if _, err := tx.Exec(fmt.Sprintf(`
 		CREATE OR REPLACE FUNCTION search_tsv_trigger() RETURNS trigger AS $$
 		BEGIN
 			IF NEW.kind IN (%s) THEN
@@ -63,24 +60,44 @@ func (s *SearchBackend) InitSchema() error {
 			RETURN NEW;
 		END;
 		$$ LANGUAGE plpgsql
-	`, kindsSQL))
-	if err != nil {
+	`, kindsSQL)); err != nil {
 		return fmt.Errorf("create trigger function: %w", err)
 	}
 
-	_, err = s.db.Exec(`DROP TRIGGER IF EXISTS search_tsv_update ON event`)
-	if err != nil {
-		return fmt.Errorf("drop old trigger: %w", err)
-	}
-
-	_, err = s.db.Exec(`
-		CREATE TRIGGER search_tsv_update
+	if _, err := tx.Exec(`
+		CREATE OR REPLACE TRIGGER search_tsv_update
 		BEFORE INSERT OR UPDATE ON event
 		FOR EACH ROW
 		EXECUTE FUNCTION search_tsv_trigger()
-	`)
-	if err != nil {
+	`); err != nil {
 		return fmt.Errorf("create trigger: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit DDL: %w", err)
+	}
+
+	// CREATE INDEX CONCURRENTLY cannot run inside a transaction.
+	// Check for a valid index; drop any invalid leftover from a prior failed attempt.
+	var indexValid bool
+	if err := s.db.QueryRow(`
+		SELECT COALESCE(
+			(SELECT i.indisvalid FROM pg_class c
+			 JOIN pg_index i ON i.indexrelid = c.oid
+			 WHERE c.relname = 'search_tsv_idx'),
+			false)
+	`).Scan(&indexValid); err != nil {
+		return fmt.Errorf("check search_tsv_idx: %w", err)
+	}
+	if !indexValid {
+		_, _ = s.db.Exec(`DROP INDEX IF EXISTS search_tsv_idx`)
+		if _, err := s.db.Exec(`
+			CREATE INDEX CONCURRENTLY search_tsv_idx
+			ON event USING GIN (search_tsv)
+			WHERE search_tsv IS NOT NULL
+		`); err != nil {
+			return fmt.Errorf("create search_tsv index: %w", err)
+		}
 	}
 
 	log.Printf("NIP-50 search initialized (indexed kinds: %s)", kindsSQL)
@@ -90,21 +107,32 @@ func (s *SearchBackend) InitSchema() error {
 func (s *SearchBackend) Backfill() (int64, error) {
 	kindsSQL := kindsList(s.kinds)
 	var total int64
+	lastID := ""
 	for {
-		res, err := s.db.Exec(fmt.Sprintf(`
-			UPDATE event
-			SET search_tsv = to_tsvector('english', content)
-			WHERE ctid IN (
-				SELECT ctid FROM event
-				WHERE kind IN (%s) AND search_tsv IS NULL
+		var n int64
+		var maxID sql.NullString
+		err := s.db.QueryRow(fmt.Sprintf(`
+			WITH batch AS (
+				SELECT id FROM event
+				WHERE kind IN (%s) AND search_tsv IS NULL AND id > $1
+				ORDER BY id
 				LIMIT %d
+			),
+			updated AS (
+				UPDATE event e SET search_tsv = to_tsvector('english', e.content)
+				FROM batch WHERE e.id = batch.id
+				RETURNING e.id
 			)
-		`, kindsSQL, backfillBatchSize))
+			SELECT count(*), max(id) FROM updated
+		`, kindsSQL, backfillBatchSize), lastID).Scan(&n, &maxID)
 		if err != nil {
 			return total, err
 		}
-		n, _ := res.RowsAffected()
 		total += n
+		if n == 0 || !maxID.Valid {
+			break
+		}
+		lastID = maxID.String
 		if n < int64(backfillBatchSize) {
 			break
 		}

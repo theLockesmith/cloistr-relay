@@ -185,13 +185,6 @@ func main() {
 		if err := searchBackend.InitSchema(); err != nil {
 			log.Printf("Warning: Failed to initialize search index: %v", err)
 			searchBackend = nil
-		} else {
-			if _, err := searchBackend.Backfill(); err != nil {
-				log.Printf("Warning: Search backfill error: %v", err)
-			}
-			if _, err := searchBackend.ClearNonSearchable(); err != nil {
-				log.Printf("Warning: Search clear non-searchable error: %v", err)
-			}
 		}
 	} else {
 		log.Println("NIP-50 search disabled (SEARCH_ENABLED=false)")
@@ -926,6 +919,20 @@ func main() {
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("Starting Cloistr relay %s on %s", relay.Version, addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
+
+	// Backfill + clear run after the listener starts so they do not block
+	// pod readiness (k8s liveness gives ~100s; a large backfill would
+	// crash-loop while the other replica waits on the DDL lock).
+	if searchBackend != nil {
+		go func() {
+			if _, err := searchBackend.Backfill(); err != nil {
+				log.Printf("Warning: Search backfill error: %v", err)
+			}
+			if _, err := searchBackend.ClearNonSearchable(); err != nil {
+				log.Printf("Warning: Search clear non-searchable error: %v", err)
+			}
+		}()
+	}
 
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Failed to start relay: %v", err)
