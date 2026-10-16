@@ -887,7 +887,7 @@ func main() {
 
 	// Start the relay server
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("Starting Cloistr relay on %s", addr)
+	log.Printf("Starting Cloistr relay %s on %s", relay.Version, addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
 
 	if err := http.ListenAndServe(addr, router); err != nil {

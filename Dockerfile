@@ -15,8 +15,12 @@ COPY web/ web/
 # Download dependencies and generate go.sum
 RUN go mod tidy
 
+ARG VERSION=dev
+
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o relay ./cmd/relay
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags "-X git.aegis-hq.xyz/coldforge/cloistr-relay/internal/relay.Version=${VERSION}" \
+    -o relay ./cmd/relay
 
 # Test stage (unit tests only - integration tests run externally)
 FROM golang:1.27-alpine AS test
