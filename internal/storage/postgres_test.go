@@ -6,6 +6,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 )
 
 // TestTunedConnector_ConnectTimeout proves that a pool created via
@@ -95,4 +97,64 @@ func TestTunedConnector_HandshakeSucceeds(t *testing.T) {
 		t.Error("no connections opened; tuned dialer may not be wired into the connector")
 	}
 	t.Logf("connection established via tuned connector; OpenConnections=%d", stats.OpenConnections)
+}
+
+// TestNewPostgresBackend_ConnectTimeout exercises the actual NewPostgresBackend
+// code path (not newTunedConnector directly). A silent TCP server accepts the
+// connection but never responds to the PG startup. With the tuned connector
+// this fails in ~500ms; if NewPostgresBackend were reverted to plain
+// sqlx.Connect, it would hang for the full TCP retransmission timeout.
+func TestNewPostgresBackend_ConnectTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires real TCP listener")
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) { <-make(chan struct{}); _ = c.Close() }(conn)
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	p := 0
+	for _, c := range port {
+		p = p*10 + int(c-'0')
+	}
+
+	orig := tunedConnectTimeout
+	tunedConnectTimeout = 500 * time.Millisecond
+	defer func() { tunedConnectTimeout = orig }()
+
+	cfg := &config.Config{
+		DBHost:            host,
+		DBPort:            p,
+		DBName:            "test",
+		DBUser:            "test",
+		DBPassword:        "test",
+		DBMaxOpenConns:    2,
+		DBMaxIdleConns:    1,
+		DBConnMaxLifetime: time.Minute,
+		DBConnMaxIdleTime: time.Minute,
+	}
+
+	start := time.Now()
+	_, err = NewPostgresBackend(cfg)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected NewPostgresBackend to fail against a server that never responds")
+	}
+	if elapsed > 3*time.Second {
+		t.Errorf("connect_timeout did not fire: NewPostgresBackend took %v (want ~500ms)", elapsed)
+	}
+	t.Logf("NewPostgresBackend failed in %v: %v", elapsed, err)
 }
