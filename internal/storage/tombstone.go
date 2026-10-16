@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 )
 
 // Tombstones record the ids of events this relay has deleted, so a saved copy
@@ -76,7 +75,6 @@ func RejectRepublishedDeletion(lookup TombstoneLookup) func(context.Context, str
 	return func(ctx context.Context, id string) (reject bool, msg string) {
 		deleted, err := lookup(ctx, id)
 		if err != nil {
-			log.Printf("tombstone lookup failed for %s: %v", id, err)
 			return true, "error: could not check deletion status, refusing"
 		}
 		if deleted {

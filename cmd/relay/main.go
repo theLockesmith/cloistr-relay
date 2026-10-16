@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/pprof"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -147,7 +148,17 @@ func main() {
 	// Serialize DDL across replicas. Two pods running CREATE INDEX CONCURRENTLY
 	// or backend.Init() at the same time race on PostgreSQL catalog rows and
 	// produce "pq: tuple concurrently updated (XX000)".
-	ddlLock, err := storage.AcquireDDLLock(storage.GetDatabaseURL(cfg))
+	ddlTimeout := 5 * time.Minute
+	if v := os.Getenv("DDL_LOCK_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			ddlTimeout = d
+		} else {
+			log.Fatalf("DDL_LOCK_TIMEOUT=%q is not a valid duration", v)
+		}
+	}
+	ddlCtx, ddlCancel := context.WithTimeout(context.Background(), ddlTimeout)
+	ddlLock, err := storage.AcquireDDLLock(ddlCtx, storage.GetDatabaseURL(cfg))
+	ddlCancel()
 	if err != nil {
 		log.Fatalf("Failed to acquire DDL lock: %v", err)
 	}

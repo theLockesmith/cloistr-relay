@@ -43,8 +43,9 @@ func testDBURL(t *testing.T) string {
 // can acquire at that point.
 func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 	dbURL := testDBURL(t)
+	ctx := context.Background()
 
-	lock, err := storage.AcquireDDLLock(dbURL)
+	lock, err := storage.AcquireDDLLock(ctx, dbURL)
 	if err != nil {
 		t.Fatalf("first acquire: %v", err)
 	}
@@ -54,18 +55,18 @@ func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 		t.Fatalf("open second conn: %v", err)
 	}
 	defer db2.Close()
-	conn2, err := db2.Conn(context.Background())
+	conn2, err := db2.Conn(ctx)
 	if err != nil {
 		t.Fatalf("second conn: %v", err)
 	}
 	defer conn2.Close()
 
 	var held bool
-	if err := conn2.QueryRowContext(context.Background(), "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
+	if err := conn2.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
 		t.Fatalf("try lock while held: %v", err)
 	}
 	if held {
-		conn2.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
+		conn2.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
 		t.Fatal("second session acquired lock while first still holds it")
 	}
 
@@ -73,13 +74,13 @@ func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 	lock.Unlock()
 
 	// Second session must now acquire while first conn is still open.
-	if err := conn2.QueryRowContext(context.Background(), "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
+	if err := conn2.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", storage.DDLLockKey).Scan(&held); err != nil {
 		t.Fatalf("try lock after unlock: %v", err)
 	}
 	if !held {
 		t.Fatal("second session could not acquire after Unlock; unlock did not release")
 	}
-	conn2.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
+	conn2.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", storage.DDLLockKey)
 
 	lock.Close()
 }
@@ -89,6 +90,11 @@ func TestDDLLock_UnlockReleasesWhileConnOpen(t *testing.T) {
 // pg_advisory_lock version deadlocks because the waiter's snapshot prevents
 // CIC from finishing; the polling pg_try_advisory_lock version releases its
 // snapshot between polls so CIC completes.
+//
+// Both the lock acquire and the CIC exec run under a shared context deadline.
+// If a regression reintroduces blocking, Postgres cancels the stuck queries
+// via context cancellation. The goroutines exit, deferred cleanup runs, and
+// the test fails in seconds instead of hanging until go test's own timeout.
 func TestDDLLock_ConcurrentCIC(t *testing.T) {
 	dbURL := testDBURL(t)
 
@@ -106,16 +112,18 @@ func TestDDLLock_ConcurrentCIC(t *testing.T) {
 	defer setup.Exec("DROP TABLE IF EXISTS ddllock_test_tbl")
 	defer setup.Exec("DROP INDEX IF EXISTS ddllock_test_idx")
 
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
-	deadline := 10 * time.Second
 
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
 		go func(replica int) {
 			defer wg.Done()
 
-			lock, err := storage.AcquireDDLLock(dbURL)
+			lock, err := storage.AcquireDDLLock(ctx, dbURL)
 			if err != nil {
 				errs <- fmt.Errorf("replica %d acquire: %w", replica, err)
 				return
@@ -129,7 +137,7 @@ func TestDDLLock_ConcurrentCIC(t *testing.T) {
 			}
 			defer db.Close()
 
-			_, err = db.Exec("CREATE INDEX CONCURRENTLY IF NOT EXISTS ddllock_test_idx ON ddllock_test_tbl (val)")
+			_, err = db.ExecContext(ctx, "CREATE INDEX CONCURRENTLY IF NOT EXISTS ddllock_test_idx ON ddllock_test_tbl (val)")
 			if err != nil {
 				lock.Unlock()
 				lock.Close()
@@ -142,18 +150,7 @@ func TestDDLLock_ConcurrentCIC(t *testing.T) {
 		}(i)
 	}
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(deadline):
-		t.Fatalf("deadlock: both replicas did not finish within %v", deadline)
-	}
-
+	wg.Wait()
 	close(errs)
 	for err := range errs {
 		t.Error(err)
