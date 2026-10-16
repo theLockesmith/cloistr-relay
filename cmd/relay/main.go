@@ -179,11 +179,22 @@ func main() {
 	}
 	defer func() { _ = rawDB.Close() }()
 
-	searchBackend := search.NewSearchBackend(rawDB)
-	if err := searchBackend.InitSchema(); err != nil {
-		log.Printf("Warning: Failed to initialize search index: %v", err)
-		// Continue without search
-		searchBackend = nil
+	var searchBackend *search.SearchBackend
+	if cfg.SearchEnabled {
+		searchBackend = search.NewSearchBackend(rawDB, cfg.SearchKinds)
+		if err := searchBackend.InitSchema(); err != nil {
+			log.Printf("Warning: Failed to initialize search index: %v", err)
+			searchBackend = nil
+		} else {
+			if _, err := searchBackend.Backfill(); err != nil {
+				log.Printf("Warning: Search backfill error: %v", err)
+			}
+			if _, err := searchBackend.ClearNonSearchable(); err != nil {
+				log.Printf("Warning: Search clear non-searchable error: %v", err)
+			}
+		}
+	} else {
+		log.Println("NIP-50 search disabled (SEARCH_ENABLED=false)")
 	}
 
 	// Optimize database indexes for common query patterns

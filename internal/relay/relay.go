@@ -39,7 +39,11 @@ func supportedNIPs(cfg *config.Config) []any {
 	if cfg.GroupsEnabled && cfg.GroupsSecretKey != "" {
 		nips = append(nips, 29)
 	}
-	nips = append(nips, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94)
+	nips = append(nips, 33, 40, 42, 45, 46)
+	if cfg.SearchEnabled {
+		nips = append(nips, 50)
+	}
+	nips = append(nips, 57, 59, 66, 70, 77, 86, 94)
 	return nips
 }
 

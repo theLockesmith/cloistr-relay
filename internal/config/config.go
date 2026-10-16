@@ -147,6 +147,10 @@ type Config struct {
 	FeedIncludeLongForm bool // Include kind 30023 articles (default: true)
 	FeedIncludeReplies  bool // Include replies (default: false)
 
+	// NIP-50 Search
+	SearchEnabled bool  // Enable NIP-50 full-text search (default: true)
+	SearchKinds   []int // Event kinds to index for search (default: 1,11,1111,30023)
+
 	// Algorithmic Feeds
 	AlgoEnabled          bool    // Enable algorithmic feed support
 	AlgoDefault          string  // Default algorithm: chronological, wot-ranked, engagement, trending
@@ -720,6 +724,15 @@ func Load() (*Config, error) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.TierPeriodDays = n
 		}
+	}
+
+	// NIP-50 Search
+	cfg.SearchEnabled = true
+	if v := os.Getenv("SEARCH_ENABLED"); v == "false" || v == "0" {
+		cfg.SearchEnabled = false
+	}
+	if v := os.Getenv("SEARCH_KINDS"); v != "" {
+		cfg.SearchKinds = parseIntList(v)
 	}
 
 	return cfg, nil
