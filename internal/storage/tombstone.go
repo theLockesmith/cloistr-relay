@@ -3,7 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net"
 )
 
 // Tombstones record the ids of events this relay has deleted, so a saved copy
@@ -66,16 +70,72 @@ func IsTombstoned(ctx context.Context, db *sql.DB, id string) (bool, error) {
 // so it is testable without a database.
 type TombstoneLookup func(ctx context.Context, id string) (bool, error)
 
+// isConnError reports whether err looks like a closed or broken connection that
+// the pool handed out. A retry on a fresh connection from the pool is likely to
+// succeed.
+func isConnError(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return true
+	}
+	// driver.ErrBadConn is wrapped by database/sql; the pool discards the
+	// connection and opens a new one on the next call.
+	msg := err.Error()
+	for _, substr := range []string{
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"bad connection",
+		"the database system is shutting down",
+		"terminating connection",
+		"server closed the connection unexpectedly",
+		"SSL connection has been closed unexpectedly",
+	} {
+		if contains(msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(s, substr string) bool {
+	return len(substr) <= len(s) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 // RejectRepublishedDeletion refuses an event whose id is tombstoned.
 //
 // A lookup ERROR refuses the write rather than admitting it. That direction is
 // deliberate: a relay that cannot tell whether something was deleted should not be
 // the one that brings it back.
+//
+// One retry on a connection error: during a Patroni switchover the pool can hand
+// out a stale connection whose server-side session is gone. The first query fails,
+// database/sql discards the connection, and the retry gets a fresh one to the new
+// leader. Without this, every write during and shortly after a failover is rejected.
 func RejectRepublishedDeletion(lookup TombstoneLookup) func(context.Context, string) (bool, string) {
 	return func(ctx context.Context, id string) (reject bool, msg string) {
 		deleted, err := lookup(ctx, id)
 		if err != nil {
-			return true, "error: could not check deletion status, refusing"
+			if isConnError(err) {
+				log.Printf("tombstone lookup failed for %s (retrying): %v", id, err)
+				deleted, err = lookup(ctx, id)
+			}
+			if err != nil {
+				log.Printf("tombstone lookup failed for %s: %v", id, err)
+				return true, "error: could not check deletion status, refusing"
+			}
 		}
 		if deleted {
 			return true, "blocked: this event was deleted from this relay"
