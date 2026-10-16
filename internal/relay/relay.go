@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the relay software version (set at build time or default)
-var Version = "0.6.0"
+var Version = "dev"
 
 // supportedNIPs reports the NIPs this relay actually serves, for the NIP-11
 // document.
