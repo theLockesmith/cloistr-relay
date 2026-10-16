@@ -146,15 +146,27 @@ func TestNewPostgresBackend_ConnectTimeout(t *testing.T) {
 		DBConnMaxIdleTime: time.Minute,
 	}
 
-	start := time.Now()
-	_, err = NewPostgresBackend(cfg)
-	elapsed := time.Since(start)
+	type result struct {
+		err     error
+		elapsed time.Duration
+	}
+	ch := make(chan result, 1)
+	go func() {
+		start := time.Now()
+		_, err := NewPostgresBackend(cfg)
+		ch <- result{err, time.Since(start)}
+	}()
 
-	if err == nil {
-		t.Fatal("expected NewPostgresBackend to fail against a server that never responds")
+	select {
+	case r := <-ch:
+		if r.err == nil {
+			t.Fatal("expected NewPostgresBackend to fail against a server that never responds")
+		}
+		if r.elapsed > 3*time.Second {
+			t.Errorf("connect_timeout did not fire: NewPostgresBackend took %v (want ~500ms)", r.elapsed)
+		}
+		t.Logf("NewPostgresBackend failed in %v: %v", r.elapsed, r.err)
+	case <-time.After(3 * time.Second):
+		t.Fatalf("NewPostgresBackend did not return within 3s -- tuned connector may be missing")
 	}
-	if elapsed > 3*time.Second {
-		t.Errorf("connect_timeout did not fire: NewPostgresBackend took %v (want ~500ms)", elapsed)
-	}
-	t.Logf("NewPostgresBackend failed in %v: %v", elapsed, err)
 }
