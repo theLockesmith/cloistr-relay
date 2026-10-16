@@ -165,6 +165,14 @@ type Config struct {
 	GroupsInviteCodeExpiryHours int      // Default invite code expiry in hours (default: 168 = 1 week)
 	GroupsAllowPrivate          bool     // Allow private groups (default: true)
 
+	// NIP-40 Expiry Sweeper
+	ExpirySweepEnabled       bool          // Enable background expiry sweeper (default: false)
+	ExpirySweepDryRun        bool          // Log what would be deleted without deleting (default: true)
+	ExpirySweepInterval      time.Duration // How often to sweep (default: 1h)
+	ExpirySweepBatchSize     int           // Rows per deletion batch (default: 1000)
+	ExpirySweepBatchPause    time.Duration // Pause between batches (default: 1s)
+	ExpirySweepGiftWrapGrace time.Duration // Kind 1059 grace period past expiration (default: 30d)
+
 	// Lightning Payments & Tier Monetization (self-hosted LNbits)
 	PaymentsEnabled       bool   // Master switch for the payment subsystem
 	LNbitsURL             string // Base URL of self-hosted LNbits
@@ -719,6 +727,40 @@ func Load() (*Config, error) {
 	if v := os.Getenv("TIER_PERIOD_DAYS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.TierPeriodDays = n
+		}
+	}
+
+	// NIP-40 Expiry Sweeper
+	cfg.ExpirySweepDryRun = true
+	cfg.ExpirySweepInterval = time.Hour
+	cfg.ExpirySweepBatchSize = 1000
+	cfg.ExpirySweepBatchPause = time.Second
+	cfg.ExpirySweepGiftWrapGrace = 30 * 24 * time.Hour
+
+	if v := os.Getenv("EXPIRY_SWEEP_ENABLED"); v == "true" || v == "1" {
+		cfg.ExpirySweepEnabled = true
+	}
+	if v := os.Getenv("EXPIRY_SWEEP_DRY_RUN"); v == "false" || v == "0" {
+		cfg.ExpirySweepDryRun = false
+	}
+	if v := os.Getenv("EXPIRY_SWEEP_INTERVAL_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.ExpirySweepInterval = time.Duration(n) * time.Minute
+		}
+	}
+	if v := os.Getenv("EXPIRY_SWEEP_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.ExpirySweepBatchSize = n
+		}
+	}
+	if v := os.Getenv("EXPIRY_SWEEP_BATCH_PAUSE_MS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.ExpirySweepBatchPause = time.Duration(n) * time.Millisecond
+		}
+	}
+	if v := os.Getenv("EXPIRY_SWEEP_GIFTWRAP_GRACE_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.ExpirySweepGiftWrapGrace = time.Duration(n) * 24 * time.Hour
 		}
 	}
 
