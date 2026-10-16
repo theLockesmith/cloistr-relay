@@ -35,9 +35,29 @@ func (td *tunedDialer) DialContext(ctx context.Context, network, address string)
 	return td.d.DialContext(ctx, network, address)
 }
 
+var tunedConnectTimeout = 5 * time.Second
+
+func newTunedConnector(dsn string) (*pq.Connector, error) {
+	pqCfg, err := pq.NewConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("parse database URL: %w", err)
+	}
+	pqCfg.ConnectTimeout = tunedConnectTimeout
+
+	connector, err := pq.NewConnectorConfig(pqCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create connector: %w", err)
+	}
+	connector.Dialer(&tunedDialer{d: net.Dialer{
+		KeepAlive: 30 * time.Second,
+		Control:   tcpUserTimeoutControl(30 * time.Second),
+	}})
+
+	return connector, nil
+}
+
 // NewPostgresBackend creates and initializes a PostgreSQL eventstore backend
 func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error) {
-	// Build connection URL
 	dbURL := fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		cfg.DBUser,
@@ -47,9 +67,13 @@ func NewPostgresBackend(cfg *config.Config) (*postgresql.PostgresBackend, error)
 		cfg.DBName,
 	)
 
-	// Create sqlx connection with tuned pool settings
-	db, err := sqlx.Connect("postgres", dbURL)
+	connector, err := newTunedConnector(dbURL)
 	if err != nil {
+		return nil, fmt.Errorf("failed to create tuned connector: %w", err)
+	}
+	db := sqlx.NewDb(sql.OpenDB(connector), "postgres")
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
 	}
 
@@ -100,20 +124,10 @@ func GetDatabaseURL(cfg *config.Config) string {
 // than blocking for the full TCP retransmission timeout.
 func NewRawConnection(cfg *config.Config) (*sql.DB, error) {
 	dbURL := GetDatabaseURL(cfg)
-	pqCfg, err := pq.NewConfig(dbURL)
+	connector, err := newTunedConnector(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse database URL: %w", err)
+		return nil, fmt.Errorf("failed to create tuned connector: %w", err)
 	}
-	pqCfg.ConnectTimeout = 5 * time.Second
-
-	connector, err := pq.NewConnectorConfig(pqCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create connector: %w", err)
-	}
-	connector.Dialer(&tunedDialer{d: net.Dialer{
-		KeepAlive: 30 * time.Second,
-		Control:   tcpUserTimeoutControl(30 * time.Second),
-	}})
 
 	db := sql.OpenDB(connector)
 
