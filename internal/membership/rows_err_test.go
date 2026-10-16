@@ -70,7 +70,7 @@ func TestScanMembers_MidReadError(t *testing.T) {
 			"fake_pk", time.Now(), "inv", "added", "free", nil, "ln@example.com",
 		},
 	})
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	store := NewStore(db)
 	members, err := store.ListMembers(context.Background())
@@ -89,7 +89,7 @@ func TestScanPayments_MidReadError(t *testing.T) {
 			"hash1", "pk1", "basic", int64(1000), int64(30), "pending", time.Now(), nil,
 		},
 	})
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	pstore := NewPaymentStore(db)
 	payments, err := pstore.ListPending(context.Background())
