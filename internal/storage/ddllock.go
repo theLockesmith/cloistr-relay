@@ -26,29 +26,33 @@ type DDLLock struct {
 }
 
 // AcquireDDLLock polls pg_try_advisory_lock on a dedicated connection until the
-// lock is acquired or the deadline (5 minutes) expires.
+// lock is acquired or the context expires.
 //
 // Polling instead of blocking is required because pg_advisory_lock holds a
 // snapshot for the duration of the wait. CREATE INDEX CONCURRENTLY (run by the
 // lock holder) waits for every older snapshot to drain before it can finish.
 // A blocking waiter therefore deadlocks the holder's CIC indefinitely, and
 // PostgreSQL's deadlock detector cannot see it.
-func AcquireDDLLock(dbURL string) (*DDLLock, error) {
+//
+// The caller controls the deadline via ctx. A context without a deadline polls
+// indefinitely (not recommended in production -- use context.WithTimeout).
+func AcquireDDLLock(ctx context.Context, dbURL string) (*DDLLock, error) {
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("ddl lock connection: %w", err)
 	}
 
-	conn, err := db.Conn(context.Background())
+	conn, err := db.Conn(ctx)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ddl lock dedicated conn: %w", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Minute)
+	start := time.Now()
+	lastLog := start
 	for {
 		var acquired bool
-		if err := conn.QueryRowContext(context.Background(), "SELECT pg_try_advisory_lock($1)", ddlLockKey).Scan(&acquired); err != nil {
+		if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", ddlLockKey).Scan(&acquired); err != nil {
 			conn.Close()
 			db.Close()
 			return nil, fmt.Errorf("pg_try_advisory_lock: %w", err)
@@ -56,10 +60,14 @@ func AcquireDDLLock(dbURL string) (*DDLLock, error) {
 		if acquired {
 			break
 		}
-		if time.Now().After(deadline) {
+		if ctx.Err() != nil {
 			conn.Close()
 			db.Close()
-			return nil, fmt.Errorf("timed out waiting for DDL advisory lock after 5 minutes")
+			return nil, fmt.Errorf("timed out waiting for DDL advisory lock after %v: %w", time.Since(start).Round(time.Second), ctx.Err())
+		}
+		if time.Since(lastLog) >= 30*time.Second {
+			log.Printf("Waiting for DDL lock (held by another replica), %vs elapsed", int(time.Since(start).Seconds()))
+			lastLog = time.Now()
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
