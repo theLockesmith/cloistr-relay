@@ -138,7 +138,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out interfac
 	if err != nil {
 		return fmt.Errorf("lightning: request to %s failed: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

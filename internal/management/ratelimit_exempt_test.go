@@ -19,7 +19,7 @@ func testDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -97,7 +97,7 @@ func TestMethodHandler_RateLimitExemptDispatch(t *testing.T) {
 	for _, m := range methods {
 		t.Run(m+" is routed", func(t *testing.T) {
 			func() {
-				defer func() { recover() }()
+				defer func() { _ = recover() }()
 				_, err := handler.Dispatch(m, nil)
 				if err != nil && err.Error() == "unsupported method: "+m {
 					t.Errorf("method %q should be routed but got unsupported", m)

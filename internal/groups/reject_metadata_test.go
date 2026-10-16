@@ -209,7 +209,7 @@ func TestRejectExternalMetadata_AllMetadataKindsOwnerChecked(t *testing.T) {
 			PubKey: attackerPubkey,
 			Tags:   nostr.Tags{nostr.Tag{"d", dtag}},
 		}
-		blocked, msg = reject(context.Background(), attackerEvent)
+		blocked, _ = reject(context.Background(), attackerEvent)
 		if !blocked {
 			t.Errorf("kind %d: non-owner should be blocked", kind)
 		}

@@ -125,7 +125,7 @@ func TestCreateStoreEventHook(t *testing.T) {
 // events; every further Publish is dropped and must be counted.
 func TestPublish_BufferFullIncrementsDropCounter(t *testing.T) {
 	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"}) // never dialled: Start is not called
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	ps := New(rdb, nil, nil)
 
 	before := testutil.ToFloat64(publishDropped)

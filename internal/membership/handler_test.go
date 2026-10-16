@@ -2,90 +2,11 @@ package membership
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
-
-// mockStore provides an in-memory membership store for testing.
-type mockStore struct {
-	mu      sync.Mutex
-	members map[string]*Member
-	invites map[string]*Invite
-}
-
-func newMockStore() *mockStore {
-	return &mockStore{
-		members: make(map[string]*Member),
-		invites: make(map[string]*Invite),
-	}
-}
-
-func (m *mockStore) isMember(pubkey string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	_, ok := m.members[pubkey]
-	return ok
-}
-
-func (m *mockStore) getMember(pubkey string) *Member {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.members[pubkey]
-}
-
-// testJoinHandler builds a JoinHandler backed by a mock store for testing.
-// It returns the handler and a slice that captures published events.
-func testJoinHandler(t *testing.T, requireInvite bool) (*JoinHandler, *mockStore, *[]*nostr.Event) {
-	t.Helper()
-
-	sk := nostr.GeneratePrivateKey()
-	ms := newMockStore()
-
-	var published []*nostr.Event
-	var pubMu sync.Mutex
-
-	// We can't use the real Store (needs a DB), so we build a JoinHandler
-	// with a real Store set to nil and override its behavior via the
-	// methods the handler calls. Instead, build a thin Store wrapper.
-	//
-	// Actually, since JoinHandler uses *Store methods and Store requires
-	// *sql.DB, we build a real JoinHandler but redirect its store calls
-	// through a test double. The cleanest way: create a JoinHandler
-	// manually and swap the store field with a shim.
-	//
-	// For unit tests we test the handler logic directly by constructing
-	// events and calling the returned funcs.
-
-	// Build a real store (nil DB) for type satisfaction, then we'll test
-	// differently — we test RejectJoinRequest and OnJoinRequestSaved
-	// logic by exercising them against a real DB-backed store in
-	// integration tests. For pure logic tests here, we test the event
-	// creation helpers and the handler config validation.
-
-	_ = ms // used below in integration-style tests if DB available
-
-	addEvent := func(_ context.Context, evt *nostr.Event) (bool, error) {
-		pubMu.Lock()
-		published = append(published, evt)
-		pubMu.Unlock()
-		return false, nil
-	}
-
-	handler, err := NewJoinHandler(JoinHandlerConfig{
-		Store:         nil, // will panic if Store methods are called; see below
-		SecretKey:     sk,
-		RequireInvite: requireInvite,
-		AddEvent:      addEvent,
-	})
-	if err != nil {
-		t.Fatalf("NewJoinHandler: %v", err)
-	}
-
-	return handler, ms, &published
-}
 
 func TestNewJoinHandler_MissingKey(t *testing.T) {
 	_, err := NewJoinHandler(JoinHandlerConfig{

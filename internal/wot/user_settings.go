@@ -260,7 +260,7 @@ func (s *UserSettingsStore) ListUsersWithSettings(ctx context.Context) ([]string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pubkeys []string
 	for rows.Next() {

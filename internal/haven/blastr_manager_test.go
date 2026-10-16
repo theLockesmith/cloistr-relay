@@ -175,23 +175,6 @@ func TestUserRetryEntry_Fields(t *testing.T) {
 	}
 }
 
-// mockMemberStoreForBlastr implements MemberStore for testing
-type mockMemberStoreForBlastr struct {
-	members map[string]*MemberInfo
-}
-
-func (m *mockMemberStoreForBlastr) GetMemberInfo(ctx context.Context, pubkey string) (*MemberInfo, error) {
-	if info, ok := m.members[pubkey]; ok {
-		return info, nil
-	}
-	return nil, nil
-}
-
-func (m *mockMemberStoreForBlastr) IsMember(ctx context.Context, pubkey string) (bool, error) {
-	_, ok := m.members[pubkey]
-	return ok, nil
-}
-
 func TestBlastrManager_OnEventSaved_NoStores(t *testing.T) {
 	manager := NewBlastrManager(nil, nil, nil)
 	handler := manager.OnEventSaved()

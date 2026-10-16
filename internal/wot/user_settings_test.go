@@ -1,6 +1,7 @@
 package wot
 
 import (
+	"context"
 	"testing"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -107,7 +108,7 @@ func TestUserFilter_ShouldAllowToInbox_NoStore(t *testing.T) {
 	filter := NewUserFilter(nil, nil)
 
 	// Test with nil event (edge case)
-	result := filter.ShouldAllowToInbox(nil, nil, "recipient")
+	result := filter.ShouldAllowToInbox(context.TODO(), nil, "recipient")
 	if !result.Allowed {
 		t.Error("Without settings store and nil event, should allow by default")
 	}
@@ -124,7 +125,7 @@ func TestUserFilter_ShouldAllowToInbox_WithEvent(t *testing.T) {
 		Kind:   1,
 	}
 
-	result := filter.ShouldAllowToInbox(nil, event, "recipient456")
+	result := filter.ShouldAllowToInbox(context.TODO(), event, "recipient456")
 
 	if !result.Allowed {
 		t.Error("Without settings store, should allow by default")
