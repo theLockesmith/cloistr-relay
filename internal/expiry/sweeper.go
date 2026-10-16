@@ -146,13 +146,23 @@ func (s *Sweeper) liveRun(ctx context.Context, nowUnix, graceUnix int64, start t
 // countExpired returns per-kind counts of events eligible for deletion, plus
 // the number of events with malformed (non-numeric) expiration tags.
 func (s *Sweeper) countExpired(ctx context.Context, nowUnix, graceUnix int64) ([]KindCount, int64, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '30s'"); err != nil {
+		return nil, 0, fmt.Errorf("set statement_timeout: %w", err)
+	}
+
+	rows, err := tx.QueryContext(ctx, `
 		SELECT kind, COUNT(*) AS cnt
 		FROM event e
 		WHERE EXISTS (
 			SELECT 1 FROM jsonb_array_elements(e.tags) AS t
 			WHERE t->>0 = 'expiration'
-			  AND t->>1 ~ '^\d+$'
+			  AND t->>1 ~ '^\d{1,18}$'
 			  AND (t->>1)::bigint < CASE WHEN e.kind = 1059 THEN $1::bigint ELSE $2::bigint END
 		)
 		GROUP BY kind
@@ -176,21 +186,25 @@ func (s *Sweeper) countExpired(ctx context.Context, nowUnix, graceUnix int64) ([
 	}
 
 	var malformed int64
-	err = s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM event e
 		WHERE EXISTS (
 			SELECT 1 FROM jsonb_array_elements(e.tags) AS t
 			WHERE t->>0 = 'expiration'
-			  AND NOT (t->>1 ~ '^\d+$')
+			  AND NOT (t->>1 ~ '^\d{1,18}$')
 		)
 		AND NOT EXISTS (
 			SELECT 1 FROM jsonb_array_elements(e.tags) AS t
 			WHERE t->>0 = 'expiration'
-			  AND t->>1 ~ '^\d+$'
+			  AND t->>1 ~ '^\d{1,18}$'
 		)
 	`).Scan(&malformed)
 	if err != nil {
 		return counts, 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return counts, malformed, err
 	}
 
 	return counts, malformed, nil
@@ -199,14 +213,24 @@ func (s *Sweeper) countExpired(ctx context.Context, nowUnix, graceUnix int64) ([
 // deleteBatch removes up to limit expired events in one statement. It skips
 // events with malformed expiration tags (non-numeric values).
 func (s *Sweeper) deleteBatch(ctx context.Context, nowUnix, graceUnix int64, limit int) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '30s'"); err != nil {
+		return 0, fmt.Errorf("set statement_timeout: %w", err)
+	}
+
+	res, err := tx.ExecContext(ctx, `
 		DELETE FROM event
 		WHERE id IN (
 			SELECT e.id FROM event e
 			WHERE EXISTS (
 				SELECT 1 FROM jsonb_array_elements(e.tags) AS t
 				WHERE t->>0 = 'expiration'
-				  AND t->>1 ~ '^\d+$'
+				  AND t->>1 ~ '^\d{1,18}$'
 				  AND (t->>1)::bigint < CASE WHEN e.kind = 1059 THEN $1::bigint ELSE $2::bigint END
 			)
 			LIMIT $3
@@ -215,7 +239,16 @@ func (s *Sweeper) deleteBatch(ctx context.Context, nowUnix, graceUnix int64, lim
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // Start runs the sweep loop until ctx is cancelled. It logs each pass.

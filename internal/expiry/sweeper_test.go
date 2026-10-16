@@ -15,7 +15,7 @@ func testDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://postgres:postgres@localhost:5432/nostr_test?sslmode=disable"
+		dsn = "postgres://postgres:postgres@localhost:5450/nostr_test?sslmode=disable"
 	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -389,5 +389,46 @@ func TestSweep_DryRun_SeparateGiftWrapCount(t *testing.T) {
 	}
 	if kindMap[1] != 3 {
 		t.Errorf("kind 1 count = %d, want 3", kindMap[1])
+	}
+}
+
+func TestSweep_OverflowExpiration(t *testing.T) {
+	db := testDB(t)
+	defer func() { _ = db.Close() }()
+	setupEventTable(t, db)
+
+	now := time.Now().Unix()
+	past := fmt.Sprintf("%d", now-3600)
+
+	insertEvent(t, db, "normal-expired", 1, now-7200, past)
+	insertEvent(t, db, "overflow-20digits", 1, now-7200, "99999999999999999999")
+	insertEvent(t, db, "overflow-19digits", 1, now-7200, "9999999999999999999")
+
+	sw := New(db, Config{
+		DryRun:        false,
+		GiftWrapGrace: 30 * 24 * time.Hour,
+		BatchSize:     1000,
+		BatchPause:    time.Millisecond,
+	})
+
+	result, err := sw.Sweep(context.Background())
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	if result.Deleted != 1 {
+		t.Errorf("Deleted = %d, want 1 (only normal-expired)", result.Deleted)
+	}
+	if result.Malformed != 2 {
+		t.Errorf("Malformed = %d, want 2 (both overflow events)", result.Malformed)
+	}
+	if !eventExists(t, db, "overflow-20digits") {
+		t.Error("overflow-20digits should still exist (not deleted)")
+	}
+	if !eventExists(t, db, "overflow-19digits") {
+		t.Error("overflow-19digits should still exist (not deleted)")
+	}
+	if eventExists(t, db, "normal-expired") {
+		t.Error("normal-expired should have been deleted")
 	}
 }
