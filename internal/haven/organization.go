@@ -148,7 +148,7 @@ func (s *OrgStore) GetOrganizationByOwner(ctx context.Context, ownerPubkey strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var orgs []*Organization
 	for rows.Next() {
@@ -255,7 +255,7 @@ func (s *OrgStore) GetMembership(ctx context.Context, pubkey string) ([]*OrgMemb
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []*OrgMember
 	for rows.Next() {
@@ -280,7 +280,7 @@ func (s *OrgStore) GetOrgMembers(ctx context.Context, orgID string) ([]*OrgMembe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []*OrgMember
 	for rows.Next() {

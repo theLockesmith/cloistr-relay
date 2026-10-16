@@ -156,7 +156,7 @@ func (s *Store) ListMembers(ctx context.Context) ([]Member, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return s.scanMembers(rows)
 }
@@ -170,7 +170,7 @@ func (s *Store) ListMembersByTier(ctx context.Context, tier MemberTier) ([]Membe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return s.scanMembers(rows)
 }
@@ -183,7 +183,7 @@ func (s *Store) CountMembersByTier(ctx context.Context) (map[MemberTier]int, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := make(map[MemberTier]int)
 	for rows.Next() {
@@ -297,7 +297,7 @@ func (s *Store) ListInvites(ctx context.Context) ([]Invite, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var invites []Invite
 	for rows.Next() {
@@ -395,7 +395,7 @@ func (s *Store) ListExpiredTiers(ctx context.Context) ([]Member, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return s.scanMembers(rows)
 }

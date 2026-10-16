@@ -44,7 +44,7 @@ func AcquireDDLLock(ctx context.Context, dbURL string) (*DDLLock, error) {
 
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("ddl lock dedicated conn: %w", err)
 	}
 
@@ -53,16 +53,16 @@ func AcquireDDLLock(ctx context.Context, dbURL string) (*DDLLock, error) {
 	for {
 		var acquired bool
 		if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", ddlLockKey).Scan(&acquired); err != nil {
-			conn.Close()
-			db.Close()
+			_ = conn.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("pg_try_advisory_lock: %w", err)
 		}
 		if acquired {
 			break
 		}
 		if ctx.Err() != nil {
-			conn.Close()
-			db.Close()
+			_ = conn.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("timed out waiting for DDL advisory lock after %v: %w", time.Since(start).Round(time.Second), ctx.Err())
 		}
 		if time.Since(lastLog) >= 30*time.Second {
@@ -92,6 +92,10 @@ func (l *DDLLock) Unlock() {
 // Close releases the underlying connection and pool. If Unlock was not called,
 // closing the connection implicitly releases the lock.
 func (l *DDLLock) Close() {
-	l.conn.Close()
-	l.db.Close()
+	if err := l.conn.Close(); err != nil {
+		log.Printf("Warning: DDL lock connection close failed: %v", err)
+	}
+	if err := l.db.Close(); err != nil {
+		log.Printf("Warning: DDL lock pool close failed: %v", err)
+	}
 }

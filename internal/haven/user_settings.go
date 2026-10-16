@@ -226,7 +226,7 @@ func (s *UserSettingsStore) ListUsersWithBlastr(ctx context.Context) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pubkeys []string
 	for rows.Next() {
@@ -247,7 +247,7 @@ func (s *UserSettingsStore) ListUsersWithImporter(ctx context.Context) ([]string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pubkeys []string
 	for rows.Next() {
@@ -271,7 +271,7 @@ func (s *UserSettingsStore) GetUsersForImport(ctx context.Context) ([]*UserSetti
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var users []*UserSettings
 	for rows.Next() {

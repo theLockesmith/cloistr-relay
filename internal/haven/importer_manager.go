@@ -263,7 +263,9 @@ func (m *ImporterManager) processJob(job ImporterJob) {
 
 	// Update last import time for user
 	if imported > 0 && m.userSettings != nil {
-		m.userSettings.UpdateLastImportTime(context.Background(), job.UserPubkey, time.Now())
+		if err := m.userSettings.UpdateLastImportTime(context.Background(), job.UserPubkey, time.Now()); err != nil {
+			log.Printf("HAVEN ImporterManager: failed to update last import time for %s: %v", truncateID(job.UserPubkey), err)
+		}
 	}
 
 	if imported > 0 {
