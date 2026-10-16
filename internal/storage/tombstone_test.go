@@ -480,18 +480,18 @@ func TestRealPQ_SemaphorePreventPoolStarvation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	db.SetMaxOpenConns(6)
+	db.SetMaxOpenConns(12)
 
 	lookup := func(ctx context.Context, id string) (bool, error) {
 		return IsTombstoned(ctx, db, id)
 	}
 
-	// Fire 8 concurrent tombstone lookups against a server that hangs on
-	// every query. Without the semaphore all 6 pool conns would be consumed
+	// Fire 16 concurrent tombstone lookups against a server that hangs on
+	// every query. Without the semaphore all 12 pool conns would be consumed
 	// by abandoned goroutines; with it, at most maxInflightTombstoneLookups
 	// are held, leaving headroom for other pool users.
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 16; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -525,5 +525,35 @@ func TestRealPQ_SemaphorePreventPoolStarvation(t *testing.T) {
 	stats = db.Stats()
 	if stats.InUse != 0 {
 		t.Errorf("InUse=%d after server closed; want 0", stats.InUse)
+	}
+}
+
+func TestRealPQ_BurstWritesAgainstHealthyLookup(t *testing.T) {
+	orig := tombstoneAttemptTimeout
+	tombstoneAttemptTimeout = 5 * time.Second
+	defer func() { tombstoneAttemptTimeout = orig }()
+
+	lookup := func(ctx context.Context, _ string) (bool, error) {
+		time.Sleep(20 * time.Millisecond)
+		return false, nil
+	}
+
+	var wg sync.WaitGroup
+	var refused atomic.Int32
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			reject, _ := RejectRepublishedDeletion(lookup)(context.Background(), fmt.Sprintf("id-%d", i))
+			if reject {
+				refused.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if refused.Load() != 0 {
+		t.Errorf("%d of 20 writes refused against a healthy 20ms lookup; semaphore should not reject healthy traffic",
+			refused.Load())
 	}
 }

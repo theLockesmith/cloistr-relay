@@ -42,9 +42,15 @@ CREATE TABLE IF NOT EXISTS deleted_event (
 
 var tombstoneAttemptTimeout = 5 * time.Second
 
-const maxInflightTombstoneLookups = 4
+const maxInflightTombstoneLookups = 8
 
 var tombstoneLookupSem = make(chan struct{}, maxInflightTombstoneLookups)
+
+var tombstoneSemWaitSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "nostr_relay_tombstone_sem_wait_seconds",
+	Help:    "Time spent waiting for a tombstone lookup semaphore slot",
+	Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+})
 
 var tombstoneLookupFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "nostr_relay_tombstone_lookup_failures_total",
@@ -146,12 +152,17 @@ func lookupWithDeadline(parent context.Context, lookup TombstoneLookup, id strin
 
 	// Each abandoned goroutine holds a pool connection until the socket dies
 	// (~30s with TCP_USER_TIMEOUT). Cap in-flight lookups so a DB blip
-	// cannot exhaust the pool and stall every other rawDB user.
+	// cannot exhaust the pool and stall every other rawDB user. Wait for a
+	// slot rather than failing instantly so healthy-server bursts are not
+	// rejected.
+	waitStart := time.Now()
 	select {
 	case tombstoneLookupSem <- struct{}{}:
-	default:
-		return false, context.DeadlineExceeded
+	case <-ctx.Done():
+		tombstoneSemWaitSeconds.Observe(time.Since(waitStart).Seconds())
+		return false, ctx.Err()
 	}
+	tombstoneSemWaitSeconds.Observe(time.Since(waitStart).Seconds())
 
 	ch := make(chan lookupResult, 1)
 	go func() {
