@@ -9,9 +9,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // Tombstones record the ids of events this relay has deleted, so a saved copy
@@ -36,6 +39,23 @@ CREATE TABLE IF NOT EXISTS deleted_event (
 	kind        INTEGER NOT NULL,
 	deleted_at  BIGINT  NOT NULL
 )`
+
+var tombstoneAttemptTimeout = 5 * time.Second
+
+const maxInflightTombstoneLookups = 8
+
+var tombstoneLookupSem = make(chan struct{}, maxInflightTombstoneLookups)
+
+var tombstoneSemWaitSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "nostr_relay_tombstone_sem_wait_seconds",
+	Help:    "Time spent waiting for a tombstone lookup semaphore slot",
+	Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+})
+
+var tombstoneLookupFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "nostr_relay_tombstone_lookup_failures_total",
+	Help: "Tombstone lookup failures by cause",
+}, []string{"cause"})
 
 // EnsureTombstoneTable creates the tombstone table. It returns an error rather
 // than logging one: see the note above.
@@ -114,32 +134,118 @@ func isConnError(err error) bool {
 	return false
 }
 
+type lookupResult struct {
+	deleted bool
+	err     error
+}
+
+// lookupWithDeadline runs the lookup in a goroutine and abandons it if the
+// deadline fires. lib/pq's ctx cancel sends a CancelRequest on a new socket
+// but never unblocks the blocked read on the original one, so a dead
+// connection hangs indefinitely despite context.WithTimeout. The goroutine +
+// select pattern returns ctx.Err() immediately on deadline, abandoning the
+// blocked goroutine. The goroutine's connection is marked bad by pq and will
+// be discarded by the pool when (if) the read eventually returns.
+func lookupWithDeadline(parent context.Context, lookup TombstoneLookup, id string) (bool, error) {
+	ctx, cancel := context.WithTimeout(parent, tombstoneAttemptTimeout)
+	defer cancel()
+
+	// Each abandoned goroutine holds a pool connection until the socket dies
+	// (~30s with TCP_USER_TIMEOUT). Cap in-flight lookups so a DB blip
+	// cannot exhaust the pool and stall every other rawDB user. Wait for a
+	// slot rather than failing instantly so healthy-server bursts are not
+	// rejected.
+	waitStart := time.Now()
+	select {
+	case tombstoneLookupSem <- struct{}{}:
+	case <-ctx.Done():
+		tombstoneSemWaitSeconds.Observe(time.Since(waitStart).Seconds())
+		return false, ctx.Err()
+	}
+	tombstoneSemWaitSeconds.Observe(time.Since(waitStart).Seconds())
+
+	ch := make(chan lookupResult, 1)
+	go func() {
+		defer func() { <-tombstoneLookupSem }()
+		deleted, err := lookup(ctx, id)
+		ch <- lookupResult{deleted, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.deleted, r.err
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+}
+
+func classifyTombstoneError(parentCtx context.Context, err error) string {
+	if parentCtx.Err() == context.Canceled {
+		return "client_gone"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	// 57014 = query_canceled. Sent by PG when our CancelRequest is processed.
+	// The abandon wrapper normally returns ctx.Err() before this arrives, but
+	// if pq wins the race, the cancel was still ours (attempt deadline) and
+	// the right action is the same: retry.
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "57014" {
+		return "timeout"
+	}
+	if isConnError(err) {
+		return "conn_error"
+	}
+	return "other"
+}
+
 // RejectRepublishedDeletion refuses an event whose id is tombstoned.
 //
 // A lookup ERROR refuses the write rather than admitting it. That direction is
 // deliberate: a relay that cannot tell whether something was deleted should not be
 // the one that brings it back.
 //
-// One retry on a connection error: during a Patroni switchover the pool can hand
-// out a stale connection whose server-side session is gone. The first query fails,
-// database/sql discards the connection, and the retry gets a fresh one to the new
-// leader. Without this, every write during and shortly after a failover is rejected.
+// Each attempt is capped at tombstoneAttemptTimeout so a dead connection fails
+// fast instead of hanging for minutes. One retry on a connection error or timeout:
+// during a Patroni switchover the pool can hand out a stale connection whose
+// server-side session is gone. The first query fails, database/sql discards the
+// connection, and the retry gets a fresh one to the new leader.
+//
+// Client disconnects (context.Canceled from the request context) are classified
+// separately and not retried.
 func RejectRepublishedDeletion(lookup TombstoneLookup) func(context.Context, string) (bool, string) {
 	return func(ctx context.Context, id string) (reject bool, msg string) {
-		deleted, err := lookup(ctx, id)
-		if err != nil {
-			if isConnError(err) {
-				log.Printf("tombstone lookup failed for %s (retrying): %v", id, err)
-				deleted, err = lookup(ctx, id)
+		deleted, err := lookupWithDeadline(ctx, lookup, id)
+		if err == nil {
+			if deleted {
+				return true, "blocked: this event was deleted from this relay"
 			}
-			if err != nil {
-				log.Printf("tombstone lookup failed for %s: %v", id, err)
-				return true, "error: could not check deletion status, refusing"
+			return false, ""
+		}
+
+		cause := classifyTombstoneError(ctx, err)
+
+		if cause == "client_gone" {
+			tombstoneLookupFailures.WithLabelValues("client_gone").Inc()
+			return true, "client-gone: deletion check interrupted by client disconnect"
+		}
+
+		// Retryable: connection error or per-attempt timeout (hung connection).
+		// Only retry if the request context is still alive.
+		if ctx.Err() == nil && (cause == "conn_error" || cause == "timeout") {
+			log.Printf("tombstone lookup failed for %s (retrying, cause=%s): %v", id, cause, err)
+			deleted, err = lookupWithDeadline(ctx, lookup, id)
+			if err == nil {
+				if deleted {
+					return true, "blocked: this event was deleted from this relay"
+				}
+				return false, ""
 			}
+			cause = classifyTombstoneError(ctx, err)
 		}
-		if deleted {
-			return true, "blocked: this event was deleted from this relay"
-		}
-		return false, ""
+
+		tombstoneLookupFailures.WithLabelValues(cause).Inc()
+		log.Printf("tombstone lookup failed for %s (cause=%s): %v", id, cause, err)
+		return true, fmt.Sprintf("error: could not check deletion status (%s), refusing", cause)
 	}
 }
