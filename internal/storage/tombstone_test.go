@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
@@ -95,6 +97,112 @@ func TestRejectRepublishedDeletion_ExactlyOneRetry(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Errorf("expected exactly 2 calls (1 original + 1 retry), got %d", calls.Load())
+	}
+}
+
+// A hung connection must not block the write for minutes. Each attempt is capped
+// at tombstoneAttemptTimeout. The lookup blocks forever; the deadline must rescue it.
+func TestRejectRepublishedDeletion_DeadlineOnHungConnection(t *testing.T) {
+	orig := tombstoneAttemptTimeout
+	tombstoneAttemptTimeout = 100 * time.Millisecond
+	defer func() { tombstoneAttemptTimeout = orig }()
+
+	lookup := func(ctx context.Context, _ string) (bool, error) {
+		<-ctx.Done()
+		return false, ctx.Err()
+	}
+
+	start := time.Now()
+	reject, msg := RejectRepublishedDeletion(lookup)(context.Background(), "abc")
+	elapsed := time.Since(start)
+
+	if !reject {
+		t.Error("admitted the write when lookup hung")
+	}
+	// Two attempts (original + retry), each capped at 100ms.
+	maxAllowed := 2*tombstoneAttemptTimeout + 100*time.Millisecond
+	if elapsed > maxAllowed {
+		t.Errorf("took %v; each attempt should be capped at %v", elapsed, tombstoneAttemptTimeout)
+	}
+	if elapsed < tombstoneAttemptTimeout {
+		t.Errorf("finished in %v; should have waited at least one timeout (%v)", elapsed, tombstoneAttemptTimeout)
+	}
+	if !strings.Contains(msg, "timeout") {
+		t.Errorf("message should mention timeout cause, got %q", msg)
+	}
+}
+
+// A client that disconnects before the lookup finishes should not trigger a retry
+// or be logged/counted as a database failure.
+func TestRejectRepublishedDeletion_ClientGoneNoRetry(t *testing.T) {
+	var calls atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	reject, msg := RejectRepublishedDeletion(func(ctx context.Context, _ string) (bool, error) {
+		calls.Add(1)
+		return false, ctx.Err()
+	})(ctx, "abc")
+
+	if !reject {
+		t.Error("admitted the write when client disconnected")
+	}
+	if calls.Load() != 1 {
+		t.Errorf("expected 1 call (no retry for client-gone), got %d", calls.Load())
+	}
+	if !strings.HasPrefix(msg, "client-gone:") {
+		t.Errorf("message should start with 'client-gone:', got %q", msg)
+	}
+}
+
+// A timeout on the first attempt should trigger a retry. If the retry succeeds,
+// the write is admitted.
+func TestRejectRepublishedDeletion_TimeoutRetriedAndSucceeds(t *testing.T) {
+	orig := tombstoneAttemptTimeout
+	tombstoneAttemptTimeout = 100 * time.Millisecond
+	defer func() { tombstoneAttemptTimeout = orig }()
+
+	var calls atomic.Int32
+	reject, _ := RejectRepublishedDeletion(func(ctx context.Context, _ string) (bool, error) {
+		if calls.Add(1) == 1 {
+			<-ctx.Done()
+			return false, ctx.Err()
+		}
+		return false, nil
+	})(context.Background(), "abc")
+
+	if reject {
+		t.Error("refused after a successful retry on timeout")
+	}
+	if calls.Load() != 2 {
+		t.Errorf("expected 2 calls (original timed out + successful retry), got %d", calls.Load())
+	}
+}
+
+func TestClassifyTombstoneError(t *testing.T) {
+	bgCtx := context.Background()
+	canceledCtx, cancel := context.WithCancel(bgCtx)
+	cancel()
+
+	for _, tc := range []struct {
+		name      string
+		parentCtx context.Context
+		err       error
+		want      string
+	}{
+		{"client_gone", canceledCtx, context.Canceled, "client_gone"},
+		{"timeout", bgCtx, context.DeadlineExceeded, "timeout"},
+		{"wrapped_timeout", bgCtx, fmt.Errorf("tombstone lookup abc: %w", context.DeadlineExceeded), "timeout"},
+		{"conn_error", bgCtx, &pq.Error{Code: pqerror.AdminShutdown}, "conn_error"},
+		{"conn_error_eof", bgCtx, io.EOF, "conn_error"},
+		{"other", bgCtx, errors.New("permission denied"), "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyTombstoneError(tc.parentCtx, tc.err)
+			if got != tc.want {
+				t.Errorf("classifyTombstoneError = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
