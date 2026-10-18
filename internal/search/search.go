@@ -54,6 +54,7 @@ func acquireSearchLock(ctx context.Context, db *sql.DB) (*sql.Conn, error) {
 	}
 
 	start := time.Now()
+	lastLog := start
 	for {
 		var acquired bool
 		if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", searchLockKey).Scan(&acquired); err != nil {
@@ -66,6 +67,10 @@ func acquireSearchLock(ctx context.Context, db *sql.DB) (*sql.Conn, error) {
 		if ctx.Err() != nil {
 			_ = conn.Close()
 			return nil, fmt.Errorf("search lock timeout after %v: %w", time.Since(start).Round(time.Second), ctx.Err())
+		}
+		if time.Since(lastLog) >= 30*time.Second {
+			log.Printf("Waiting for search advisory lock (held by another replica), %vs elapsed", int(time.Since(start).Seconds()))
+			lastLog = time.Now()
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -176,13 +181,6 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 }
 
 func (s *SearchBackend) Backfill(ctx context.Context) (int64, error) {
-	lockConn, err := acquireSearchLock(ctx, s.db)
-	if err != nil {
-		SearchSetupFailures.Inc()
-		return 0, fmt.Errorf("search backfill lock: %w", err)
-	}
-	defer releaseSearchLock(lockConn)
-
 	kindsSQL := kindsList(s.kinds)
 	var total int64
 	lastID := ""
