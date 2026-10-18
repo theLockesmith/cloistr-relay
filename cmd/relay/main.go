@@ -828,6 +828,7 @@ func main() {
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Health check endpoint (simple, for Kubernetes probes)
+	mux.HandleFunc("/ready", readyCheck.Handler())
 	mux.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))

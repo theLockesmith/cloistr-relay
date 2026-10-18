@@ -98,8 +98,8 @@ func TestRetryConnect_ExponentialBackoffCaps(t *testing.T) {
 	// Check that later gaps don't exceed max + tolerance
 	for i := 1; i < len(timestamps); i++ {
 		gap := timestamps[i].Sub(timestamps[i-1])
-		if gap > maxDelay+20*time.Millisecond {
-			t.Errorf("gap %d->%d = %v exceeds max %v + tolerance", i-1, i, gap, maxDelay)
+		if gap > maxDelay+maxDelay/4+20*time.Millisecond {
+			t.Errorf("gap %d->%d = %v exceeds max %v + jitter + tolerance", i-1, i, gap, maxDelay)
 		}
 	}
 }

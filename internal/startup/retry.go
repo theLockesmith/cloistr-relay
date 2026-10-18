@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 )
 
@@ -38,12 +39,13 @@ func RetryConnect(ctx context.Context, name string, connect func() error, opts B
 			return nil
 		}
 
-		log.Printf("%s: attempt %d failed: %v (retrying in %v)", name, attempt, err, delay)
+		sleep := delay + time.Duration(rand.Int63n(int64(delay/4)))
+		log.Printf("%s: attempt %d failed: %v (retrying in %v)", name, attempt, err, sleep)
 
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("%s: abandoned after %d attempts: %w", name, attempt, ctx.Err())
-		case <-time.After(delay):
+		case <-time.After(sleep):
 		}
 
 		delay *= 2
