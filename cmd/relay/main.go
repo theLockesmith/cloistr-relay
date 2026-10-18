@@ -25,6 +25,7 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/cache"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/eventcache"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/expiry"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/giftwrap"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/groups"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
@@ -206,6 +207,20 @@ func main() {
 	// All DDL complete, release the advisory lock so other replicas can proceed.
 	ddlLock.Unlock()
 	ddlLock.Close()
+
+	// NIP-40 expiry sweeper (removes events past their expiration tag)
+	if cfg.ExpirySweepEnabled {
+		sweeper := expiry.New(rawDB, expiry.Config{
+			DryRun:        cfg.ExpirySweepDryRun,
+			Interval:      cfg.ExpirySweepInterval,
+			BatchSize:     cfg.ExpirySweepBatchSize,
+			BatchPause:    cfg.ExpirySweepBatchPause,
+			GiftWrapGrace: cfg.ExpirySweepGiftWrapGrace,
+		})
+		sweeperCtx, sweeperCancel := context.WithCancel(context.Background())
+		defer sweeperCancel()
+		go sweeper.Start(sweeperCtx)
+	}
 
 	// Initialize cache (Dragonfly/Redis)
 	var cacheClient *cache.Client
