@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,6 +62,53 @@ func setupSearchTable(t *testing.T, db *sql.DB) {
 	})
 }
 
+// setupRaceTable creates the event table with the search_tsv column
+// pre-populated so that CREATE INDEX CONCURRENTLY takes measurable time,
+// widening the race window between concurrent InitSchema calls.
+func setupRaceTable(t *testing.T, db *sql.DB, rows int) {
+	t.Helper()
+	_, err := db.Exec(`
+		CREATE OR REPLACE FUNCTION tags_to_tagvalues(jsonb) RETURNS text[]
+		AS 'SELECT COALESCE(array_agg((t->>0) || '':'' || (t->>1)), ''{}''::text[])
+		    FROM (SELECT jsonb_array_elements($1) AS t)s
+		    WHERE length(t->>0) = 1;'
+		LANGUAGE SQL IMMUTABLE RETURNS NULL ON NULL INPUT;
+
+		DROP TABLE IF EXISTS event;
+		CREATE TABLE event (
+			id         text NOT NULL,
+			pubkey     text NOT NULL,
+			created_at integer NOT NULL,
+			kind       integer NOT NULL,
+			tags       jsonb NOT NULL,
+			content    text NOT NULL,
+			sig        text NOT NULL,
+			search_tsv tsvector,
+			tagvalues  text[] GENERATED ALWAYS AS (tags_to_tagvalues(tags)) STORED
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS ididx ON event USING btree (id text_pattern_ops);
+	`)
+	if err != nil {
+		t.Fatalf("setup race table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO event (id, pubkey, created_at, kind, tags, content, sig, search_tsv)
+		SELECT 'r-'||i::text, 'aa', 1, 1, '[]'::jsonb,
+		       'searchable content number '||i::text, 'bb',
+		       to_tsvector('english', 'searchable content number '||i::text)
+		FROM generate_series(1, $1) AS s(i)
+	`, rows)
+	if err != nil {
+		t.Fatalf("populate race table with %d rows: %v", rows, err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec("DROP INDEX CONCURRENTLY IF EXISTS search_tsv_idx")
+		_, _ = db.Exec("DROP TABLE IF EXISTS event")
+	})
+}
+
 func insertSearchEvent(t *testing.T, db *sql.DB, id string, kind int, content string) {
 	t.Helper()
 	now := time.Now().Unix()
@@ -83,13 +131,69 @@ func hasSearchVector(t *testing.T, db *sql.DB, id string) bool {
 	return notNull
 }
 
+// TestInitSchema_TwoReplicaRace runs two concurrent InitSchema calls against
+// one database, simulating two relay replicas starting simultaneously.
+//
+// Without the advisory lock, both replicas reach the CIC (CREATE INDEX
+// CONCURRENTLY) step at roughly the same time: one gets "relation already
+// exists" and returns an error, leaving that replica with search silently OFF.
+//
+// With the advisory lock, the calls serialize: the first replica builds the
+// index, the second sees it valid and skips. Both succeed.
+func TestInitSchema_TwoReplicaRace(t *testing.T) {
+	db := testDB(t)
+	defer func() { _ = db.Close() }()
+
+	setupRaceTable(t, db, 50000)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	sb1 := NewSearchBackend(db, DefaultSearchKinds)
+	sb2 := NewSearchBackend(db, DefaultSearchKinds)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs[0] = sb1.InitSchema(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		errs[1] = sb2.InitSchema(ctx)
+	}()
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("replica %d failed: %v", i, err)
+		}
+	}
+
+	var valid bool
+	if err := db.QueryRow(`
+		SELECT COALESCE(
+			(SELECT i.indisvalid FROM pg_class c
+			 JOIN pg_index i ON i.indexrelid = c.oid
+			 WHERE c.relname = 'search_tsv_idx'),
+			false)
+	`).Scan(&valid); err != nil {
+		t.Fatalf("check index validity: %v", err)
+	}
+	if !valid {
+		t.Error("search_tsv_idx must be valid after both replicas complete")
+	}
+}
+
 func TestInitSchema_CreatesColumnAndTrigger(t *testing.T) {
 	db := testDB(t)
 	defer func() { _ = db.Close() }()
 	setupSearchTable(t, db)
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
@@ -128,7 +232,7 @@ func TestEncryptedKindNeverIndexed(t *testing.T) {
 	setupSearchTable(t, db)
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
@@ -169,7 +273,7 @@ func TestQueryEvents_OnlySearchableKinds(t *testing.T) {
 	setupSearchTable(t, db)
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
@@ -209,11 +313,11 @@ func TestBackfill_PopulatesExistingEvents(t *testing.T) {
 	insertSearchEvent(t, db, "pre-encrypted", 1059, "encrypted content here")
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
-	n, err := sb.Backfill()
+	n, err := sb.Backfill(context.Background())
 	if err != nil {
 		t.Fatalf("Backfill: %v", err)
 	}
@@ -236,7 +340,7 @@ func TestClearNonSearchable_RemovesVectors(t *testing.T) {
 	setupSearchTable(t, db)
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
@@ -291,7 +395,7 @@ func TestDropsLegacyIndex(t *testing.T) {
 	}
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
@@ -337,7 +441,7 @@ func TestQueryEvents_AllSymbolSearchReturnsEmpty(t *testing.T) {
 	setupSearchTable(t, db)
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 
@@ -364,7 +468,7 @@ func TestTrigger_UpdatesVectorOnUpsert(t *testing.T) {
 	setupSearchTable(t, db)
 
 	sb := NewSearchBackend(db, DefaultSearchKinds)
-	if err := sb.InitSchema(); err != nil {
+	if err := sb.InitSchema(context.Background()); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
 

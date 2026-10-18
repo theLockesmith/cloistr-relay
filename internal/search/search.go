@@ -8,13 +8,28 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var DefaultSearchKinds = []int{1, 11, 1111, 30023}
 
 const backfillBatchSize = 10000
+
+// searchLockKey serializes InitSchema and Backfill across replicas so two pods
+// starting simultaneously cannot race on CREATE INDEX CONCURRENTLY or duplicate
+// backfill work. Distinct from the main DDL lock key in storage/ddllock.go.
+const searchLockKey int64 = 0x636C73726368 // "clsrch"
+
+var SearchSetupFailures = promauto.NewCounter(prometheus.CounterOpts{
+	Namespace: "cloistr",
+	Subsystem: "search",
+	Name:      "setup_failures_total",
+	Help:      "Number of times search schema or backfill setup failed.",
+})
 
 type SearchBackend struct {
 	db    *sql.DB
@@ -28,28 +43,75 @@ func NewSearchBackend(db *sql.DB, kinds []int) *SearchBackend {
 	return &SearchBackend{db: db, kinds: kinds}
 }
 
-func (s *SearchBackend) InitSchema() error {
+// acquireSearchLock polls pg_try_advisory_lock on a dedicated connection.
+// Polling (not blocking) avoids the snapshot-holds-CIC-open deadlock that
+// blocking pg_advisory_lock causes: a blocked waiter's snapshot prevents the
+// holder's CREATE INDEX CONCURRENTLY from completing.
+func acquireSearchLock(ctx context.Context, db *sql.DB) (*sql.Conn, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("search lock connection: %w", err)
+	}
+
+	start := time.Now()
+	for {
+		var acquired bool
+		if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", searchLockKey).Scan(&acquired); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("pg_try_advisory_lock (search): %w", err)
+		}
+		if acquired {
+			return conn, nil
+		}
+		if ctx.Err() != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("search lock timeout after %v: %w", time.Since(start).Round(time.Second), ctx.Err())
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func releaseSearchLock(conn *sql.Conn) {
+	var released bool
+	if err := conn.QueryRowContext(context.Background(), "SELECT pg_advisory_unlock($1)", searchLockKey).Scan(&released); err != nil {
+		log.Printf("search advisory unlock failed: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func (s *SearchBackend) InitSchema(ctx context.Context) error {
+	lockConn, err := acquireSearchLock(ctx, s.db)
+	if err != nil {
+		SearchSetupFailures.Inc()
+		return fmt.Errorf("search InitSchema: %w", err)
+	}
+	defer releaseSearchLock(lockConn)
+
 	kindsSQL := kindsList(s.kinds)
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("begin DDL transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`SET LOCAL lock_timeout = '5s'`); err != nil {
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("set lock_timeout: %w", err)
 	}
 
-	if _, err := tx.Exec(`DROP INDEX IF EXISTS content_search_idx`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DROP INDEX IF EXISTS content_search_idx`); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("drop legacy index: %w", err)
 	}
 
-	if _, err := tx.Exec(`ALTER TABLE event ADD COLUMN IF NOT EXISTS search_tsv tsvector`); err != nil {
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE event ADD COLUMN IF NOT EXISTS search_tsv tsvector`); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("add search_tsv column: %w", err)
 	}
 
-	if _, err := tx.Exec(fmt.Sprintf(`
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 		CREATE OR REPLACE FUNCTION search_tsv_trigger() RETURNS trigger AS $$
 		BEGIN
 			IF NEW.kind IN (%s) THEN
@@ -61,41 +123,50 @@ func (s *SearchBackend) InitSchema() error {
 		END;
 		$$ LANGUAGE plpgsql
 	`, kindsSQL)); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("create trigger function: %w", err)
 	}
 
-	if _, err := tx.Exec(`
+	if _, err := tx.ExecContext(ctx, `
 		CREATE OR REPLACE TRIGGER search_tsv_update
 		BEFORE INSERT OR UPDATE ON event
 		FOR EACH ROW
 		EXECUTE FUNCTION search_tsv_trigger()
 	`); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("create trigger: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("commit DDL: %w", err)
 	}
 
 	// CREATE INDEX CONCURRENTLY cannot run inside a transaction.
-	// Check for a valid index; drop any invalid leftover from a prior failed attempt.
+	// Check for a valid index; drop any invalid leftover from a prior failed CIC.
 	var indexValid bool
-	if err := s.db.QueryRow(`
+	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(
 			(SELECT i.indisvalid FROM pg_class c
 			 JOIN pg_index i ON i.indexrelid = c.oid
 			 WHERE c.relname = 'search_tsv_idx'),
 			false)
 	`).Scan(&indexValid); err != nil {
+		SearchSetupFailures.Inc()
 		return fmt.Errorf("check search_tsv_idx: %w", err)
 	}
 	if !indexValid {
-		_, _ = s.db.Exec(`DROP INDEX IF EXISTS search_tsv_idx`)
-		if _, err := s.db.Exec(`
+		// DROP INDEX CONCURRENTLY avoids ACCESS EXCLUSIVE on the table.
+		if _, err := s.db.ExecContext(ctx, `DROP INDEX CONCURRENTLY IF EXISTS search_tsv_idx`); err != nil {
+			SearchSetupFailures.Inc()
+			return fmt.Errorf("drop invalid search index: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx, `
 			CREATE INDEX CONCURRENTLY search_tsv_idx
 			ON event USING GIN (search_tsv)
 			WHERE search_tsv IS NOT NULL
 		`); err != nil {
+			SearchSetupFailures.Inc()
 			return fmt.Errorf("create search_tsv index: %w", err)
 		}
 	}
@@ -104,14 +175,21 @@ func (s *SearchBackend) InitSchema() error {
 	return nil
 }
 
-func (s *SearchBackend) Backfill() (int64, error) {
+func (s *SearchBackend) Backfill(ctx context.Context) (int64, error) {
+	lockConn, err := acquireSearchLock(ctx, s.db)
+	if err != nil {
+		SearchSetupFailures.Inc()
+		return 0, fmt.Errorf("search backfill lock: %w", err)
+	}
+	defer releaseSearchLock(lockConn)
+
 	kindsSQL := kindsList(s.kinds)
 	var total int64
 	lastID := ""
 	for {
 		var n int64
 		var maxID sql.NullString
-		err := s.db.QueryRow(fmt.Sprintf(`
+		err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 			WITH batch AS (
 				SELECT id FROM event
 				WHERE kind IN (%s) AND search_tsv IS NULL AND id > $1
@@ -126,6 +204,7 @@ func (s *SearchBackend) Backfill() (int64, error) {
 			SELECT count(*), max(id) FROM updated
 		`, kindsSQL, backfillBatchSize), lastID).Scan(&n, &maxID)
 		if err != nil {
+			SearchSetupFailures.Inc()
 			return total, err
 		}
 		total += n

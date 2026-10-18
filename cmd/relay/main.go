@@ -182,8 +182,11 @@ func main() {
 	var searchBackend *search.SearchBackend
 	if cfg.SearchEnabled {
 		searchBackend = search.NewSearchBackend(rawDB, cfg.SearchKinds)
-		if err := searchBackend.InitSchema(); err != nil {
-			log.Printf("Warning: Failed to initialize search index: %v", err)
+		searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		err := searchBackend.InitSchema(searchCtx)
+		searchCancel()
+		if err != nil {
+			log.Printf("ERROR: search setup failed, NIP-50 search is OFF: %v", err)
 			searchBackend = nil
 		}
 	} else {
@@ -925,11 +928,11 @@ func main() {
 	// crash-loop while the other replica waits on the DDL lock).
 	if searchBackend != nil {
 		go func() {
-			if _, err := searchBackend.Backfill(); err != nil {
-				log.Printf("Warning: Search backfill error: %v", err)
+			if _, err := searchBackend.Backfill(context.Background()); err != nil {
+				log.Printf("ERROR: search backfill failed: %v", err)
 			}
 			if _, err := searchBackend.ClearNonSearchable(); err != nil {
-				log.Printf("Warning: Search clear non-searchable error: %v", err)
+				log.Printf("Warning: search clear non-searchable: %v", err)
 			}
 		}()
 	}
