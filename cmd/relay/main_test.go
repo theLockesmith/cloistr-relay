@@ -1,10 +1,14 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/auth"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/startup"
 )
 
 // This one line is where the defect lived.
@@ -50,5 +54,55 @@ func TestParseAuthConfig_WriteWhitelistIsWired(t *testing.T) {
 	if len(got.WriteWhitelist) != 2 ||
 		got.WriteWhitelist[0] != "invited1" || got.WriteWhitelist[1] != "invited2" {
 		t.Fatalf("WriteWhitelist = %v, want [invited1 invited2]", got.WriteWhitelist)
+	}
+}
+
+// atomic.Pointer[handlerRef] makes the type constraint structural: the compiler
+// rejects a Store of the wrong type. This test exercises the swap sequence main()
+// performs (startup mux -> production router) and verifies the router serves after.
+func TestRootHandler_AtomicSwap(t *testing.T) {
+	rc := startup.NewReadyCheck()
+	cfg := &config.Config{RelayName: "test-relay"}
+
+	var rootHandler atomic.Pointer[handlerRef]
+	rootHandler.Store(&handlerRef{newStartupMux(cfg, rc)})
+
+	rr := httptest.NewRecorder()
+	rootHandler.Load().ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("before swap: got %d, want 503", rr.Code)
+	}
+
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	rootHandler.Store(&handlerRef{router})
+
+	rr = httptest.NewRecorder()
+	rootHandler.Load().ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+	if rr.Code != http.StatusOK {
+		t.Errorf("after swap: got %d, want 200", rr.Code)
+	}
+}
+
+func TestStartupMux_RootReturns503BeforeDB(t *testing.T) {
+	rc := startup.NewReadyCheck()
+	cfg := &config.Config{RelayName: "test-relay"}
+	mux := newStartupMux(cfg, rc)
+
+	tests := []struct {
+		path       string
+		wantStatus int
+	}{
+		{"/", http.StatusServiceUnavailable},
+		{"/ready", http.StatusServiceUnavailable},
+		{"/health", http.StatusOK},
+	}
+	for _, tc := range tests {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest("GET", tc.path, nil))
+		if rr.Code != tc.wantStatus {
+			t.Errorf("startup mux %s: got %d, want %d", tc.path, rr.Code, tc.wantStatus)
+		}
 	}
 }
