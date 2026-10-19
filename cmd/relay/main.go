@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fiatjaf/eventstore/postgresql"
@@ -46,6 +49,7 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/nip66"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/pubsub"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/tracing"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/startup"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/writeahead"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/zaps"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/web"
@@ -146,9 +150,23 @@ func main() {
 		Enabled:     true,
 	})
 
-	// Serialize DDL across replicas. Two pods running CREATE INDEX CONCURRENTLY
-	// or backend.Init() at the same time race on PostgreSQL catalog rows and
-	// produce "pq: tuple concurrently updated (XX000)".
+	// Start HTTP server early so liveness passes while waiting for the DB.
+	// Readiness (/ready) stays 503 until the database connects.
+	readyCheck := startup.NewReadyCheck()
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	var rootHandler atomic.Value
+	rootHandler.Store(http.Handler(newStartupMux(cfg, readyCheck)))
+
+	go func() {
+		log.Printf("Starting HTTP server on %s (waiting for database)", addr)
+		if err := http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rootHandler.Load().(http.Handler).ServeHTTP(w, r)
+		})); err != nil {
+			log.Fatalf("HTTP server failed: %v", err)
+		}
+	}()
+
+	// Parse DDL lock timeout once (env doesn't change between retries).
 	ddlTimeout := 5 * time.Minute
 	if v := os.Getenv("DDL_LOCK_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -157,27 +175,39 @@ func main() {
 			log.Fatalf("DDL_LOCK_TIMEOUT=%q is not a valid duration", v)
 		}
 	}
-	ddlCtx, ddlCancel := context.WithTimeout(context.Background(), ddlTimeout)
-	ddlLock, err := storage.AcquireDDLLock(ddlCtx, storage.GetDatabaseURL(cfg))
-	ddlCancel()
-	if err != nil {
-		log.Fatalf("Failed to acquire DDL lock: %v", err)
-	}
 
-	// Initialize PostgreSQL storage backend
-	db, err := storage.NewPostgresBackend(cfg)
+	// Retry database connections with exponential backoff instead of exiting.
+	var ddlLock *storage.DDLLock
+	var db *postgresql.PostgresBackend
+	var rawDB *sql.DB
+
+	err = startup.RetryConnect(context.Background(), "database", func() error {
+		ddlCtx, ddlCancel := context.WithTimeout(context.Background(), ddlTimeout)
+		lock, lockErr := storage.AcquireDDLLock(ddlCtx, storage.GetDatabaseURL(cfg))
+		ddlCancel()
+		if lockErr != nil {
+			return fmt.Errorf("DDL lock: %w", lockErr)
+		}
+		backend, backendErr := storage.NewPostgresBackend(cfg)
+		if backendErr != nil {
+			lock.Close()
+			return fmt.Errorf("postgres backend: %w", backendErr)
+		}
+		raw, rawErr := storage.NewRawConnection(cfg)
+		if rawErr != nil {
+			backend.Close()
+			lock.Close()
+			return fmt.Errorf("raw connection: %w", rawErr)
+		}
+		ddlLock = lock
+		db = backend
+		rawDB = raw
+		return nil
+	}, startup.DefaultBackoff)
 	if err != nil {
-		ddlLock.Close()
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Database connection abandoned: %v", err)
 	}
 	defer db.Close()
-
-	// Initialize search backend (NIP-50)
-	rawDB, err := storage.NewRawConnection(cfg)
-	if err != nil {
-		ddlLock.Close()
-		log.Fatalf("Failed to initialize search database: %v", err)
-	}
 	defer func() { _ = rawDB.Close() }()
 
 	searchBackend := search.NewSearchBackend(rawDB)
@@ -813,6 +843,7 @@ func main() {
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Health check endpoint (simple, for Kubernetes probes)
+	mux.HandleFunc("/ready", readyCheck.Handler())
 	mux.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
@@ -926,14 +957,13 @@ func main() {
 		mux.ServeHTTP(w, r)
 	})
 
-	// Start the relay server
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("Starting Cloistr relay %s on %s", relay.Version, addr)
+	// Swap from startup handler to the full relay and mark ready.
+	rootHandler.Store(http.Handler(router))
+	readyCheck.MarkReady()
+	log.Printf("Cloistr relay %s ready on %s", relay.Version, addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
 
-	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Failed to start relay: %v", err)
-	}
+	select {}
 }
 
 // parseAuthConfig converts config auth settings to auth.Config
@@ -991,4 +1021,29 @@ func newPaidMemberChecker(store *membership.Store) func(string) bool {
 		paidCache.Store(pubkey, &entry{paid: paid, at: time.Now()})
 		return paid
 	}
+}
+
+// newStartupMux returns a minimal HTTP mux served while waiting for the
+// database. /health returns 200 (liveness). /ready returns 503 (not ready).
+// Everything else -- including / -- returns 503 so the pod is never marked
+// Ready before the DB connects.
+func newStartupMux(cfg *config.Config, rc *startup.ReadyCheck) *http.ServeMux {
+	m := http.NewServeMux()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/nostr+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name":        cfg.RelayName,
+			"description": "starting, waiting for database",
+			"software":    "cloistr-relay",
+			"version":     relay.Version,
+		})
+	})
+	m.HandleFunc("/ready", rc.Handler())
+	m.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+	m.Handle("/metrics", metrics.Handler())
+	return m
 }
