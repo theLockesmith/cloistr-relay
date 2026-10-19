@@ -972,21 +972,20 @@ func main() {
 	if searchPtr != nil {
 		go func() {
 			sb := search.NewSearchBackend(rawDB, cfg.SearchKinds)
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			defer cancel()
 			if err := sb.InitSchema(ctx); err != nil {
 				log.Printf("ERROR: search InitSchema failed: %v", err)
-				search.SearchSetupFailures.Inc()
 				return
 			}
-			searchPtr.Store(sb)
-			log.Println("NIP-50 search backend activated")
-
 			if n, err := sb.Backfill(ctx); err != nil {
 				log.Printf("ERROR: search backfill failed after %d rows: %v", n, err)
 			}
-			if _, err := sb.ClearNonSearchable(); err != nil {
+			if _, err := sb.ClearNonSearchable(ctx); err != nil {
 				log.Printf("ERROR: search clear non-searchable failed: %v", err)
 			}
+			searchPtr.Store(sb)
+			log.Println("NIP-50 search backend activated")
 		}()
 	}
 

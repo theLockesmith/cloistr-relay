@@ -218,9 +218,9 @@ func (s *SearchBackend) Backfill(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
-func (s *SearchBackend) ClearNonSearchable() (int64, error) {
+func (s *SearchBackend) ClearNonSearchable(ctx context.Context) (int64, error) {
 	kindsSQL := kindsList(s.kinds)
-	res, err := s.db.Exec(fmt.Sprintf(`
+	res, err := s.db.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE event
 		SET search_tsv = NULL
 		WHERE kind NOT IN (%s) AND search_tsv IS NOT NULL

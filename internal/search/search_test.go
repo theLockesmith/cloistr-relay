@@ -366,7 +366,7 @@ func TestClearNonSearchable_RemovesVectors(t *testing.T) {
 		t.Fatal("reaction-stale should have a vector before clear")
 	}
 
-	n, err := sb.ClearNonSearchable()
+	n, err := sb.ClearNonSearchable(context.Background())
 	if err != nil {
 		t.Fatalf("ClearNonSearchable: %v", err)
 	}
