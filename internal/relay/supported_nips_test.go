@@ -51,9 +51,9 @@ func TestSupportedNIPs_Advertises29OnlyWhenGroupsReallyRun(t *testing.T) {
 	}
 }
 
-// Gating 29 and 50 must not disturb the NIPs the relay genuinely serves regardless.
-func TestSupportedNIPs_OtherNIPsUnaffectedByGroupsFlag(t *testing.T) {
-	always := []int{1, 9, 11, 13, 17, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
+// Gating 29, 50 and 66 must not disturb the NIPs the relay genuinely serves regardless.
+func TestSupportedNIPs_OtherNIPsUnaffectedByGatedFlags(t *testing.T) {
+	always := []int{1, 9, 11, 13, 17, 22, 33, 40, 42, 45, 46, 57, 59, 70, 77, 86, 94}
 	for _, cfg := range []*config.Config{
 		{GroupsEnabled: false, SearchEnabled: true},
 		{GroupsEnabled: true, GroupsSecretKey: "ab00000000000000000000000000000000000000000000000000000000000000", SearchEnabled: true},
@@ -64,6 +64,17 @@ func TestSupportedNIPs_OtherNIPsUnaffectedByGroupsFlag(t *testing.T) {
 				t.Errorf("NIP-%d missing from advertisement (GroupsEnabled=%v): %v", n, cfg.GroupsEnabled, got)
 			}
 		}
+	}
+}
+
+func TestSupportedNIPs_66ConditionalOnNIP66Enabled(t *testing.T) {
+	got := supportedNIPs(&config.Config{NIP66Enabled: false})
+	if hasNIP(got, 66) {
+		t.Errorf("NIP-66 should NOT be advertised when NIP66Enabled=false: %v", got)
+	}
+	got = supportedNIPs(&config.Config{NIP66Enabled: true})
+	if !hasNIP(got, 66) {
+		t.Errorf("NIP-66 should be advertised when NIP66Enabled=true: %v", got)
 	}
 }
 
@@ -81,7 +92,7 @@ func TestSupportedNIPs_50ConditionalOnSearchEnabled(t *testing.T) {
 // The list stays in ascending order so 29 lands between 22 and 33 rather than
 // being tacked on the end.
 func TestSupportedNIPs_StaysSorted(t *testing.T) {
-	got := supportedNIPs(&config.Config{GroupsEnabled: true, GroupsSecretKey: "ac00000000000000000000000000000000000000000000000000000000000000", SearchEnabled: true})
+	got := supportedNIPs(&config.Config{GroupsEnabled: true, GroupsSecretKey: "ac00000000000000000000000000000000000000000000000000000000000000", SearchEnabled: true, NIP66Enabled: true})
 	prev := -1
 	for i, n := range got {
 		v, ok := n.(int)

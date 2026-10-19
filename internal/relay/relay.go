@@ -44,7 +44,11 @@ func supportedNIPs(cfg *config.Config) []any {
 	if cfg.SearchEnabled {
 		nips = append(nips, 50)
 	}
-	nips = append(nips, 57, 59, 66, 70, 77, 86, 94)
+	nips = append(nips, 57, 59)
+	if cfg.NIP66Enabled {
+		nips = append(nips, 66)
+	}
+	nips = append(nips, 70, 77, 86, 94)
 	return nips
 }
 
