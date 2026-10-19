@@ -85,12 +85,19 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchPtr *ato
 		var sourceCh chan *nostr.Event
 		var err error
 
-		// NIP-50: load search backend from atomic pointer on each query
-		var sb *search.SearchBackend
-		if searchPtr != nil {
-			sb = searchPtr.Load()
-		}
-		if sb != nil && search.HasSearch(filter) {
+		// NIP-50: load search backend from atomic pointer on each query.
+		// While the index builds (pointer nil), return empty for search
+		// queries rather than falling back to an unindexed table scan.
+		if search.HasSearch(filter) {
+			var sb *search.SearchBackend
+			if searchPtr != nil {
+				sb = searchPtr.Load()
+			}
+			if sb == nil {
+				ch := make(chan *nostr.Event)
+				close(ch)
+				return ch, nil
+			}
 			log.Printf("NIP-50 search query: %q", filter.Search)
 			sourceCh, err = sb.QueryEvents(ctx, filter)
 		} else {
@@ -191,12 +198,19 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 			}
 		}
 
-		// NIP-50: load search backend from atomic pointer on each query
-		var sb *search.SearchBackend
-		if searchPtr != nil {
-			sb = searchPtr.Load()
-		}
-		if sb != nil && search.HasSearch(filter) {
+		// NIP-50: load search backend from atomic pointer on each query.
+		// While the index builds (pointer nil), return empty for search
+		// queries rather than falling back to an unindexed table scan.
+		if search.HasSearch(filter) {
+			var sb *search.SearchBackend
+			if searchPtr != nil {
+				sb = searchPtr.Load()
+			}
+			if sb == nil {
+				ch := make(chan *nostr.Event)
+				close(ch)
+				return ch, nil
+			}
 			log.Printf("NIP-50 search query: %q", filter.Search)
 			sourceCh, err = sb.QueryEvents(ctx, filter)
 		} else {
