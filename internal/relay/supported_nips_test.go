@@ -27,17 +27,17 @@ func TestSupportedNIPs_Advertises29OnlyWhenGroupsReallyRun(t *testing.T) {
 	}{
 		{
 			name:   "groups disabled (production default)",
-			cfg:    &config.Config{GroupsEnabled: false},
+			cfg:    &config.Config{GroupsEnabled: false, SearchEnabled: true},
 			want29: false,
 		},
 		{
 			name:   "groups enabled but no secret key -- main.go skips init, so do not advertise",
-			cfg:    &config.Config{GroupsEnabled: true, GroupsSecretKey: ""},
+			cfg:    &config.Config{GroupsEnabled: true, GroupsSecretKey: "", SearchEnabled: true},
 			want29: false,
 		},
 		{
 			name:   "groups enabled with secret key -- relay29 initialises",
-			cfg:    &config.Config{GroupsEnabled: true, GroupsSecretKey: "aa" + "00000000000000000000000000000000000000000000000000000000000000"},
+			cfg:    &config.Config{GroupsEnabled: true, GroupsSecretKey: "aa" + "00000000000000000000000000000000000000000000000000000000000000", SearchEnabled: true},
 			want29: true,
 		},
 	}
@@ -51,12 +51,12 @@ func TestSupportedNIPs_Advertises29OnlyWhenGroupsReallyRun(t *testing.T) {
 	}
 }
 
-// Gating 29 must not disturb the NIPs the relay genuinely serves regardless.
+// Gating 29 and 50 must not disturb the NIPs the relay genuinely serves regardless.
 func TestSupportedNIPs_OtherNIPsUnaffectedByGroupsFlag(t *testing.T) {
 	always := []int{1, 9, 11, 13, 17, 22, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94}
 	for _, cfg := range []*config.Config{
-		{GroupsEnabled: false},
-		{GroupsEnabled: true, GroupsSecretKey: "ab00000000000000000000000000000000000000000000000000000000000000"},
+		{GroupsEnabled: false, SearchEnabled: true},
+		{GroupsEnabled: true, GroupsSecretKey: "ab00000000000000000000000000000000000000000000000000000000000000", SearchEnabled: true},
 	} {
 		got := supportedNIPs(cfg)
 		for _, n := range always {
@@ -67,10 +67,21 @@ func TestSupportedNIPs_OtherNIPsUnaffectedByGroupsFlag(t *testing.T) {
 	}
 }
 
+func TestSupportedNIPs_50ConditionalOnSearchEnabled(t *testing.T) {
+	got := supportedNIPs(&config.Config{SearchEnabled: false})
+	if hasNIP(got, 50) {
+		t.Errorf("NIP-50 should NOT be advertised when SearchEnabled=false: %v", got)
+	}
+	got = supportedNIPs(&config.Config{SearchEnabled: true})
+	if !hasNIP(got, 50) {
+		t.Errorf("NIP-50 should be advertised when SearchEnabled=true: %v", got)
+	}
+}
+
 // The list stays in ascending order so 29 lands between 22 and 33 rather than
 // being tacked on the end.
 func TestSupportedNIPs_StaysSorted(t *testing.T) {
-	got := supportedNIPs(&config.Config{GroupsEnabled: true, GroupsSecretKey: "ac00000000000000000000000000000000000000000000000000000000000000"})
+	got := supportedNIPs(&config.Config{GroupsEnabled: true, GroupsSecretKey: "ac00000000000000000000000000000000000000000000000000000000000000", SearchEnabled: true})
 	prev := -1
 	for i, n := range got {
 		v, ok := n.(int)
