@@ -1009,11 +1009,14 @@ func newPaidMemberChecker(store *membership.Store) func(string) bool {
 }
 
 // newStartupMux returns a minimal HTTP mux served while waiting for the
-// database. Liveness probe (GET /) passes; readiness (/ready) returns 503.
+// database. /health returns 200 (liveness). /ready returns 503 (not ready).
+// Everything else -- including / -- returns 503 so the pod is never marked
+// Ready before the DB connects.
 func newStartupMux(cfg *config.Config, rc *startup.ReadyCheck) *http.ServeMux {
 	m := http.NewServeMux()
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/nostr+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"name":        cfg.RelayName,
 			"description": "starting, waiting for database",

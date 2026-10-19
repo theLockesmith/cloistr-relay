@@ -1,10 +1,13 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/auth"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/startup"
 )
 
 // This one line is where the defect lived.
@@ -50,5 +53,27 @@ func TestParseAuthConfig_WriteWhitelistIsWired(t *testing.T) {
 	if len(got.WriteWhitelist) != 2 ||
 		got.WriteWhitelist[0] != "invited1" || got.WriteWhitelist[1] != "invited2" {
 		t.Fatalf("WriteWhitelist = %v, want [invited1 invited2]", got.WriteWhitelist)
+	}
+}
+
+func TestStartupMux_RootReturns503BeforeDB(t *testing.T) {
+	rc := startup.NewReadyCheck()
+	cfg := &config.Config{RelayName: "test-relay"}
+	mux := newStartupMux(cfg, rc)
+
+	tests := []struct {
+		path       string
+		wantStatus int
+	}{
+		{"/", http.StatusServiceUnavailable},
+		{"/ready", http.StatusServiceUnavailable},
+		{"/health", http.StatusOK},
+	}
+	for _, tc := range tests {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest("GET", tc.path, nil))
+		if rr.Code != tc.wantStatus {
+			t.Errorf("startup mux %s: got %d, want %d", tc.path, rr.Code, tc.wantStatus)
+		}
 	}
 }
