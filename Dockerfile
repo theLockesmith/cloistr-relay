@@ -40,7 +40,7 @@ COPY web/ web/
 RUN go mod tidy
 
 # Run unit tests
-CMD ["go", "test", "-v", "./internal/..."]
+CMD ["go", "test", "-v", "-p", "1", "./internal/..."]
 
 # Runtime stage
 FROM alpine:latest
