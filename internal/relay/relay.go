@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"log"
+	"sync/atomic"
 
 	"github.com/fiatjaf/eventstore/postgresql"
 	"github.com/fiatjaf/khatru"
@@ -39,12 +40,18 @@ func supportedNIPs(cfg *config.Config) []any {
 	if cfg.GroupsEnabled && cfg.GroupsSecretKey != "" {
 		nips = append(nips, 29)
 	}
-	nips = append(nips, 33, 40, 42, 45, 46, 50, 57, 59, 66, 70, 77, 86, 94)
+	nips = append(nips, 33, 40, 42, 45, 46)
+	if cfg.SearchEnabled {
+		nips = append(nips, 50)
+	}
+	nips = append(nips, 57, 59, 66, 70, 77, 86, 94)
 	return nips
 }
 
-// NewRelay creates and configures a khatru relay with PostgreSQL storage
-func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend *search.SearchBackend) *khatru.Relay {
+// NewRelay creates and configures a khatru relay with PostgreSQL storage.
+// searchPtr may be nil (search disabled) or point to a Pointer that starts nil
+// and is stored after InitSchema completes in the background.
+func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchPtr *atomic.Pointer[search.SearchBackend]) *khatru.Relay {
 	relay := khatru.NewRelay()
 
 	// Set ServiceURL for NIP-42 authentication validation
@@ -74,17 +81,19 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 	relay.CountEvents = append(relay.CountEvents, db.CountEvents)
 
 	// Wire up query handlers with NIP-50 search and NIP-40 expiration filtering
-	// Single handler that routes to search backend or PostgreSQL backend
 	relay.QueryEvents = append(relay.QueryEvents, func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
 		var sourceCh chan *nostr.Event
 		var err error
 
-		// NIP-50: If filter has search term, use search backend
-		if searchBackend != nil && search.HasSearch(filter) {
+		// NIP-50: load search backend from atomic pointer on each query
+		var sb *search.SearchBackend
+		if searchPtr != nil {
+			sb = searchPtr.Load()
+		}
+		if sb != nil && search.HasSearch(filter) {
 			log.Printf("NIP-50 search query: %q", filter.Search)
-			sourceCh, err = searchBackend.QueryEvents(ctx, filter)
+			sourceCh, err = sb.QueryEvents(ctx, filter)
 		} else {
-			// Otherwise, use standard PostgreSQL backend
 			sourceCh, err = db.QueryEvents(ctx, filter)
 		}
 
@@ -97,7 +106,6 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 		go func() {
 			defer close(resultCh)
 			for event := range sourceCh {
-				// Skip expired events
 				if handlers.IsExpired(event) {
 					continue
 				}
@@ -114,15 +122,17 @@ func NewRelay(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend 
 
 	log.Printf("Relay '%s' initialized with PostgreSQL storage", cfg.RelayName)
 	log.Println("NIP-77 negentropy sync enabled")
-	if searchBackend != nil {
-		log.Println("NIP-50 search enabled")
+	if searchPtr != nil {
+		log.Println("NIP-50 search will activate after index initialization")
 	}
 
 	return relay
 }
 
-// NewRelayWithOptions creates a relay with optional event cache and write-ahead log
-func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, searchBackend *search.SearchBackend, evtCache *eventcache.Cache, wal *writeahead.WAL) *khatru.Relay {
+// NewRelayWithOptions creates a relay with optional event cache and write-ahead log.
+// searchPtr may be nil (search disabled) or point to a Pointer that starts nil
+// and is stored after InitSchema completes in the background.
+func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, searchPtr *atomic.Pointer[search.SearchBackend], evtCache *eventcache.Cache, wal *writeahead.WAL) *khatru.Relay {
 	relay := khatru.NewRelay()
 
 	// Set ServiceURL for NIP-42 authentication validation
@@ -181,12 +191,15 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 			}
 		}
 
-		// NIP-50: If filter has search term, use search backend
-		if searchBackend != nil && search.HasSearch(filter) {
+		// NIP-50: load search backend from atomic pointer on each query
+		var sb *search.SearchBackend
+		if searchPtr != nil {
+			sb = searchPtr.Load()
+		}
+		if sb != nil && search.HasSearch(filter) {
 			log.Printf("NIP-50 search query: %q", filter.Search)
-			sourceCh, err = searchBackend.QueryEvents(ctx, filter)
+			sourceCh, err = sb.QueryEvents(ctx, filter)
 		} else {
-			// Otherwise, use standard PostgreSQL backend
 			sourceCh, err = db.QueryEvents(ctx, filter)
 		}
 
@@ -199,12 +212,10 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 		go func() {
 			defer close(resultCh)
 			for event := range sourceCh {
-				// Skip expired events
 				if handlers.IsExpired(event) {
 					continue
 				}
 
-				// Cache cacheable events
 				if evtCache != nil && eventcache.IsCacheable(event.Kind) {
 					_ = evtCache.Set(ctx, event)
 				}
@@ -222,8 +233,8 @@ func NewRelayWithOptions(cfg *config.Config, db *postgresql.PostgresBackend, sea
 
 	log.Printf("Relay '%s' initialized with PostgreSQL storage", cfg.RelayName)
 	log.Println("NIP-77 negentropy sync enabled")
-	if searchBackend != nil {
-		log.Println("NIP-50 search enabled")
+	if searchPtr != nil {
+		log.Println("NIP-50 search will activate after index initialization")
 	}
 	if evtCache != nil {
 		log.Println("Event cache enabled")

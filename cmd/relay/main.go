@@ -212,13 +212,6 @@ func main() {
 	defer db.Close()
 	defer func() { _ = rawDB.Close() }()
 
-	searchBackend := search.NewSearchBackend(rawDB)
-	if err := searchBackend.InitSchema(); err != nil {
-		log.Printf("Warning: Failed to initialize search index: %v", err)
-		// Continue without search
-		searchBackend = nil
-	}
-
 	// Optimize database indexes for common query patterns
 	if err := storage.OptimizeIndexes(rawDB); err != nil {
 		log.Printf("Warning: Failed to optimize indexes: %v", err)
@@ -298,8 +291,15 @@ func main() {
 		log.Println("Write-ahead logging enabled (Dragonfly/Redis)")
 	}
 
+	// Search backend pointer: starts nil, stored after InitSchema in a
+	// post-ready goroutine so CIC cannot block liveness probes.
+	var searchPtr *atomic.Pointer[search.SearchBackend]
+	if cfg.SearchEnabled {
+		searchPtr = &atomic.Pointer[search.SearchBackend]{}
+	}
+
 	// Create the relay (with optional event cache and write-ahead log)
-	r := relay.NewRelayWithOptions(cfg, db, searchBackend, evtCache, wal)
+	r := relay.NewRelayWithOptions(cfg, db, searchPtr, evtCache, wal)
 
 	// Tombstone wiring lives here rather than inside NewRelayWithOptions because
 	// this is where the raw *sql.DB is in scope; the relay constructor only takes
@@ -964,6 +964,31 @@ func main() {
 	readyCheck.MarkReady()
 	log.Printf("Cloistr relay %s ready on %s", relay.Version, addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
+
+	// Search initialization runs AFTER the relay is ready so CREATE INDEX
+	// CONCURRENTLY (which can take minutes on a large table) does not block
+	// liveness probes. The search backend pointer starts nil; queries fall
+	// back to the regular PostgreSQL backend until it is stored.
+	if searchPtr != nil {
+		go func() {
+			sb := search.NewSearchBackend(rawDB, cfg.SearchKinds)
+			ctx := context.Background()
+			if err := sb.InitSchema(ctx); err != nil {
+				log.Printf("ERROR: search InitSchema failed: %v", err)
+				search.SearchSetupFailures.Inc()
+				return
+			}
+			searchPtr.Store(sb)
+			log.Println("NIP-50 search backend activated")
+
+			if n, err := sb.Backfill(ctx); err != nil {
+				log.Printf("ERROR: search backfill failed after %d rows: %v", n, err)
+			}
+			if _, err := sb.ClearNonSearchable(); err != nil {
+				log.Printf("ERROR: search clear non-searchable failed: %v", err)
+			}
+		}()
+	}
 
 	select {}
 }
