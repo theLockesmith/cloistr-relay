@@ -55,6 +55,8 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/web"
 )
 
+type handlerRef struct{ http.Handler }
+
 // relay29Wrapper adapts khatru.Relay to relay29's expected interface
 // relay29 expects BroadcastEvent to return nothing, but khatru returns int
 type relay29Wrapper struct {
@@ -154,13 +156,13 @@ func main() {
 	// Readiness (/ready) stays 503 until the database connects.
 	readyCheck := startup.NewReadyCheck()
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	var rootHandler atomic.Value
-	rootHandler.Store(http.Handler(newStartupMux(cfg, readyCheck)))
+	var rootHandler atomic.Pointer[handlerRef]
+	rootHandler.Store(&handlerRef{newStartupMux(cfg, readyCheck)})
 
 	go func() {
 		log.Printf("Starting HTTP server on %s (waiting for database)", addr)
 		if err := http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rootHandler.Load().(http.Handler).ServeHTTP(w, r)
+			rootHandler.Load().ServeHTTP(w, r)
 		})); err != nil {
 			log.Fatalf("HTTP server failed: %v", err)
 		}
@@ -958,7 +960,7 @@ func main() {
 	})
 
 	// Swap from startup handler to the full relay and mark ready.
-	rootHandler.Store(http.Handler(router))
+	rootHandler.Store(&handlerRef{router})
 	readyCheck.MarkReady()
 	log.Printf("Cloistr relay %s ready on %s", relay.Version, addr)
 	log.Printf("Relay name: %s", cfg.RelayName)
