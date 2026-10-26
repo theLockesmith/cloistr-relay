@@ -118,8 +118,8 @@ func Winner(claims []Claim) (Claim, bool) {
 }
 
 // BuildClaimEvent constructs an unsigned claim event for a task. The caller signs
-// it with the ROLE key (see DeriveRoleKey) and publishes it to exactly ONE relay:
-// fanning claims out across relays reintroduces the split-brain this prevents.
+// it with the role's key (held by the signer) and publishes it to exactly ONE
+// relay: fanning claims out across relays reintroduces the split-brain this prevents.
 func BuildClaimEvent(taskID string, at nostr.Timestamp) *nostr.Event {
 	return &nostr.Event{
 		Kind:      KindClaim,
