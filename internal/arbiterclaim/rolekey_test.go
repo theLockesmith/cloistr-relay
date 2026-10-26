@@ -84,3 +84,39 @@ func TestDeriveRoleKey_RejectsEmptyInputs(t *testing.T) {
 		t.Error("empty role must be an error")
 	}
 }
+
+func TestDeriveRolePubkey_ReturnsValidHexPubkey(t *testing.T) {
+	seed := []byte("fleet-seed-not-a-real-secret")
+	pk, err := DeriveRolePubkey(seed, "cloistr-relay")
+	if err != nil {
+		t.Fatalf("DeriveRolePubkey: %v", err)
+	}
+	if len(pk) != 64 {
+		t.Errorf("pubkey length %d, want 64 hex chars", len(pk))
+	}
+	if _, err := hex.DecodeString(pk); err != nil {
+		t.Errorf("pubkey is not valid hex: %v", err)
+	}
+}
+
+func TestDeriveRolePubkey_DeterministicAndDistinct(t *testing.T) {
+	seed := []byte("fleet-seed-not-a-real-secret")
+	a, _ := DeriveRolePubkey(seed, "cloistr-relay")
+	again, _ := DeriveRolePubkey(seed, "cloistr-relay")
+	if a != again {
+		t.Error("same seed+role must produce the same pubkey")
+	}
+	b, _ := DeriveRolePubkey(seed, "cloistr-orch")
+	if a == b {
+		t.Error("distinct roles must produce distinct pubkeys")
+	}
+}
+
+func TestDeriveRolePubkey_PropagatesErrors(t *testing.T) {
+	if _, err := DeriveRolePubkey(nil, "role"); err == nil {
+		t.Error("nil seed must propagate error from DeriveRoleKey")
+	}
+	if _, err := DeriveRolePubkey([]byte("seed"), ""); err == nil {
+		t.Error("empty role must propagate error")
+	}
+}

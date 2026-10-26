@@ -409,6 +409,86 @@ func TestLoad_WriteWhitelistIsIndependentOfAllowedPubkeys(t *testing.T) {
 	}
 }
 
+func TestLoad_FleetRoleExemption_DerivesAndAppends(t *testing.T) {
+	clearEnv(t)
+	// A known seed: 32 bytes of 0x01.
+	t.Setenv("FLEET_SEED", "0101010101010101010101010101010101010101010101010101010101010101")
+	t.Setenv("FLEET_ROLES", "cloistr-relay,cloistr-orch")
+	t.Setenv("RATE_LIMIT_EXEMPT_PUBKEYS", "manualkey1")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Should have the manual key plus 2 derived.
+	if len(cfg.RateLimitExemptPubkeys) != 3 {
+		t.Fatalf("RateLimitExemptPubkeys length = %d, want 3 (1 manual + 2 derived), got %v",
+			len(cfg.RateLimitExemptPubkeys), cfg.RateLimitExemptPubkeys)
+	}
+	if cfg.RateLimitExemptPubkeys[0] != "manualkey1" {
+		t.Errorf("first exempt pubkey = %s, want manualkey1", cfg.RateLimitExemptPubkeys[0])
+	}
+	// Derived keys must be 64 hex chars.
+	for i := 1; i <= 2; i++ {
+		pk := cfg.RateLimitExemptPubkeys[i]
+		if len(pk) != 64 {
+			t.Errorf("derived pubkey[%d] length = %d, want 64", i, len(pk))
+		}
+	}
+	// The two derived pubkeys must differ.
+	if cfg.RateLimitExemptPubkeys[1] == cfg.RateLimitExemptPubkeys[2] {
+		t.Error("distinct roles must derive distinct pubkeys")
+	}
+}
+
+func TestLoad_FleetRoleExemption_NoSeedSkips(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("FLEET_ROLES", "cloistr-relay,cloistr-orch")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.RateLimitExemptPubkeys) != 0 {
+		t.Errorf("with no FLEET_SEED, exempt list should be empty, got %v", cfg.RateLimitExemptPubkeys)
+	}
+}
+
+func TestLoad_FleetRoleExemption_NoRolesSkips(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("FLEET_SEED", "0101010101010101010101010101010101010101010101010101010101010101")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.RateLimitExemptPubkeys) != 0 {
+		t.Errorf("with no FLEET_ROLES, exempt list should be empty, got %v", cfg.RateLimitExemptPubkeys)
+	}
+}
+
+func TestLoad_FleetRoleExemption_BadSeedHex(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("FLEET_SEED", "not-hex-at-all")
+	t.Setenv("FLEET_ROLES", "cloistr-relay")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Bad seed should be skipped gracefully, no derived pubkeys.
+	if len(cfg.RateLimitExemptPubkeys) != 0 {
+		t.Errorf("bad FLEET_SEED should skip derivation, got %v", cfg.RateLimitExemptPubkeys)
+	}
+	if len(cfg.FleetSeed) != 0 {
+		t.Error("FleetSeed should remain nil on bad hex")
+	}
+}
+
 func TestLoad_WriteWhitelistOverride(t *testing.T) {
 	t.Setenv("WRITE_WHITELIST_PUBKEYS", " pubkeyA , pubkeyB ")
 

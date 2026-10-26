@@ -1,12 +1,15 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/arbiterclaim"
 )
 
 // Config holds all relay configuration
@@ -62,6 +65,8 @@ type Config struct {
 	RateLimitDistributed       bool     // Use distributed rate limiting via Redis/Dragonfly
 	RateLimitExemptKinds       []int    // Kinds exempt from event rate limiting (e.g., 24133 for NIP-46)
 	RateLimitExemptPubkeys     []string // Pubkeys exempt from all rate limiting
+	FleetSeed                  []byte   // FLEET_SEED: hex fleet seed for deriving role pubkeys
+	FleetRoles                 []string // FLEET_ROLES: role names whose derived pubkeys get rate-limit exemption
 
 	// Filter complexity limits
 	FilterMaxAuthors int // Max authors in a single filter (default 100)
@@ -353,6 +358,32 @@ func Load() (*Config, error) {
 	// Rate limit exempt pubkeys (comma-separated hex pubkeys)
 	if exemptPubkeys := os.Getenv("RATE_LIMIT_EXEMPT_PUBKEYS"); exemptPubkeys != "" {
 		cfg.RateLimitExemptPubkeys = parseCommaSeparated(exemptPubkeys)
+	}
+
+	// Fleet role auto-exemption: derive pubkeys from the fleet seed and
+	// append them to the rate-limit exempt list. This replaces manually
+	// maintaining fleet pubkeys in RATE_LIMIT_EXEMPT_PUBKEYS.
+	if seedHex := os.Getenv("FLEET_SEED"); seedHex != "" {
+		seed, err := hex.DecodeString(seedHex)
+		if err != nil {
+			log.Printf("WARNING: FLEET_SEED is not valid hex, skipping fleet role exemption: %v", err)
+		} else {
+			cfg.FleetSeed = seed
+		}
+	}
+	if roles := os.Getenv("FLEET_ROLES"); roles != "" {
+		cfg.FleetRoles = parseCommaSeparated(roles)
+	}
+	if len(cfg.FleetSeed) > 0 && len(cfg.FleetRoles) > 0 {
+		for _, role := range cfg.FleetRoles {
+			pk, err := arbiterclaim.DeriveRolePubkey(cfg.FleetSeed, role)
+			if err != nil {
+				log.Printf("WARNING: cannot derive pubkey for fleet role %q: %v", role, err)
+				continue
+			}
+			cfg.RateLimitExemptPubkeys = append(cfg.RateLimitExemptPubkeys, pk)
+			log.Printf("Fleet role %q: rate-limit exempt (pubkey %s…)", role, pk[:16])
+		}
 	}
 
 	// Filter complexity limits

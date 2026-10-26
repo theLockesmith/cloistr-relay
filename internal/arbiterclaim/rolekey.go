@@ -44,6 +44,21 @@ func DeriveRoleKey(fleetSeed []byte, role string) (string, error) {
 	return "", fmt.Errorf("arbiterclaim: no valid key for role %q after 255 attempts", role)
 }
 
+// DeriveRolePubkey returns the hex public key for a role without exposing
+// the private key. Use this for building exemption/allowlists from the
+// fleet seed at startup.
+func DeriveRolePubkey(fleetSeed []byte, role string) (string, error) {
+	sk, err := DeriveRoleKey(fleetSeed, role)
+	if err != nil {
+		return "", err
+	}
+	pk, err := nostr.GetPublicKey(sk)
+	if err != nil {
+		return "", fmt.Errorf("arbiterclaim: pubkey for role %q: %w", role, err)
+	}
+	return pk, nil
+}
+
 // hkdf is RFC 5869 HKDF-SHA256 producing exactly 32 bytes.
 //
 // Implemented against the stdlib rather than pulling in golang.org/x/crypto:
