@@ -31,6 +31,15 @@ var SearchSetupFailures = promauto.NewCounter(prometheus.CounterOpts{
 	Help:      "Number of times search schema or backfill setup failed.",
 })
 
+// SearchActive is 1 once the backend is serving search and 0 until then, so
+// an alert can tell "setup failed earlier but recovered" from "still off".
+var SearchActive = promauto.NewGauge(prometheus.GaugeOpts{
+	Namespace: "cloistr",
+	Subsystem: "search",
+	Name:      "active",
+	Help:      "1 when NIP-50 search is serving, 0 while setup has not succeeded.",
+})
+
 type SearchBackend struct {
 	db    *sql.DB
 	kinds []int
@@ -253,8 +262,10 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 // Activate sets up the schema (retrying every retryEvery), backfills, and
 // hands the ready backend to store. Setup retries are bounded only by ctx:
 // a first-time setup can wait out a long-held lock. backfillTimeout starts
-// once setup succeeds and covers only backfill and cleanup.
+// once setup succeeds and covers only backfill and cleanup. SearchActive reads
+// 0 from the start of setup until the backend is stored.
 func (s *SearchBackend) Activate(ctx context.Context, retryEvery, backfillTimeout time.Duration, store func(*SearchBackend)) error {
+	SearchActive.Set(0)
 	if _, err := s.InitSchemaRetry(ctx, retryEvery); err != nil {
 		return err
 	}
@@ -267,6 +278,7 @@ func (s *SearchBackend) Activate(ctx context.Context, retryEvery, backfillTimeou
 		log.Printf("ERROR: search clear non-searchable failed: %v", err)
 	}
 	store(s)
+	SearchActive.Set(1)
 	log.Println("NIP-50 search backend activated")
 	return nil
 }
