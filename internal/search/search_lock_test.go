@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // holdReader opens a transaction that reads the event table and keeps it open,
@@ -145,5 +147,41 @@ func TestInitSchema_IgnoresEventTableInOtherSchema(t *testing.T) {
 	}
 	if !has {
 		t.Fatal("search_tsv was not added to the event table in the current schema")
+	}
+}
+
+// Audit of !61: the setup-failure alert used a 1h increase window, so after
+// early failures and a recovery it kept firing for up to an hour saying search
+// was off. SearchActive lets it tell the two apart: 0 while setup is blocked,
+// 1 once the backend is stored.
+func TestActivate_SearchActiveGaugeTracksServing(t *testing.T) {
+	db := testDB(t)
+	defer func() { _ = db.Close() }()
+	setupSearchTable(t, db)
+
+	SearchActive.Set(1) // a stale 1 must not survive into a new setup
+	reader := holdReader(t, db)
+	release := make(chan struct{})
+	go func() {
+		<-release
+		_ = reader.Rollback()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	sb := NewSearchBackend(db, DefaultSearchKinds)
+	go func() { done <- sb.Activate(ctx, 500*time.Millisecond, 10*time.Second, func(*SearchBackend) {}) }()
+
+	time.Sleep(2 * time.Second) // setup is retrying behind the reader's lock
+	if got := testutil.ToFloat64(SearchActive); got != 0 {
+		t.Errorf("SearchActive while setup is blocked = %v, want 0", got)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	if got := testutil.ToFloat64(SearchActive); got != 1 {
+		t.Errorf("SearchActive after Activate = %v, want 1", got)
 	}
 }
