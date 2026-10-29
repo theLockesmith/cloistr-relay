@@ -308,12 +308,9 @@ func main() {
 	r.DeleteEvent = append(r.DeleteEvent, func(ctx context.Context, evt *nostr.Event) error {
 		return storage.RecordTombstone(ctx, rawDB, evt.ID, evt.Kind, time.Now().Unix())
 	})
-	rejectRepublish := storage.RejectRepublishedDeletion(func(ctx context.Context, id string) (bool, error) {
+	r.RejectEvent = append(r.RejectEvent, storage.RejectRepublishedDeletionEvent(func(ctx context.Context, id string) (bool, error) {
 		return storage.IsTombstoned(ctx, rawDB, id)
-	})
-	r.RejectEvent = append(r.RejectEvent, func(ctx context.Context, evt *nostr.Event) (bool, string) {
-		return rejectRepublish(ctx, evt.ID)
-	})
+	}))
 
 	// Initialize cross-pod event pub/sub (if enabled and cache available)
 	var eventPubSub *pubsub.PubSub

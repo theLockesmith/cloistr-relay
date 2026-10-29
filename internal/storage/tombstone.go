@@ -13,6 +13,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
+	"github.com/nbd-wtf/go-nostr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -50,6 +51,15 @@ var tombstoneSemWaitSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 	Name:    "nostr_relay_tombstone_sem_wait_seconds",
 	Help:    "Time spent waiting for a tombstone lookup semaphore slot",
 	Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+})
+
+// tombstoneLookupSeconds times each lookup attempt, from the semaphore slot to
+// the answer or the attempt deadline, so the slow tail is visible before it
+// reaches the timeout.
+var tombstoneLookupSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "nostr_relay_tombstone_lookup_seconds",
+	Help:    "Duration of each tombstone lookup attempt, including attempts abandoned at the deadline.",
+	Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
 })
 
 var tombstoneLookupFailures = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -164,6 +174,9 @@ func lookupWithDeadline(parent context.Context, lookup TombstoneLookup, id strin
 	}
 	tombstoneSemWaitSeconds.Observe(time.Since(waitStart).Seconds())
 
+	lookupStart := time.Now()
+	defer func() { tombstoneLookupSeconds.Observe(time.Since(lookupStart).Seconds()) }()
+
 	ch := make(chan lookupResult, 1)
 	go func() {
 		defer func() { <-tombstoneLookupSem }()
@@ -247,5 +260,19 @@ func RejectRepublishedDeletion(lookup TombstoneLookup) func(context.Context, str
 		tombstoneLookupFailures.WithLabelValues(cause).Inc()
 		log.Printf("tombstone lookup failed for %s (cause=%s): %v", id, cause, err)
 		return true, fmt.Sprintf("error: could not check deletion status (%s), refusing", cause)
+	}
+}
+
+// RejectRepublishedDeletionEvent is RejectRepublishedDeletion for a whole event.
+// Ephemeral events (20000-29999) are never stored, so there is nothing to
+// re-delete and no lookup is made. Those include NIP-46 signer messages, which
+// a slow lookup would otherwise stall in the middle of a client's login.
+func RejectRepublishedDeletionEvent(lookup TombstoneLookup) func(context.Context, *nostr.Event) (bool, string) {
+	rejectID := RejectRepublishedDeletion(lookup)
+	return func(ctx context.Context, evt *nostr.Event) (bool, string) {
+		if nostr.IsEphemeralKind(evt.Kind) {
+			return false, ""
+		}
+		return rejectID(ctx, evt.ID)
 	}
 }
