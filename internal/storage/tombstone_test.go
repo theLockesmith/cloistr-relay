@@ -17,6 +17,8 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
+	"github.com/nbd-wtf/go-nostr"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // These assert ADMISSION as well as refusal. A guard that refused every write would
@@ -555,5 +557,55 @@ func TestRealPQ_BurstWritesAgainstHealthyLookup(t *testing.T) {
 	if refused.Load() != 0 {
 		t.Errorf("%d of 20 writes refused against a healthy 20ms lookup; semaphore should not reject healthy traffic",
 			refused.Load())
+	}
+}
+
+// Ephemeral events (20000-29999) are never stored, so there is nothing to
+// re-delete. Production 2026-10-29: a NIP-46 signer message (kind 24133) was
+// refused after 10s because its tombstone lookup timed out, stalling a login.
+func TestRejectRepublishedDeletionEvent_EphemeralSkipsLookup(t *testing.T) {
+	for _, kind := range []int{20000, 24133, 29999} {
+		var calls atomic.Int32
+		reject, msg := RejectRepublishedDeletionEvent(func(context.Context, string) (bool, error) {
+			calls.Add(1)
+			return false, errors.New("database unavailable")
+		})(context.Background(), &nostr.Event{ID: "abc", Kind: kind})
+		if reject {
+			t.Errorf("kind %d: refused an ephemeral event: %s", kind, msg)
+		}
+		if n := calls.Load(); n != 0 {
+			t.Errorf("kind %d: ran %d tombstone lookups, want 0", kind, n)
+		}
+	}
+}
+
+// Stored kinds on either side of the ephemeral range still get the check.
+func TestRejectRepublishedDeletionEvent_StoredKindsStillChecked(t *testing.T) {
+	for _, kind := range []int{1, 1059, 19999, 30000} {
+		reject, _ := RejectRepublishedDeletionEvent(func(context.Context, string) (bool, error) {
+			return true, nil
+		})(context.Background(), &nostr.Event{ID: "abc", Kind: kind})
+		if !reject {
+			t.Errorf("kind %d: admitted a republish of a deleted event", kind)
+		}
+	}
+}
+
+func TestLookupWithDeadline_RecordsDuration(t *testing.T) {
+	var m dto.Metric
+	if err := tombstoneLookupSeconds.Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	start := m.GetHistogram().GetSampleCount()
+
+	_, _ = lookupWithDeadline(context.Background(), func(context.Context, string) (bool, error) {
+		return false, nil
+	}, "abc")
+
+	if err := tombstoneLookupSeconds.Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.GetHistogram().GetSampleCount() - start; got != 1 {
+		t.Errorf("lookup duration samples recorded = %d, want 1", got)
 	}
 }
