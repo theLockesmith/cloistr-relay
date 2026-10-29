@@ -27,18 +27,17 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/feeds"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/cache"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/dbcall"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/eventcache"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/expiry"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/giftwrap"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/groups"
-	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/handlers"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/haven"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/management"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/lightning"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/membership"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/metrics"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/protected"
-	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/ratelimit"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/relay"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/search"
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/session"
@@ -308,9 +307,6 @@ func main() {
 	r.DeleteEvent = append(r.DeleteEvent, func(ctx context.Context, evt *nostr.Event) error {
 		return storage.RecordTombstone(ctx, rawDB, evt.ID, evt.Kind, time.Now().Unix())
 	})
-	r.RejectEvent = append(r.RejectEvent, storage.RejectRepublishedDeletionEvent(func(ctx context.Context, id string) (bool, error) {
-		return storage.IsTombstoned(ctx, rawDB, id)
-	}))
 
 	// Initialize cross-pod event pub/sub (if enabled and cache available)
 	var eventPubSub *pubsub.PubSub
@@ -341,35 +337,18 @@ func main() {
 		log.Printf("NIP-86 management API enabled for %d admin pubkeys", len(cfg.AdminPubkeys))
 	}
 
-	// Register custom handlers (validation, filtering).
-	// A nil mgmtStore must stay a nil interface, not a non-nil interface wrapping
-	// a nil pointer, so build the interface value explicitly.
-	useDistributedRateLimit := cacheClient != nil && cfg.RateLimitDistributed
-	var exemptChecker handlers.RateLimitExemptChecker
 	if mgmtStore != nil {
-		exemptChecker = mgmtStore
-	}
-	handlers.RegisterHandlers(r, cfg, useDistributedRateLimit, exemptChecker)
-
-	// Register distributed rate limiting (if enabled)
-	if useDistributedRateLimit {
-		rateLimitCfg := &ratelimit.Config{
-			Enabled:              true,
-			EventsPerSecond:      cfg.RateLimitEventsPerSec,
-			FiltersPerSecond:     cfg.RateLimitFiltersPerSec,
-			ConnectionsPerSecond: cfg.RateLimitConnectionsPerSec,
-			BurstMultiplier:      5,
-			WindowSize:           time.Second,
-		}
-		ratelimit.RegisterHandlers(r, cacheClient.RedisClient(), rateLimitCfg)
-		log.Println("Distributed rate limiting enabled (Dragonfly/Redis)")
+		stopAccessRefresh := mgmtStore.StartAccessRefresh(management.AccessRefreshInterval)
+		defer stopAccessRefresh()
 	}
 
-	// Register ban checking handlers (must come after handler registration
-	// for correct khatru execution order)
-	if mgmtStore != nil {
-		management.RegisterBanHandlers(r, mgmtStore)
-	}
+	// Validation, rate limits, NIP-42 auth, the tombstone check and NIP-86 bans,
+	// in that order. See registerWriteGates for why auth sits where it does.
+	registerWriteGates(r, cfg, parseAuthConfig(cfg),
+		func(ctx context.Context, id string) (bool, error) {
+			return storage.IsTombstoned(ctx, rawDB, id)
+		},
+		mgmtStore, cacheClient.RedisClient())
 
 	// Arbiter claim enforcement (kind 30078, d="arbiter:claim:*").
 	//
@@ -388,26 +367,9 @@ func main() {
 	}
 	arbiterclaim.RegisterHandlers(r, claimStore)
 
-	// Initialize WoT filtering (if enabled)
+	// Initialize WoT filtering (if enabled). NIP-42 auth is already registered,
+	// ahead of this gate, by registerWriteGates.
 	var wotHandler *wot.Handler
-	// NIP-42 auth MUST be registered BEFORE the WoT trust gate, and
-	// UNCONDITIONALLY — not inside the WoT block, or auth would silently
-	// depend on WoT being enabled.
-	//
-	// khatru runs RejectEvent handlers in REGISTRATION ORDER, and the first to
-	// reject decides the message the client sees. Auth used to be registered
-	// far below WoT, so an unauthenticated client publishing kind 30078 was told
-	//     "pow: low trust requires proof of work (got 0, need 8)"
-	// instead of "auth-required". It never learned it had to authenticate, so it
-	// never did, so the authed-author exemption in internal/wot/trust.go could
-	// never fire. stash hung forever on "Connecting to your account…" because of
-	// exactly this: the client was told to mine when it should have been told to
-	// log in.
-	//
-	// Auth first means the client authenticates and its retry arrives with
-	// khatru.GetAuthed(ctx) populated, so the exemption applies.
-	authCfg := parseAuthConfig(cfg)
-	auth.RegisterAuthHandlers(r, authCfg)
 
 	// Initialize membership store unconditionally — it wraps the existing DB
 	// connection and the schema migration is idempotent (IF NOT EXISTS). The
@@ -985,6 +947,14 @@ func parseAuthConfig(cfg *config.Config) *auth.Config {
 	return authCfg
 }
 
+// memberGetter is the slice of membership.Store the paid-member check needs.
+type memberGetter interface {
+	GetMember(ctx context.Context, pubkey string) (*membership.Member, error)
+}
+
+// paidLookupTimeout caps one paid-tier lookup on the event path.
+var paidLookupTimeout = 2 * time.Second
+
 // newPaidMemberChecker returns a function that checks whether a pubkey holds
 // an active paid tier (any tier above free with a non-expired expiration).
 // Results are cached for 5 minutes so the check does not hit the database on
@@ -994,7 +964,12 @@ func parseAuthConfig(cfg *config.Config) *auth.Config {
 // On tier lapse: GetEffectiveTier returns TierFree the moment tier_expires_at
 // passes. The worst-case staleness is this cache's TTL (5 min), after which
 // the pubkey falls back to graph trust.
-func newPaidMemberChecker(store *membership.Store) func(string) bool {
+//
+// Each lookup is capped at paidLookupTimeout: it runs inside the WoT gate on
+// the event path, and a lookup on a dead connection would otherwise hold the
+// event until TCP gives up. A timed-out lookup counts as not paid (graph trust
+// applies) and is cached like any other answer.
+func newPaidMemberChecker(store memberGetter) func(string) bool {
 	type entry struct {
 		paid bool
 		at   time.Time
@@ -1008,7 +983,8 @@ func newPaidMemberChecker(store *membership.Store) func(string) bool {
 				return e.paid
 			}
 		}
-		member, err := store.GetMember(context.Background(), pubkey)
+		member, err := dbcall.WithDeadline(context.Background(), paidLookupTimeout,
+			func(ctx context.Context) (*membership.Member, error) { return store.GetMember(ctx, pubkey) })
 		paid := err == nil && member != nil && member.GetEffectiveTier() != membership.TierFree
 		paidCache.Store(pubkey, &entry{paid: paid, at: time.Now()})
 		return paid

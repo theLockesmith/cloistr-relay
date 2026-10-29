@@ -1,11 +1,21 @@
 package arbiterclaim
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+
+	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/dbcall"
 )
+
+// claimQueryTimeout caps each claim query. A claim is decided inside the
+// relay's event path, so a hung connection must surface as "claim store
+// unavailable, retry" rather than hold the publish open. If an abandoned INSERT
+// commits after the timeout, the client's retry of the same event is refused
+// with ErrLost naming that event's own id -- i.e. it learns it holds the claim.
+var claimQueryTimeout = 5 * time.Second
 
 // Store persists claim ownership. Postgres is the serialization point: the relay
 // runs two replicas against one database, so a conditional INSERT is what turns
@@ -59,8 +69,9 @@ func (e ErrLost) Error() string {
 // claims; after the window the incumbent is final. Returns ErrLost with the
 // winner's event id if the claim did not take.
 func (s *Store) TryClaim(c Claim) error {
-	var holder string
-	err := s.db.QueryRow(`
+	holder, err := dbcall.WithDeadline(context.Background(), claimQueryTimeout, func(ctx context.Context) (string, error) {
+		var holder string
+		err := s.db.QueryRowContext(ctx, `
 		INSERT INTO arbiter_claims (task_id, event_id, claimant)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (task_id) DO UPDATE
@@ -70,8 +81,10 @@ func (s *Store) TryClaim(c Claim) error {
 		 WHERE arbiter_claims.event_id > EXCLUDED.event_id
 		   AND arbiter_claims.claimed_at > now() - $4::interval
 		RETURNING event_id`,
-		c.TaskID, c.EventID, c.Claimant, fmt.Sprintf("%d milliseconds", s.settleWindow.Milliseconds()),
-	).Scan(&holder)
+			c.TaskID, c.EventID, c.Claimant, fmt.Sprintf("%d milliseconds", s.settleWindow.Milliseconds()),
+		).Scan(&holder)
+		return holder, err
+	})
 
 	if errors.Is(err, sql.ErrNoRows) {
 		// The ON CONFLICT ... WHERE did not fire: someone else holds it and this
@@ -93,8 +106,12 @@ func (s *Store) TryClaim(c Claim) error {
 func (s *Store) Holder(taskID string) string { return s.holderOf(taskID) }
 
 func (s *Store) holderOf(taskID string) string {
-	var id string
-	if err := s.db.QueryRow(`SELECT event_id FROM arbiter_claims WHERE task_id = $1`, taskID).Scan(&id); err != nil {
+	id, err := dbcall.WithDeadline(context.Background(), claimQueryTimeout, func(ctx context.Context) (string, error) {
+		var id string
+		err := s.db.QueryRowContext(ctx, `SELECT event_id FROM arbiter_claims WHERE task_id = $1`, taskID).Scan(&id)
+		return id, err
+	})
+	if err != nil {
 		return ""
 	}
 	return id

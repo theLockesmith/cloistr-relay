@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // A counting stub driver. Dependency-free on purpose: this repo builds
@@ -81,6 +82,9 @@ func (s *stubStmt) Query(args []driver.Value) (driver.Rows, error) {
 			return &stubRows{cols: []string{"event_id"}, empty: true}, nil
 		case "err":
 			return nil, errors.New("stub: database unavailable")
+		case "hang": // a dead lib/pq connection: blocks, ignoring any context
+			<-hangRelease
+			return nil, errors.New("stub: released")
 		default: // win: the conditional insert returns our own event id
 			var id driver.Value = ""
 			if len(args) > 1 {
@@ -116,6 +120,9 @@ func (r *stubRows) Next(dest []driver.Value) error {
 }
 
 func init() { sql.Register("stubclaims", stubDriver{}) }
+
+// hangRelease unblocks "hang" queries; closed when the test binary exits.
+var hangRelease = make(chan struct{})
 
 func storeWith(t *testing.T, dsn string) *Store {
 	t.Helper()
@@ -166,5 +173,30 @@ func TestTryClaim_StoreErrorIsDistinguishableFromLosing(t *testing.T) {
 	var lost ErrLost
 	if errors.As(err, &lost) {
 		t.Error("a database outage must NOT be reported as ErrLost")
+	}
+}
+
+// A claim query on a hung connection must not hold the publish open. Before
+// 2026-10-29 TryClaim used QueryRow with no context, so a dead connection held
+// the claimant's EVENT until TCP gave up.
+func TestTryClaim_HungConnectionReturnsWithinDeadline(t *testing.T) {
+	old := claimQueryTimeout
+	claimQueryTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { claimQueryTimeout = old })
+
+	s := storeWith(t, "mode=hang")
+	done := make(chan error, 1)
+	go func() { done <- s.TryClaim(Claim{TaskID: "t1", EventID: "aaa"}) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a hung claim query must surface as an error")
+		}
+		var lost ErrLost
+		if errors.As(err, &lost) {
+			t.Error("a hung database must NOT be reported as ErrLost")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("TryClaim still blocked after 2s on a hung connection; want it bounded by claimQueryTimeout")
 	}
 }
