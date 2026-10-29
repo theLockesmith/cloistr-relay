@@ -87,3 +87,63 @@ func TestInitSchemaRetry_StopsWhenContextEnds(t *testing.T) {
 		t.Fatal("InitSchemaRetry returned nil while the table stayed locked")
 	}
 }
+
+// Audit of !58: setup retries shared the 30-minute backfill deadline, so a
+// first-time setup behind a long-held lock gave up and search stayed off
+// until restart. Retries must outlast the backfill window.
+func TestActivate_SetupRetriesOutliveBackfillWindow(t *testing.T) {
+	db := testDB(t)
+	defer func() { _ = db.Close() }()
+	setupSearchTable(t, db)
+
+	reader := holdReader(t, db)
+	go func() {
+		time.Sleep(7 * time.Second) // longer than the backfill window below
+		_ = reader.Rollback()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	var stored *SearchBackend
+	sb := NewSearchBackend(db, DefaultSearchKinds)
+	if err := sb.Activate(ctx, 500*time.Millisecond, 3*time.Second, func(b *SearchBackend) { stored = b }); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	if stored != sb {
+		t.Fatal("Activate returned nil but never stored the backend")
+	}
+}
+
+// Audit of !58: the column check read information_schema across every
+// schema, so an event table with search_tsv elsewhere made setup skip adding
+// the column here, and the index build then failed.
+func TestInitSchema_IgnoresEventTableInOtherSchema(t *testing.T) {
+	db := testDB(t)
+	defer func() { _ = db.Close() }()
+	setupSearchTable(t, db)
+
+	if _, err := db.Exec(`
+		DROP SCHEMA IF EXISTS search_other CASCADE;
+		CREATE SCHEMA search_other;
+		CREATE TABLE search_other.event (id text, search_tsv tsvector);
+	`); err != nil {
+		t.Fatalf("create other schema: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DROP SCHEMA IF EXISTS search_other CASCADE`) })
+
+	sb := NewSearchBackend(db, DefaultSearchKinds)
+	if err := sb.InitSchema(context.Background()); err != nil {
+		t.Fatalf("InitSchema: %v", err)
+	}
+	var has bool
+	if err := db.QueryRow(`
+		SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		               WHERE table_schema = current_schema()
+		                 AND table_name = 'event' AND column_name = 'search_tsv')
+	`).Scan(&has); err != nil {
+		t.Fatalf("check column: %v", err)
+	}
+	if !has {
+		t.Fatal("search_tsv was not added to the event table in the current schema")
+	}
+}
