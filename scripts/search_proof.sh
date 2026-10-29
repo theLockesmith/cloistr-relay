@@ -77,6 +77,9 @@ for minlen in (7, 5):
   NONSENSE=zq$(LC_ALL=C tr -dc 'a-z' </dev/urandom | head -c 12)
   RAW=$(timeout 20 nak req -k "$K" --search "$NONSENSE" -l 50 "$R" </dev/null 2>/dev/null); RC=$?
   [ "$RC" = 124 ] && { echo "RESULT kind $K: TIMEOUT (nonsense-word search took over 20s)"; return 1; }
+  # A failed request also returns no events; counting that as 0 hits would let
+  # a broken relay pass the negative control.
+  [ "$RC" != 0 ] && { echo "RESULT kind $K: ERROR (nonsense-word search failed, nak exit $RC)"; return 1; }
   NN=$(printf '%s\n' "$RAW" | grep -c '^{')
   if [ "$NN" != 0 ]; then
     echo "RESULT kind $K: FAIL (nonsense word '$NONSENSE' returned $NN events; relay is not applying search)"; return 1
