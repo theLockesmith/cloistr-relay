@@ -954,8 +954,8 @@ func main() {
 			sb := search.NewSearchBackend(rawDB, cfg.SearchKinds)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			defer cancel()
-			if err := sb.InitSchema(ctx); err != nil {
-				log.Printf("ERROR: search InitSchema failed: %v", err)
+			if _, err := sb.InitSchemaRetry(ctx, 30*time.Second); err != nil {
+				log.Printf("ERROR: %v; NIP-50 search stays off", err)
 				return
 			}
 			if n, err := sb.Backfill(ctx); err != nil {
