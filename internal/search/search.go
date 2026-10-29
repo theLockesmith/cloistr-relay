@@ -111,9 +111,26 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 		return fmt.Errorf("drop legacy index: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE event ADD COLUMN IF NOT EXISTS search_tsv tsvector`); err != nil {
+	// ADD COLUMN and CREATE TRIGGER lock the table even when there is nothing
+	// to do, so they wait behind any open read (a long REQ, the expiry
+	// sweeper's scan) and hit lock_timeout. Run them only when missing.
+	var colExists, trigExists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			EXISTS (SELECT 1 FROM information_schema.columns
+			        WHERE table_name = 'event' AND column_name = 'search_tsv'),
+			EXISTS (SELECT 1 FROM pg_trigger
+			        WHERE tgname = 'search_tsv_update' AND tgrelid = 'event'::regclass)
+	`).Scan(&colExists, &trigExists); err != nil {
 		SearchSetupFailures.Inc()
-		return fmt.Errorf("add search_tsv column: %w", err)
+		return fmt.Errorf("check search schema: %w", err)
+	}
+
+	if !colExists {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE event ADD COLUMN IF NOT EXISTS search_tsv tsvector`); err != nil {
+			SearchSetupFailures.Inc()
+			return fmt.Errorf("add search_tsv column: %w", err)
+		}
 	}
 
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
@@ -132,14 +149,18 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 		return fmt.Errorf("create trigger function: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		CREATE OR REPLACE TRIGGER search_tsv_update
-		BEFORE INSERT OR UPDATE ON event
-		FOR EACH ROW
-		EXECUTE FUNCTION search_tsv_trigger()
-	`); err != nil {
-		SearchSetupFailures.Inc()
-		return fmt.Errorf("create trigger: %w", err)
+	// The function above is replaced in place (no table lock), so a changed
+	// kinds list takes effect without recreating the trigger.
+	if !trigExists {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE OR REPLACE TRIGGER search_tsv_update
+			BEFORE INSERT OR UPDATE ON event
+			FOR EACH ROW
+			EXECUTE FUNCTION search_tsv_trigger()
+		`); err != nil {
+			SearchSetupFailures.Inc()
+			return fmt.Errorf("create trigger: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -178,6 +199,24 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 
 	log.Printf("NIP-50 search initialized (indexed kinds: %s)", kindsSQL)
 	return nil
+}
+
+// InitSchemaRetry runs InitSchema until it succeeds or ctx ends, waiting
+// every between attempts. A lock timeout on a busy table is transient; giving
+// up after one attempt would leave search off until the next restart.
+func (s *SearchBackend) InitSchemaRetry(ctx context.Context, every time.Duration) (int, error) {
+	for attempt := 1; ; attempt++ {
+		err := s.InitSchema(ctx)
+		if err == nil {
+			return attempt, nil
+		}
+		log.Printf("ERROR: search InitSchema attempt %d failed, retrying in %v: %v", attempt, every, err)
+		select {
+		case <-ctx.Done():
+			return attempt, fmt.Errorf("search InitSchema gave up after %d attempts: %w", attempt, err)
+		case <-time.After(every):
+		}
+	}
 }
 
 func (s *SearchBackend) Backfill(ctx context.Context) (int64, error) {
