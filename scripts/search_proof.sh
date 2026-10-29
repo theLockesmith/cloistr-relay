@@ -2,11 +2,13 @@
 # Read-only NIP-50 search proof with a control.
 # For each kind, take recent events via a plain REQ (the control: proves the
 # events exist), pick a distinctive word from one of them, then NIP-50 search
-# for that word. Search works iff the search REQ returns the control event's id.
+# for that word. Search works iff the search REQ returns the control event's id
+# and a search for a random nonsense word returns nothing (negative control).
 # A kind that does not PASS is retried once after RETRY_PAUSE seconds (default
 # 5); every failed attempt prints why (NO CONTROL / NO USABLE WORD / FAIL /
 # TIMEOUT / ERROR). Requires nak and python3. Exits 0 only if every kind
-# PASSes, on its first attempt or its retry; 1 otherwise.
+# PASSes, on its first attempt or its retry, and then prints GATE PASS; 1
+# otherwise.
 # Usage: scripts/search_proof.sh wss://relay.cloistr.xyz [kind ...]   (default kinds: 1 33301)
 set -u
 # nak req reads filters from stdin whenever stdin is not a terminal, so with an
@@ -65,11 +67,21 @@ for minlen in (7, 5):
   N=$(printf '%s\n' "$HITS" | grep -c '^{')
   # Second signal, independent of the picked word: a common term.
   echo "common-word search 'nostr': $(timeout 20 nak req -k "$K" --search nostr -l 50 "$R" </dev/null 2>/dev/null | grep -c '^{') hits"
-  if printf '%s\n' "$HITS" | grep -q "\"id\":\"$ID\""; then
-    echo "RESULT kind $K: PASS (search returned $N, includes control)"
-  else
+  if ! printf '%s\n' "$HITS" | grep -q "\"id\":\"$ID\""; then
     echo "RESULT kind $K: FAIL (search returned $N, control missing, nak exit $RC)"; return 1
   fi
+  # Negative control: a relay that ignores the search field answers a plain
+  # REQ, which also contains the control. A random 14-letter word matches
+  # nothing, so any hit means search was not applied.
+  local NONSENSE NN
+  NONSENSE=zq$(LC_ALL=C tr -dc 'a-z' </dev/urandom | head -c 12)
+  RAW=$(timeout 20 nak req -k "$K" --search "$NONSENSE" -l 50 "$R" </dev/null 2>/dev/null); RC=$?
+  [ "$RC" = 124 ] && { echo "RESULT kind $K: TIMEOUT (nonsense-word search took over 20s)"; return 1; }
+  NN=$(printf '%s\n' "$RAW" | grep -c '^{')
+  if [ "$NN" != 0 ]; then
+    echo "RESULT kind $K: FAIL (nonsense word '$NONSENSE' returned $NN events; relay is not applying search)"; return 1
+  fi
+  echo "RESULT kind $K: PASS (search returned $N, includes control; nonsense word returned 0)"
 }
 
 OK=1
@@ -80,4 +92,5 @@ for K in $KINDS; do
   sleep "${RETRY_PAUSE:-5}"
   check_kind "$K" || { echo "GATE kind $K: failed on first attempt and retry"; OK=0; }
 done
-[ "$OK" = 1 ]
+[ "$OK" = 1 ] || exit 1
+echo "GATE PASS: search works for kinds $KINDS"
