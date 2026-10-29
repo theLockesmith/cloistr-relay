@@ -118,9 +118,13 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 	if err := tx.QueryRowContext(ctx, `
 		SELECT
 			EXISTS (SELECT 1 FROM information_schema.columns
-			        WHERE table_name = 'event' AND column_name = 'search_tsv'),
-			EXISTS (SELECT 1 FROM pg_trigger
-			        WHERE tgname = 'search_tsv_update' AND tgrelid = 'event'::regclass)
+			        WHERE table_schema = current_schema()
+			          AND table_name = 'event' AND column_name = 'search_tsv'),
+			EXISTS (SELECT 1 FROM pg_trigger t
+			        JOIN pg_class c ON c.oid = t.tgrelid
+			        JOIN pg_namespace n ON n.oid = c.relnamespace
+			        WHERE t.tgname = 'search_tsv_update'
+			          AND c.relname = 'event' AND n.nspname = current_schema())
 	`).Scan(&colExists, &trigExists); err != nil {
 		SearchSetupFailures.Inc()
 		return fmt.Errorf("check search schema: %w", err)
@@ -175,7 +179,8 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 		SELECT COALESCE(
 			(SELECT i.indisvalid FROM pg_class c
 			 JOIN pg_index i ON i.indexrelid = c.oid
-			 WHERE c.relname = 'search_tsv_idx'),
+			 JOIN pg_namespace n ON n.oid = c.relnamespace
+			 WHERE c.relname = 'search_tsv_idx' AND n.nspname = current_schema()),
 			false)
 	`).Scan(&indexValid); err != nil {
 		SearchSetupFailures.Inc()
@@ -217,6 +222,27 @@ func (s *SearchBackend) InitSchemaRetry(ctx context.Context, every time.Duration
 		case <-time.After(every):
 		}
 	}
+}
+
+// Activate sets up the schema (retrying every retryEvery), backfills, and
+// hands the ready backend to store. Setup retries are bounded only by ctx:
+// a first-time setup can wait out a long-held lock. backfillTimeout starts
+// once setup succeeds and covers only backfill and cleanup.
+func (s *SearchBackend) Activate(ctx context.Context, retryEvery, backfillTimeout time.Duration, store func(*SearchBackend)) error {
+	if _, err := s.InitSchemaRetry(ctx, retryEvery); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, backfillTimeout)
+	defer cancel()
+	if n, err := s.Backfill(ctx); err != nil {
+		log.Printf("ERROR: search backfill failed after %d rows: %v", n, err)
+	}
+	if _, err := s.ClearNonSearchable(ctx); err != nil {
+		log.Printf("ERROR: search clear non-searchable failed: %v", err)
+	}
+	store(s)
+	log.Println("NIP-50 search backend activated")
+	return nil
 }
 
 func (s *SearchBackend) Backfill(ctx context.Context) (int64, error) {
