@@ -13,8 +13,9 @@ import (
 	"git.aegis-hq.xyz/coldforge/cloistr-relay/internal/storage"
 )
 
-func testDBURL(t *testing.T) string {
-	t.Helper()
+// localTestDBURL is the fallback for local runs without TEST_DATABASE_URL:
+// a database named nostr, unlike CI's nostr_test.
+func localTestDBURL() string {
 	host := os.Getenv("TEST_DB_HOST")
 	if host == "" {
 		host = "localhost"
@@ -23,7 +24,16 @@ func testDBURL(t *testing.T) string {
 	if port == "" {
 		port = "5450"
 	}
-	url := fmt.Sprintf("postgres://postgres:postgres@%s:%s/nostr?sslmode=disable", host, port)
+	return fmt.Sprintf("postgres://postgres:postgres@%s:%s/nostr?sslmode=disable", host, port)
+}
+
+func testDBURL(t *testing.T) string {
+	t.Helper()
+	// CI provides the whole URL; without this every test here skipped in CI.
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		url = localTestDBURL()
+	}
 
 	db, err := sql.Open("postgres", url)
 	if err != nil {
