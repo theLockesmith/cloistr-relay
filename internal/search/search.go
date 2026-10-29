@@ -210,17 +210,43 @@ func (s *SearchBackend) InitSchema(ctx context.Context) error {
 // every between attempts. A lock timeout on a busy table is transient; giving
 // up after one attempt would leave search off until the next restart.
 func (s *SearchBackend) InitSchemaRetry(ctx context.Context, every time.Duration) (int, error) {
-	for attempt := 1; ; attempt++ {
-		err := s.InitSchema(ctx)
+	return retrySetup(ctx, every, maxSetupRetryWait, s.InitSchema, sleepCtx)
+}
+
+// maxSetupRetryWait caps the wait between search setup attempts.
+var maxSetupRetryWait = 10 * time.Minute
+
+// retrySetup runs attempt until it succeeds or ctx ends. The same error twice
+// in a row doubles the wait (up to maxWait), since retrying a permanent
+// problem every few seconds only fills the log; a different error resets it
+// to every. wait does the sleeping, so tests can record the waits.
+func retrySetup(ctx context.Context, every, maxWait time.Duration, attempt func(context.Context) error, wait func(context.Context, time.Duration) error) (int, error) {
+	next := every
+	lastErr := ""
+	for n := 1; ; n++ {
+		err := attempt(ctx)
 		if err == nil {
-			return attempt, nil
+			return n, nil
 		}
-		log.Printf("ERROR: search InitSchema attempt %d failed, retrying in %v: %v", attempt, every, err)
-		select {
-		case <-ctx.Done():
-			return attempt, fmt.Errorf("search InitSchema gave up after %d attempts: %w", attempt, err)
-		case <-time.After(every):
+		if err.Error() == lastErr {
+			next = min(next*2, maxWait)
+		} else {
+			next = every
 		}
+		lastErr = err.Error()
+		log.Printf("ERROR: search InitSchema attempt %d failed, retrying in %v: %v", n, next, err)
+		if werr := wait(ctx, next); werr != nil {
+			return n, fmt.Errorf("search InitSchema gave up after %d attempts: %w", n, err)
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
 	}
 }
 
