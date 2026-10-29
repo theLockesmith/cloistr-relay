@@ -200,3 +200,17 @@ func TestTryClaim_HungConnectionReturnsWithinDeadline(t *testing.T) {
 		t.Fatal("TryClaim still blocked after 2s on a hung connection; want it bounded by claimQueryTimeout")
 	}
 }
+
+// A lost race whose holder cannot then be read must not produce a refusal
+// naming an empty winner: the loser could not verify it.
+func TestTryClaim_LostWithUnreadableHolderIsAStoreError(t *testing.T) {
+	s := storeWith(t, "mode=lose") // INSERT loses; holder lookup finds no row
+	err := s.TryClaim(Claim{TaskID: "t1", EventID: "zzz"})
+	if err == nil {
+		t.Fatal("must surface as an error")
+	}
+	var lost ErrLost
+	if errors.As(err, &lost) {
+		t.Fatalf("got ErrLost with winner %q; want a store error so the client retries", lost.WinnerE)
+	}
+}

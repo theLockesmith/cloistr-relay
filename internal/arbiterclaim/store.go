@@ -90,7 +90,15 @@ func (s *Store) TryClaim(c Claim) error {
 		// The ON CONFLICT ... WHERE did not fire: someone else holds it and this
 		// claim did not beat them. Read the incumbent so the caller learns the
 		// fencing token.
-		return ErrLost{TaskID: c.TaskID, WinnerE: s.holderOf(c.TaskID)}
+		//
+		// If that read fails (or finds no row), there is no fencing token to
+		// hand back, and an ErrLost naming "" is a refusal the loser cannot
+		// verify. Report it as a store failure so the client retries.
+		winner := s.holderOf(c.TaskID)
+		if winner == "" {
+			return errors.New("claim lost but the current holder could not be read")
+		}
+		return ErrLost{TaskID: c.TaskID, WinnerE: winner}
 	}
 	if err != nil {
 		return err

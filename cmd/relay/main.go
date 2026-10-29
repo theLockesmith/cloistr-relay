@@ -348,7 +348,7 @@ func main() {
 		func(ctx context.Context, id string) (bool, error) {
 			return storage.IsTombstoned(ctx, rawDB, id)
 		},
-		mgmtStore, cacheClient.RedisClient())
+		mgmtStore, cacheClient.RedisClient()) // nil when cacheClient is nil
 
 	// Arbiter claim enforcement (kind 30078, d="arbiter:claim:*").
 	//

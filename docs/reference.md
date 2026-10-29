@@ -581,6 +581,12 @@ Htmx-based web interface for NIP-86 relay management.
 
 - Pubkey ban/allow management
 - Event ban/moderation queue
+
+Pubkey bans, event bans, the kind allowlist and rate-limit exemptions are held
+in memory on each relay pod and checked without a database query. A change
+applies at once on the pod that served the request and on the other pods
+within 30 seconds, their periodic reload. If a reload fails, a pod keeps its
+last lists.
 - IP blocking
 - Kind allowlist
 - Relay settings

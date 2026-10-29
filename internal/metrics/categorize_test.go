@@ -8,6 +8,7 @@ func TestCategorizeRejection(t *testing.T) {
 		{"error: too many authors in filter (max 100)", "too-many-authors"},
 		{"error: too many ids in filter (max 500)", "too-many-ids"},
 		{"error: too many kinds in filter (max 150)", "too-many-kinds"},
+		{"error: too many widgets", "too-many-widgets"},
 		// Everything else keeps the prefix-before-colon behaviour.
 		{"error: could not check deletion status (timeout), refusing", "error"},
 		{"error: internal server error", "error"},

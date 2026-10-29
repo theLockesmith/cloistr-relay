@@ -327,7 +327,7 @@ func categorizeRejection(msg string) string {
 	// -- clients asking for more than FILTER_MAX_AUTHORS profiles -- and the
 	// label hid it. Give each limit its own reason.
 	if rest, ok := strings.CutPrefix(msg, "error: too many "); ok {
-		if what, _, found := strings.Cut(rest, " "); found && what != "" {
+		if what, _, _ := strings.Cut(rest, " "); what != "" {
 			return "too-many-" + what
 		}
 	}
