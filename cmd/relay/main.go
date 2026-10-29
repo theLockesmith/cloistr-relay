@@ -797,32 +797,12 @@ func main() {
 			groupsState.Relay = &relay29Wrapper{r}
 			groupsState.GetAuthed = khatru.GetAuthed
 
-			// Add relay29 handlers to the relay
-			r.QueryEvents = append(r.QueryEvents,
-				groupsState.NormalEventQuery,
-				groupsState.MetadataQueryHandler,
-				groupsState.AdminsQueryHandler,
-				groupsState.MembersQueryHandler,
-				groupsState.RolesQueryHandler,
-			)
-			r.RejectFilter = append(r.RejectFilter,
-				groupsState.RequireKindAndSingleGroupIDOrSpecificEventReference,
-			)
-			r.RejectEvent = append(r.RejectEvent,
-				groupsState.RequireHTagForExistingGroup,
-				groupsState.RequireModerationEventsToBeRecent,
-				groupsState.RestrictWritesBasedOnGroupRules,
-				groups.GroupCreationGate(cfg.GroupsAdminPubkeys, cfg.GroupsAllowPublicCreation),
-				groupsState.RestrictInvalidModerationActions,
-				groupsState.PreventWritingOfEventsJustDeleted,
-				groupsState.CheckPreviousTag,
-			)
-			r.OnEventSaved = append(r.OnEventSaved,
-				groupsState.ApplyModerationAction,
-				groupsState.ReactToJoinRequest,
-				groupsState.ReactToLeaveRequest,
-				groupsState.AddToPreviousChecking,
-			)
+			// Attach relay29 scoped to NIP-29 traffic only (see internal/groups/scope.go).
+			// Must stay after every other QueryEvents/CountEvents registration.
+			groups.Wire(r, groupsState, groups.WireConfig{
+				AdminPubkeys:        cfg.GroupsAdminPubkeys,
+				AllowPublicCreation: cfg.GroupsAllowPublicCreation,
+			})
 
 			// Derive public key for logging
 			pubkey, _ := nostr.GetPublicKey(cfg.GroupsSecretKey)
