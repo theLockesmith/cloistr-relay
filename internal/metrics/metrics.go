@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/khatru"
@@ -135,14 +137,30 @@ func RegisterRelayMetrics(relay *khatru.Relay) {
 	// Set relay info
 	relayInfo.WithLabelValues(relay.Info.Name, "khatru").Set(1)
 
-	// Track connections
+	// Track connections.
+	//
+	// khatru v0.19.1 tears a connection down from BOTH its reader and its pinger
+	// goroutine (handlers.go:108 and :417, each `defer kill()`), and kill runs
+	// every OnDisconnect hook, so the hooks fire twice per connection. A bare
+	// Dec() here drove nostr_relay_connections_active to -96 on a production pod
+	// within half an hour. Decrement only for a connection we saw open, once.
+	var open sync.Map // *khatru.WebSocket -> struct{}
 	relay.OnConnect = append(relay.OnConnect, func(ctx context.Context) {
 		connectionsTotal.Inc()
+		if ws := khatru.GetConnection(ctx); ws != nil {
+			open.Store(ws, struct{}{})
+		}
 		connectionsActive.Inc()
 	})
 
 	relay.OnDisconnect = append(relay.OnDisconnect, func(ctx context.Context) {
-		connectionsActive.Dec()
+		ws := khatru.GetConnection(ctx)
+		if ws == nil {
+			return
+		}
+		if _, wasOpen := open.LoadAndDelete(ws); wasOpen {
+			connectionsActive.Dec()
+		}
 	})
 
 	// Track event processing (wrap existing handlers)
@@ -303,6 +321,16 @@ func RegisterDBPoolMetrics(db *sql.DB, interval time.Duration) {
 
 // categorizeRejection extracts a category from rejection message
 func categorizeRejection(msg string) string {
+	// The filter-size limits (internal/handlers rejectComplexFilters) all use the
+	// generic "error:" prefix, so they were counted as reason="error" next to real
+	// failures. On 2026-10-29 every relay query rejection in 24h was one of these
+	// -- clients asking for more than FILTER_MAX_AUTHORS profiles -- and the
+	// label hid it. Give each limit its own reason.
+	if rest, ok := strings.CutPrefix(msg, "error: too many "); ok {
+		if what, _, _ := strings.Cut(rest, " "); what != "" {
+			return "too-many-" + what
+		}
+	}
 	if len(msg) > 20 {
 		// Extract prefix before colon
 		for i, c := range msg {

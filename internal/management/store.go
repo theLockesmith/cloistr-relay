@@ -1,14 +1,22 @@
 package management
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"sync/atomic"
 )
 
 // Store handles database operations for relay management
 type Store struct {
 	db *sql.DB
+
+	// In-memory ban, kind-allow and rate-limit-exempt lists, read per event.
+	// See access_cache.go.
+	accessSnap atomic.Pointer[accessSets]
+	refreshMu  sync.Mutex
 }
 
 // NewStore creates a new management store with the given database connection
@@ -77,8 +85,10 @@ func (s *Store) Init() error {
 		CREATE INDEX IF NOT EXISTS idx_moderation_status ON management_moderation_queue(status);
 	`
 
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	return s.RefreshAccess(context.Background())
 }
 
 // BanPubkey adds a pubkey to the banned list
@@ -89,23 +99,19 @@ func (s *Store) BanPubkey(pubkey, reason string) error {
 		 ON CONFLICT (pubkey) DO UPDATE SET reason = $2`,
 		pubkey, reason,
 	)
-	return err
+	return s.afterWrite(err)
 }
 
 // UnbanPubkey removes a pubkey from the banned list
 func (s *Store) UnbanPubkey(pubkey string) error {
 	_, err := s.db.Exec(`DELETE FROM management_banned_pubkeys WHERE pubkey = $1`, pubkey)
-	return err
+	return s.afterWrite(err)
 }
 
 // IsPubkeyBanned checks if a pubkey is banned
 func (s *Store) IsPubkeyBanned(pubkey string) bool {
-	var exists bool
-	err := s.db.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM management_banned_pubkeys WHERE pubkey = $1)`,
-		pubkey,
-	).Scan(&exists)
-	return err == nil && exists
+	_, banned := s.access().bannedPubkeys[pubkey]
+	return banned
 }
 
 // ListBannedPubkeys returns all banned pubkeys
@@ -199,23 +205,19 @@ func (s *Store) BanEvent(eventID, reason string) error {
 		 ON CONFLICT (event_id) DO UPDATE SET reason = $2`,
 		eventID, reason,
 	)
-	return err
+	return s.afterWrite(err)
 }
 
 // UnbanEvent removes an event ID from the banned list
 func (s *Store) UnbanEvent(eventID string) error {
 	_, err := s.db.Exec(`DELETE FROM management_banned_events WHERE event_id = $1`, eventID)
-	return err
+	return s.afterWrite(err)
 }
 
 // IsEventBanned checks if an event is banned
 func (s *Store) IsEventBanned(eventID string) bool {
-	var exists bool
-	err := s.db.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM management_banned_events WHERE event_id = $1)`,
-		eventID,
-	).Scan(&exists)
-	return err == nil && exists
+	_, banned := s.access().bannedEvents[eventID]
+	return banned
 }
 
 // ListBannedEvents returns all banned events
@@ -311,29 +313,23 @@ func (s *Store) AllowKind(kind int) error {
 		`INSERT INTO management_allowed_kinds (kind) VALUES ($1) ON CONFLICT DO NOTHING`,
 		kind,
 	)
-	return err
+	return s.afterWrite(err)
 }
 
 // DisallowKind removes a kind from the allowed kinds list
 func (s *Store) DisallowKind(kind int) error {
 	_, err := s.db.Exec(`DELETE FROM management_allowed_kinds WHERE kind = $1`, kind)
-	return err
+	return s.afterWrite(err)
 }
 
 // IsKindAllowed checks if a kind is allowed (returns true if no restriction or kind is in list)
 func (s *Store) IsKindAllowed(kind int) bool {
-	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM management_allowed_kinds`).Scan(&count)
-	if err != nil || count == 0 {
+	allowed := s.access().allowedKinds
+	if len(allowed) == 0 {
 		return true // No restrictions if table is empty
 	}
-
-	var exists bool
-	err = s.db.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM management_allowed_kinds WHERE kind = $1)`,
-		kind,
-	).Scan(&exists)
-	return err == nil && exists
+	_, ok := allowed[kind]
+	return ok
 }
 
 // ListAllowedKinds returns all allowed kinds
@@ -443,23 +439,19 @@ func (s *Store) ExemptPubkeyFromRateLimit(pubkey, reason string) error {
 		 ON CONFLICT (pubkey) DO UPDATE SET reason = $2`,
 		pubkey, reason,
 	)
-	return err
+	return s.afterWrite(err)
 }
 
 // RemoveRateLimitExemption removes a pubkey from the rate-limit exemption list
 func (s *Store) RemoveRateLimitExemption(pubkey string) error {
 	_, err := s.db.Exec(`DELETE FROM management_rate_limit_exempt_pubkeys WHERE pubkey = $1`, pubkey)
-	return err
+	return s.afterWrite(err)
 }
 
 // IsRateLimitExempt checks if a pubkey is exempt from rate limiting
 func (s *Store) IsRateLimitExempt(pubkey string) bool {
-	var exists bool
-	err := s.db.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM management_rate_limit_exempt_pubkeys WHERE pubkey = $1)`,
-		pubkey,
-	).Scan(&exists)
-	return err == nil && exists
+	_, exempt := s.access().exemptPubkeys[pubkey]
+	return exempt
 }
 
 // ListRateLimitExemptions returns all rate-limit exempt pubkeys
