@@ -5,18 +5,60 @@ import (
 	"log"
 )
 
+// redundantIndexes are indexes earlier versions of OptimizeIndexes created
+// that the eventstore library already builds, on the same columns with the
+// same method: event_kind_created_at_idx is kindtimeidx, and
+// event_tagvalues_gin_idx is arbitrarytagvalues. A duplicate never makes a
+// read faster, but every insert pays to maintain it, so they are dropped.
+//
+// Each is dropped only while its eventstore twin exists and is valid, so a
+// database where the twin is missing (or left invalid by a failed build) keeps
+// the copy it has rather than ending up with neither.
+var redundantIndexes = []struct {
+	name string
+	twin string
+}{
+	{name: "event_kind_created_at_idx", twin: "kindtimeidx"},
+	{name: "event_tagvalues_gin_idx", twin: "arbitrarytagvalues"},
+}
+
+// dropRedundantIndexes removes redundantIndexes with DROP INDEX CONCURRENTLY,
+// which takes no lock that blocks reads or writes on the event table. Like the
+// creates below it runs under the startup DDL lock, and failures are logged,
+// not fatal: a leftover duplicate costs write time, nothing more.
+func dropRedundantIndexes(db *sql.DB) {
+	for _, idx := range redundantIndexes {
+		var twinValid bool
+		err := db.QueryRow(
+			`SELECT COALESCE((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass($1)), false)`,
+			idx.twin,
+		).Scan(&twinValid)
+		if err != nil {
+			log.Printf("Warning: failed to check index %s before dropping %s: %v", idx.twin, idx.name, err)
+			continue
+		}
+		if !twinValid {
+			log.Printf("Keeping index %s: its eventstore twin %s is missing or invalid", idx.name, idx.twin)
+			continue
+		}
+		// Identifiers cannot be bound as parameters; both names are constants above.
+		if _, err := db.Exec(`DROP INDEX CONCURRENTLY IF EXISTS ` + idx.name); err != nil {
+			log.Printf("Warning: failed to drop redundant index %s: %v", idx.name, err)
+		}
+	}
+}
+
 // OptimizeIndexes creates additional indexes for common Nostr query patterns
-// These supplement the indexes created by the eventstore library
+// These supplement the indexes created by the eventstore library, which
+// already covers kind+created_at (kindtimeidx) and tag lookups
+// (arbitrarytagvalues, a GIN index serving `tagvalues && ARRAY[...]`).
 func OptimizeIndexes(db *sql.DB) error {
+	dropRedundantIndexes(db)
+
 	indexes := []struct {
 		name string
 		sql  string
 	}{
-		// Composite index for kind + created_at (common filter pattern)
-		{
-			name: "event_kind_created_at_idx",
-			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_kind_created_at_idx ON event (kind, created_at DESC)`,
-		},
 		// Composite index for pubkey + kind (profile lookups, user's notes of specific kind)
 		{
 			name: "event_pubkey_kind_idx",
@@ -91,20 +133,6 @@ func OptimizeIndexes(db *sql.DB) error {
 		{
 			name: "event_labels_idx",
 			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_labels_idx ON event (pubkey, created_at DESC) WHERE kind = 1985`,
-		},
-		// TAG LOOKUPS. Every index above this one is on kind, pubkey or created_at,
-		// and there was nothing at all for tags. The eventstore builds a tag filter
-		// as `tagvalues && ARRAY[...]`, a Postgres array-overlap test, which GIN
-		// indexes and btree cannot help with at all.
-		//
-		// This matters now because Cloistr threads are read ENTIRELY by tag: a
-		// member finds its messages by a bucket tag it shares with a crowd of
-		// unrelated threads, and downloads that whole bucket every window. That is
-		// the design's core cost, and without this index every one of those reads
-		// is a sequential scan of the event table.
-		{
-			name: "event_tagvalues_gin_idx",
-			sql:  `CREATE INDEX CONCURRENTLY IF NOT EXISTS event_tagvalues_gin_idx ON event USING GIN (tagvalues)`,
 		},
 	}
 
