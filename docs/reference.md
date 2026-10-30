@@ -70,6 +70,9 @@ For quick start and essential info, see [CLAUDE.md](../CLAUDE.md).
 | `LOG_LEVEL` | info | debug, info, warn, error |
 | `LOG_FORMAT` | json | json, text |
 
+Bans and allowlists changed through the management API take up to 30 seconds
+to reach the other relay pods; see [Ban propagation across pods](#ban-propagation-across-pods).
+
 
 ### Lightning Payments
 
@@ -581,12 +584,6 @@ Htmx-based web interface for NIP-86 relay management.
 
 - Pubkey ban/allow management
 - Event ban/moderation queue
-
-Pubkey bans, event bans, the kind allowlist and rate-limit exemptions are held
-in memory on each relay pod and checked without a database query. A change
-applies at once on the pod that served the request and on the other pods
-within 30 seconds, their periodic reload. If a reload fails, a pod keeps its
-last lists.
 - IP blocking
 - Kind allowlist
 - Relay settings
@@ -594,6 +591,23 @@ last lists.
 - Event browser with filters and pagination
 - Connection stats (DB pool, event distribution, uptime)
 - WoT visualization (D3.js trust network graph)
+
+### Ban propagation across pods
+
+A ban is not instant relay-wide. Pubkey bans, event bans, the kind allowlist
+and rate-limit exemptions are held in memory on each relay pod and checked
+without a database query. A change made through NIP-86 (or this admin UI)
+applies at once on the pod that served the request, and reaches every other
+pod at its next periodic reload, up to 30 seconds later
+(`management.AccessRefreshInterval`). Until then, a banned pubkey can still
+publish through another pod. Unbans and allowlist changes lag the same way.
+
+Before this, every event read those lists from the database, so a ban applied
+everywhere immediately. If a ban must hold everywhere at once (an active spam
+or abuse wave), issue it and expect up to 30 seconds of leakage, or restart
+the other pods: a pod loads the lists at startup and will not start without
+them. If a periodic reload fails, the pod keeps its last lists and logs the
+error, so a database outage does not drop existing bans.
 
 ---
 
